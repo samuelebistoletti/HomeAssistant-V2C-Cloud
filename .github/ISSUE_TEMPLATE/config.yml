@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: V2C Cloud Community Support
+    url: https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/discussions
+    about: Please ask and answer questions here.

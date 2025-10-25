@@ -1,0 +1,16 @@
+{
+  "domain": "v2c_cloud",
+  "name": "V2C Cloud",
+  "codeowners": [
+    "@samuelebistoletti"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/issues",
+  "requirements": [
+    "python-graphql-client==0.4.3"
+  ],
+  "version": "1.0.0"
+}

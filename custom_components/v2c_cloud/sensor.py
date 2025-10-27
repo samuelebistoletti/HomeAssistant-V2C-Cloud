@@ -203,10 +203,25 @@ class V2CVersionSensor(V2CEntity, SensorEntity):
         """Return the firmware version."""
         version = self.device_state.get("version")
         if version is None:
-            version = self.get_reported_value("version")
+            version_info = self.device_state.get("additional", {}).get("version_info")
+            if isinstance(version_info, dict):
+                version = (
+                    version_info.get("versionId")
+                    or version_info.get("version")
+                    or version_info.get("version_id")
+                )
+
         if version is None:
-            return None
-        return str(version)
+            version = self.get_reported_value("version", "version_id", "versionId")
+
+        return str(version) if version is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        version_info = self.device_state.get("additional", {}).get("version_info")
+        if isinstance(version_info, dict):
+            return version_info
+        return None
 
 
 class V2CMacAddressSensor(V2CEntity, SensorEntity):

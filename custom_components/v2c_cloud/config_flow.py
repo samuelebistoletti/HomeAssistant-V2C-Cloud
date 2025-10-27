@@ -69,7 +69,10 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if label:
                         title = f"V2C Cloud - {label}"
 
-                data = {CONF_API_KEY: api_key}
+                data = {
+                    CONF_API_KEY: api_key,
+                    "initial_pairings": pairings,
+                }
                 if base_url != DEFAULT_BASE_URL:
                     data[CONF_BASE_URL] = base_url
 
@@ -117,7 +120,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
             try:
-                await _validate_api_key(self.hass, api_key, base_url)
+                pairings = await _validate_api_key(self.hass, api_key, base_url)
             except V2CAuthError:
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
@@ -128,6 +131,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 new_data = dict(self._reauth_entry.data)
                 new_data[CONF_API_KEY] = api_key
+                new_data["initial_pairings"] = pairings
                 if base_url != DEFAULT_BASE_URL:
                     new_data[CONF_BASE_URL] = base_url
                 else:

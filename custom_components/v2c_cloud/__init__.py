@@ -49,6 +49,7 @@ from .v2c_cloud import (
     V2CAuthError,
     V2CClient,
     V2CError,
+    V2CRateLimitError,
     V2CRequestError,
     async_gather_devices_state,
 )
@@ -89,6 +90,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     client = V2CClient(session, api_key, base_url=base_url)
 
+    initial_pairings = entry.data.get("initial_pairings")
+    if initial_pairings:
+        client.preload_pairings(initial_pairings)
+
     # Validate credentials and initial connectivity by requesting pairings.
     try:
         pairings = await client.async_get_pairings()
@@ -104,10 +109,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Fetch the latest data from the API."""
         try:
             latest_pairings = await client.async_get_pairings()
-            devices = await async_gather_devices_state(client, latest_pairings)
+            previous_devices = None
+            if coordinator.data and isinstance(coordinator.data, dict):
+                previous_devices = coordinator.data.get("devices")
+            devices = await async_gather_devices_state(
+                client,
+                latest_pairings,
+                previous_devices=previous_devices if isinstance(previous_devices, dict) else None,
+            )
             global_statistics = await client.async_get_global_statistics()
         except V2CAuthError as err:
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
+        except V2CRateLimitError as err:
+            _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
+            if coordinator.data is not None:
+                return coordinator.data
+            raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
             raise UpdateFailed(f"Failed to update V2C data: {err}") from err
 
@@ -126,6 +143,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await coordinator.async_config_entry_first_refresh()
+
+    if initial_pairings:
+        new_data = dict(entry.data)
+        new_data.pop("initial_pairings", None)
+        hass.config_entries.async_update_entry(entry, data=new_data)
 
     hass.data[DOMAIN][entry.entry_id] = V2CEntryRuntimeData(
         client=client,

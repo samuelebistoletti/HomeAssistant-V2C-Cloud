@@ -10,7 +10,7 @@ CONF_API_KEY = "api_key"
 CONF_BASE_URL = "base_url"
 
 DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
-DEFAULT_UPDATE_INTERVAL = timedelta(seconds=30)
+DEFAULT_UPDATE_INTERVAL = timedelta(minutes=1)
 
 # Select options exposed by the API
 INSTALLATION_TYPES = {

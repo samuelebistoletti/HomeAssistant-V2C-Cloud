@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -14,6 +16,9 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
 DEFAULT_TIMEOUT = 15
+PAIRINGS_CACHE_TTL = 300  # seconds
+MAX_RETRIES = 3
+RETRY_BACKOFF = 2.0
 
 
 class V2CError(Exception):
@@ -30,6 +35,10 @@ class V2CRequestError(V2CError):
     def __init__(self, message: str, *, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+class V2CRateLimitError(V2CRequestError):
+    """Raised when the V2C API responds with HTTP 429."""
 
 
 def _coerce_scalar(text: str) -> Any:
@@ -103,11 +112,21 @@ class V2CClient:
         self._api_key = api_key
         self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self._timeout = timeout
+        self._pairings_cache: list[dict[str, Any]] | None = None
+        self._pairings_cache_expiry: float = 0.0
 
     @property
     def base_url(self) -> str:
         """Return the base URL used by the client."""
         return self._base_url
+
+    def preload_pairings(self, pairings: list[dict[str, Any]] | None, ttl: float | None = None) -> None:
+        """Preload cached pairings to avoid initial rate-limit failures."""
+        if pairings is None:
+            return
+        self._pairings_cache = pairings
+        expiry = ttl if ttl is not None else PAIRINGS_CACHE_TTL
+        self._pairings_cache_expiry = time.monotonic() + expiry
 
     async def _request(
         self,
@@ -127,48 +146,109 @@ class V2CClient:
             "V2C request %s %s params=%s body=%s", method, url, params, json_body
         )
 
-        try:
-            async with async_timeout.timeout(self._timeout):
-                async with self._session.request(
-                    method,
-                    url,
-                    headers=headers,
-                    params=params,
-                    json=json_body,
-                ) as response:
-                    status = response.status
-                    content_type = response.headers.get("Content-Type", "")
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                async with async_timeout.timeout(self._timeout):
+                    async with self._session.request(
+                        method,
+                        url,
+                        headers=headers,
+                        params=params,
+                        json=json_body,
+                    ) as response:
+                        status = response.status
+                        content_type = response.headers.get("Content-Type", "")
 
-                    if status == 401:
+                        if status == 401:
+                            text = await response.text()
+                            raise V2CAuthError(f"V2C authentication failed: {text}")
+
+                        if status == 429:
+                            text = await response.text()
+                            retry_after = response.headers.get("Retry-After")
+                            if attempt < MAX_RETRIES:
+                                try:
+                                    delay = float(retry_after) if retry_after else None
+                                except (TypeError, ValueError):
+                                    delay = None
+                                if delay is None:
+                                    delay = RETRY_BACKOFF * attempt
+                                _LOGGER.warning(
+                                    "Rate limited by V2C Cloud (attempt %s/%s), retrying in %.1f s",
+                                    attempt,
+                                    MAX_RETRIES,
+                                    delay,
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            raise V2CRateLimitError(
+                                f"V2C API rate limit reached: {text or 'unknown error'}",
+                                status=status,
+                            )
+
+                        if status >= 400:
+                            text = await response.text()
+                            raise V2CRequestError(
+                                f"V2C API error {status}: {text or 'unknown error'}",
+                                status=status,
+                            )
+
+                        if status == 204:
+                            return None
+
+                        if "application/json" in content_type:
+                            return await response.json(content_type=None)
+
                         text = await response.text()
-                        raise V2CAuthError(f"V2C authentication failed: {text}")
-
-                    if status >= 400:
-                        text = await response.text()
-                        raise V2CRequestError(
-                            f"V2C API error {status}: {text or 'unknown error'}",
-                            status=status,
-                        )
-
-                    if status == 204:
-                        return None
-
-                    if "application/json" in content_type:
-                        return await response.json(content_type=None)
-
-                    text = await response.text()
-                    return _coerce_scalar(text)
-        except async_timeout.TimeoutError as err:
-            raise V2CRequestError("Request to V2C API timed out") from err
-        except ClientError as err:
-            raise V2CRequestError(f"HTTP error while calling V2C API: {err}") from err
+                        return _coerce_scalar(text)
+            except asyncio.TimeoutError:
+                if attempt < MAX_RETRIES:
+                    _LOGGER.warning(
+                        "Timeout contacting V2C Cloud (attempt %s/%s), retrying",
+                        attempt,
+                        MAX_RETRIES,
+                    )
+                    await asyncio.sleep(RETRY_BACKOFF * attempt)
+                    continue
+                raise V2CRequestError("Request to V2C API timed out") from None
+            except ClientError as err:
+                if attempt < MAX_RETRIES:
+                    _LOGGER.warning(
+                        "HTTP error contacting V2C Cloud (attempt %s/%s): %s. Retrying.",
+                        attempt,
+                        MAX_RETRIES,
+                        err,
+                    )
+                    await asyncio.sleep(RETRY_BACKOFF * attempt)
+                    continue
+                raise V2CRequestError(f"HTTP error while calling V2C API: {err}") from err
 
     async def async_get_pairings(self) -> list[dict[str, Any]]:
         """Return the pairings linked to the current account."""
-        data = await self._request("GET", "/pairings/me")
+        now = time.monotonic()
+        if (
+            self._pairings_cache is not None
+            and now < self._pairings_cache_expiry
+        ):
+            return self._pairings_cache
+
+        try:
+            data = await self._request("GET", "/pairings/me")
+        except V2CRateLimitError as err:
+            if self._pairings_cache is not None:
+                _LOGGER.warning("V2C rate limit reached when fetching pairings; using cached data")
+                return self._pairings_cache
+            raise err
+
         if isinstance(data, list):
+            self._pairings_cache = data
+            self._pairings_cache_expiry = now + PAIRINGS_CACHE_TTL
             return data
         if data is None:
+            self._pairings_cache = []
+            self._pairings_cache_expiry = now + PAIRINGS_CACHE_TTL
             return []
         _LOGGER.debug("Unexpected pairings payload type: %s", type(data))
         return []
@@ -472,6 +552,7 @@ class V2CClient:
 async def async_gather_devices_state(
     client: V2CClient,
     pairings: Iterable[dict[str, Any]],
+    previous_devices: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Fetch the current state for each paired device."""
     results: dict[str, dict[str, Any]] = {}
@@ -482,10 +563,15 @@ async def async_gather_devices_state(
             continue
 
         state = V2CDeviceState(device_id=device_id, pairing=pairing)
+        previous_state = (
+            previous_devices.get(device_id, {}) if previous_devices else {}
+        )
 
         try:
             connected = await client.async_get_connected(device_id)
             state.connected = bool(connected) if connected is not None else None
+        except V2CRateLimitError:
+            raise
         except V2CError as err:
             _LOGGER.warning("Failed to fetch connection status for %s: %s", device_id, err)
 
@@ -509,12 +595,16 @@ async def async_gather_devices_state(
                         state.reported_raw = parsed
                 except json.JSONDecodeError:
                     pass
+        except V2CRateLimitError:
+            raise
         except V2CError as err:
             _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, err)
 
         try:
             current_state = await client.async_get_current_state_charge(device_id)
             state.current_state = current_state
+        except V2CRateLimitError:
+            raise
         except V2CError as err:
             _LOGGER.debug(
                 "Failed to fetch current state charge for %s: %s", device_id, err
@@ -526,27 +616,63 @@ async def async_gather_devices_state(
                 state.rfid_cards = rfid_cards
             elif rfid_cards is not None:
                 state.additional["rfid_cards_raw"] = rfid_cards
+        except V2CRateLimitError:
+            raise
         except V2CError as err:
             _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
 
-        try:
-            version = await client.async_get_version(device_id)
-            if isinstance(version, str):
-                state.version = version
-            else:
-                state.version = str(version)
-        except V2CError as err:
-            _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
+        if previous_state.get("version") is not None:
+            state.version = previous_state.get("version")
+            version_info_prev = (
+                previous_state.get("additional", {}).get("version_info")
+            )
+            if isinstance(version_info_prev, dict):
+                state.additional["version_info"] = version_info_prev
+        else:
+            try:
+                version_response = await client.async_get_version(device_id)
+                version_info: dict[str, Any] | None = None
 
-        try:
-            mac_address = await client.async_get_mac(device_id)
-            if mac_address:
-                if isinstance(mac_address, dict) and "mac" in mac_address:
-                    state.mac_address = str(mac_address["mac"])
-                else:
-                    state.mac_address = str(mac_address)
-        except V2CError as err:
-            _LOGGER.debug("Failed to fetch MAC address for %s: %s", device_id, err)
+                if isinstance(version_response, dict):
+                    version_info = version_response
+                elif isinstance(version_response, str):
+                    try:
+                        parsed_version = json.loads(version_response)
+                        if isinstance(parsed_version, dict):
+                            version_info = parsed_version
+                        else:
+                            state.version = str(version_response)
+                    except json.JSONDecodeError:
+                        state.version = version_response
+                elif version_response is not None:
+                    state.version = str(version_response)
+
+                if version_info:
+                    state.version = (
+                        version_info.get("versionId")
+                        or version_info.get("version")
+                        or version_info.get("version_id")
+                    )
+                    state.additional["version_info"] = version_info
+            except V2CRateLimitError:
+                raise
+            except V2CError as err:
+                _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
+
+        if previous_state.get("mac_address") is not None:
+            state.mac_address = previous_state.get("mac_address")
+        else:
+            try:
+                mac_address = await client.async_get_mac(device_id)
+                if mac_address:
+                    if isinstance(mac_address, dict) and "mac" in mac_address:
+                        state.mac_address = str(mac_address["mac"])
+                    else:
+                        state.mac_address = str(mac_address)
+            except V2CRateLimitError:
+                raise
+            except V2CError as err:
+                _LOGGER.debug("Failed to fetch MAC address for %s: %s", device_id, err)
 
         results[device_id] = state.as_dict()
 

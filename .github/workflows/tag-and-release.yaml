@@ -3,7 +3,7 @@ name: Tag and Release on manifest.json version change
 on:
   push:
     paths:
-      - 'custom_components/octopus_energy_it/manifest.json'
+      - 'custom_components/v2c_cloud/manifest.json'
 
 jobs:
   tag-and-release:
@@ -19,7 +19,7 @@ jobs:
       - name: Extract version from manifest.json
         id: get_version
         run: |
-          VERSION=$(jq -r '.version' custom_components/octopus_energy_it/manifest.json)
+          VERSION=$(jq -r '.version' custom_components/v2c_cloud/manifest.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Check if tag exists

@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const bodySuffix = "---\nEnjoying the integration? Why not make a one time or monthly [GitHub sponsorship](https://github.com/sponsors/samuelebistoletti) or use my [Octopus Energy referral link](https://octopusenergy.it/octo-friends/airy-queen-959)?"
+const bodySuffix = "---\nEnjoying the integration? Why not make a one time or monthly [GitHub sponsorship](https://github.com/sponsors/samuelebistoletti)?"
 
 function getMinimumHomeAssistantVersion() {
   const hacsFilePath = join(__dirname, '../hacs.json');
@@ -41,12 +41,12 @@ async function createGithubRelease(githubToken: string, githubOwnerRepo: string,
 
   const response = await fetch(
     `https://api.github.com/repos/${githubOwnerRepo}/releases`,
-    { 
+    {
       method: 'POST',
       headers: {
         "Accept": "application/vnd.github+json",
         "Authorization": `Bearer ${githubToken}`,
-        "X-GitHub-Api-Version": "2022-11-28" 
+        "X-GitHub-Api-Version": "2022-11-28"
       },
       body
     }

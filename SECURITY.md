@@ -34,7 +34,7 @@ Reports will be acknowledged within **72 hours**, and a remediation or mitigatio
 ## Scope
 
 This security policy applies only to:
-- The **HomeAssistant-OctopusEnergyIT** custom integration code in this repository  
+- The **HomeAssistant-V2C-Cloud** custom integration code in this repository  
 - Configuration or data handled directly by the integration itself
 
 Issues related to:

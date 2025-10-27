@@ -4,7 +4,7 @@
 
 Questa integrazione consente di collegare Home Assistant al servizio **V2C Cloud** utilizzando l'API pubblicata su [https://v2c.docs.apiary.io](https://v2c.docs.apiary.io). Dopo aver configurato l'API key del proprio account V2C viene creato un dispositivo per ogni wallbox associata, con sensori, comandi e servizi per gestire intensità, timer, tessere RFID e modalità fotovoltaiche.
 
-> ℹ️ Il repository nasce come riscrittura completa di un'integrazione d'esempio, ora interamente dedicata a V2C Cloud.
+> ℹ️ Il progetto è stato sviluppato da zero per V2C Cloud, prendendo come riferimento la struttura tipica delle integrazioni Home Assistant.
 
 ## ✨ Funzionalità principali
 

@@ -51,34 +51,52 @@ async def async_setup_entry(
 class V2CChargingStateSensor(V2CEntity, SensorEntity):
     """Representation of the charging state reported by the charger."""
 
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
     def __init__(self, coordinator, client, device_id) -> None:
         super().__init__(coordinator, client, device_id)
         self._attr_translation_key = "charging_state"
         self._attr_unique_id = f"{device_id}_charging_state"
+        self._attr_icon = "mdi:ev-station"
 
     @property
-    def native_value(self) -> str | int | None:
-        """Return the current charging state."""
-        value = self.device_state.get("current_state")
-        if value is None:
+    def native_value(self) -> str | None:
+        """Return the current charging state as a label."""
+        raw_value = self.device_state.get("current_state")
+        resolved: str | None = None
+
+        if isinstance(raw_value, dict):
+            raw_value = raw_value.get("charge_state") or raw_value.get("state")
+
+        if raw_value is None:
+            raw_value = self.get_reported_value(
+                "charge_state",
+                "charging_state",
+                "status",
+            )
+
+        if raw_value is None:
             return None
+
         try:
-            index = int(value)
-            return CHARGE_STATE_LABELS.get(index, index)
+            index = int(raw_value)
         except (TypeError, ValueError):
-            return value
+            resolved = str(raw_value)
+        else:
+            resolved = CHARGE_STATE_LABELS.get(index, str(index))
+
+        return resolved
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return raw state information."""
         attrs: dict[str, Any] = {}
-        if "current_state" in self.device_state:
-            attrs["state_code"] = self.device_state["current_state"]
-        reported_value = self.get_reported_value("status", "chargingstate")
-        if reported_value is not None:
-            attrs["reported_status"] = reported_value
+        current_state = self.device_state.get("current_state")
+        if current_state is not None:
+            attrs["current_state_raw"] = current_state
+
+        reported_dict = self.device_state.get("reported")
+        if isinstance(reported_dict, dict):
+            attrs["reported"] = reported_dict
+
         return attrs
 
 

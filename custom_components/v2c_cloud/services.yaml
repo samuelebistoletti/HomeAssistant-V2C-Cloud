@@ -1,30 +1,120 @@
-set_device_preferences:
-  name: Set device preferences
-  description: Set charging preferences for an electric vehicle device using the new API
+set_wifi_credentials:
+  name: Aggiorna credenziali Wi-Fi
+  description: Configura SSID e password per il punto di ricarica V2C.
   fields:
     device_id:
       name: Device ID
-      description: The device ID of the electric vehicle (get from device list)
+      description: Identificativo del dispositivo ottenuto dalla lista pairings.
       required: true
-      example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      example: "ABCDEF123456"
       selector:
         text:
-    target_percentage:
-      name: Target state of charge
-      description: Target state of charge (20-100% in 5% steps)
+    ssid:
+      name: SSID Wi-Fi
+      description: Nome della rete Wi-Fi a cui collegare il caricatore.
       required: true
-      default: 80
-      example: 80
+      example: "MyHomeNetwork"
+      selector:
+        text:
+    password:
+      name: Password Wi-Fi
+      description: Password della rete Wi-Fi.
+      required: true
+      example: "********"
+      selector:
+        text:
+program_timer:
+  name: Configura timer di ricarica
+  description: Imposta i valori di un timer del caricatore (timer ID 0 o 1).
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    timer_id:
+      name: Timer ID
+      description: ID del timer (0 oppure 1).
+      required: true
       selector:
         number:
-          min: 20
-          max: 100
-          step: 5
-    target_time:
-      name: Target time
-      description: Target time for charging (04:00-17:00)
+          min: 0
+          max: 1
+          mode: box
+    days_of_week:
+      name: Giorni della settimana
+      description: Stringa di giorni (1=Lu ... 7=Do, 8=disattiva) come da documentazione V2C.
       required: true
-      default: "06:00"
-      example: "06:00"
+      example: "12345"
+      selector:
+        text:
+    time_start:
+      name: Ora inizio
+      description: Ora di partenza in formato HH:MM (24h).
+      required: true
       selector:
         time:
+    time_end:
+      name: Ora fine
+      description: Ora di termine in formato HH:MM (24h).
+      required: true
+      selector:
+        time:
+register_rfid:
+  name: Registra nuova tessera RFID
+  description: Attiva la modalità di acquisizione per registrare una nuova tessera RFID con il nome desiderato.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    tag:
+      name: Nome tessera
+      description: Testo associato alla nuova tessera RFID.
+      required: true
+      selector:
+        text:
+update_rfid_tag:
+  name: Aggiorna etichetta tessera RFID
+  description: Aggiorna il nome di una tessera RFID esistente.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    code:
+      name: Codice tessera
+      description: Codice univoco della tessera RFID da rinominare.
+      required: true
+      selector:
+        text:
+    tag:
+      name: Nuovo nome
+      required: true
+      selector:
+        text:
+delete_rfid:
+  name: Elimina tessera RFID
+  description: Rimuove una tessera RFID dal dispositivo.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    code:
+      name: Codice tessera
+      required: true
+      selector:
+        text:
+trigger_update:
+  name: Avvia aggiornamento firmware
+  description: Richiede al dispositivo di cercare e installare aggiornamenti firmware disponibili.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:

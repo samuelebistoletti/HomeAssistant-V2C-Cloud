@@ -1,0 +1,1211 @@
+swagger: '2.0'
+info:
+  version: '1.0'
+  title: V2C Service
+  description: "<p>Below is the documentation regarding V2C's API.</p>\n<p>To be able\
+    \ to use the API, you will require an API key. To obtain an API key you will need\
+    \ to generate it from your V2C cloud account. Once you are logged in, you can\
+    \ access the token from the link <a href=\"https://v2c.cloud/api\">https://v2c.cloud/api</a>.</p>\n\
+    \n<p>Some endpoints can optionally receive dates in the parameters. The dates\
+    \ are in ISO String format. Example of a date: \"2021-06-24T21:12:12.000Z\".</p>\n\
+    <p>The endpoints that have optional dates as parameters are:</p>\n<ul>\n    <li>/stadistic/device</li>\n\
+    \    <li>/stadistic/global/me</li>\n</ul>\n<p>The charge point has two timers\
+    \ so you can program when you want the car to charge. The \"timer_id\" for the\
+    \ timers are 0 and 1. There are no restrictions on the time you set but it will\
+    \ behave differently depending on the times you set.</p>\n<p>For example, if you\
+    \ set the timer for monday from 20:00 to 22:00, the car will be able to charge\
+    \ for two hours on monday. If you set the timer from 20:00 to 02:00 on monday,\
+    \ the car will charge for 4 hours from 20:00 on monday until 02:00 on tuesday\
+    \ morning.</p>\n<p>Even though you only set monday, it will charge during tuesday\
+    \ if the \"timeEnd\" is lower than the \"timeStart\".</p>\n<p>To use the timer\
+    \ you need to pass how you want it set with a specific data structure in the body\
+    \ with parameters \"daysOfWeek\", \"timeStart\" and \"timeEnd\".</p>\n<ul>\n \
+    \   <li>\"daysOfWeek\": This indicates the days of the week you want to set. The\
+    \ numbers 1 to 7 correspond to the days of the week monday to sunday. For example,\
+    \ if we want to set a timer from monday to friday, \"daysOfWeek\" should be set\
+    \ to \"12345\". If we want to set a timer on saturday and sunday, \"daysOfWeek\"\
+    \ should be set to \"67\". If we want to turn off the timer, \"daysOfWeek\" should\
+    \ be set to \"8\".</li>\n    <li>\"timeStart\" and \"timeEnd\": the format used\
+    \ is a 24 hour clock where the hours go from 00 to 23 and the minutes go to 00\
+    \ to 59. Ex: 23:21, 05:38, 12:30, etc </li>\n</ul>\n<p>Miscellaneous notes:</p>\n\
+    <ul>\n    <li>The intensity values that can be set with /device/intensity have\
+    \ a minimum value of 6 and depending on the charger, it might have a maximum of\
+    \ 16, 20 or 32.</li>\n    <li>Get /device/rfid: This doesn't directly add a card,\
+    \ it sets the charge point in a registration mode where the user has an amount\
+    \ of time to swipe the card and register it with the name that is set in tag.</li>\n\
+    </ul>\n\n<p>For any other inquiry you can reach us at info@v2charge.com</p>"
+host: v2c.cloud
+basePath: /kong/v2c_service
+tags:
+- name: device-controller
+  description: Device Controller
+- name: pairing-controller
+  description: Pairing Controller
+- name: stadistic-controller
+  description: Stadistic Controller
+- name: version-controller
+  description: Version Controller
+paths:
+  /device/chargefvmode:
+    post:
+      tags:
+      - device-controller
+      summary: 'Update CHARGE FV MODE value on device - 0: FV + Minimum Power, 1:
+        Exclusive FV, 2: Maximum Power'
+      operationId: executeChargeFVModeThirdpartyCommandUsingPOST
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/connected:
+    get:
+      tags:
+      - device-controller
+      summary: Get CONNECTED value from device
+      operationId: isConnectedUsingGET_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/currentstatecharge:
+    post:
+      tags:
+      - device-controller
+      summary: 'Get CURRENT STATE CHARGE value from device - 0: State A, 1: State
+        B, 2: State C'
+      operationId: executeCurrentStateChargeCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/dynamic:
+    post:
+      tags:
+      - device-controller
+      summary: 'Update DYNAMIC value on device - 0: dynamic off, 1: dynamic on'
+      operationId: executeChangeDynamicCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/inst_type:
+    post:
+      tags:
+      - device-controller
+      summary: 'Update INSTALLATION TYPE value on device - 0: Monophase, 1: Three-phase,
+        2: Photovoltaic'
+      operationId: executeChangeInstalationTypeCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/intensity:
+    post:
+      tags:
+      - device-controller
+      summary: Update INTENSITY value on device
+      operationId: executeChangeIntesityThirdpartyCommandUsingPOST
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/language:
+    post:
+      tags:
+      - device-controller
+      summary: 'Update Language value on device - 0: English, 1: Spanish, 2: Portuguese'
+      operationId: executeChangeLanguageCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/locked:
+    post:
+      tags:
+      - device-controller
+      summary: Execute LOCK CHARGEPOINT command on device
+      operationId: executeLockChargeCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/logo_led:
+    post:
+      tags:
+      - device-controller
+      summary: Execute logo led switch command on device
+      operationId: executeLogoLedCommandUsingPOST_2
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/mac:
+    post:
+      tags:
+      - device-controller
+      summary: Get MAC value from device
+      operationId: executeGetMacCommandUsingPOST
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/max_car_int:
+    post:
+      tags:
+      - device-controller
+      summary: Update MAX CAR INTENSITY value on device
+      operationId: executeChangeMaxCarIntesityCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/maxpower:
+    post:
+      tags:
+      - device-controller
+      summary: Update MAXPOWER value on device
+      operationId: executeChangeMaxPowerCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/min_car_int:
+    post:
+      tags:
+      - device-controller
+      summary: Update MIN CAR INTENSITY value on device
+      operationId: executeChangeMinCarIntesityCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/pausecharge:
+    post:
+      tags:
+      - device-controller
+      summary: Execute PAUSE CHARGE command on device
+      operationId: executePauseChargeCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/reboot:
+    post:
+      tags:
+      - device-controller
+      summary: Execute REBOOT command on device
+      operationId: executeRebootCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/reported:
+    get:
+      tags:
+      - device-controller
+      summary: Get REPORTED values from device
+      operationId: getReportedUsingGET_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/rfid:
+    get:
+      tags:
+      - device-controller
+      summary: Get RFID CARD values from device
+      operationId: getRFIDCommandUsingGET_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+    post:
+      tags:
+      - device-controller
+      summary: Activates CREATE CARD MODE on device
+      operationId: executeSetTagRFIDCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: tag
+        in: query
+        description: tag
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+    delete:
+      tags:
+      - device-controller
+      summary: Deleted RFID CARD on device
+      operationId: executeDeleteTagRFIDCommandUsingDELETE_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: code
+        in: query
+        description: code
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/rfid/tag:
+    post:
+      tags:
+      - device-controller
+      summary: Create/Update RFID Tag
+      operationId: executeUpdateTagRFIDCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: code
+        in: query
+        description: code
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: tag
+        in: query
+        description: tag
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/set_rfid:
+    post:
+      tags:
+      - device-controller
+      summary: 'Update SET_RFID value on device - 0: rfid reader off, 1: rfid reader
+        on'
+      operationId: executeSetPropertyRFIDCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/slave_type:
+    post:
+      tags:
+      - device-controller
+      summary: 'Update SLAVE_TYPE value on device - 0: V2C, 1: Shelly, 2: Hoax , 3:
+        Huawei'
+      operationId: executeChangeSlaveTipeCommandUsingPOST
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: value
+        in: query
+        description: value
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/startcharge:
+    post:
+      tags:
+      - device-controller
+      summary: Execute START CHARGE command on device
+      operationId: executeStartChargeCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/timer:
+    post:
+      tags:
+      - device-controller
+      summary: Update CHARGE TIMER values on device
+      operationId: programTimerCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: timer id
+        in: query
+        description: timer id
+        required: true
+        type: string
+      - in: body
+        name: timerDTO
+        description: timerDTO
+        required: true
+        schema:
+          $ref: '#/definitions/TimerDTO'
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/update:
+    post:
+      tags:
+      - device-controller
+      summary: Execute UPDATE command on device
+      operationId: updateVersionUsingPOST
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /device/wifi:
+    post:
+      tags:
+      - device-controller
+      summary: Update WIFI values on device
+      operationId: executeChangeWifiCommandUsingPOST_1
+      consumes:
+      - application/json
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      - name: password
+        in: query
+        description: password
+        required: true
+        type: string
+      - name: ssid
+        in: query
+        description: ssid
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server Exception
+      deprecated: false
+  /pairings/me:
+    get:
+      tags:
+      - pairing-controller
+      summary: Get my own pairings
+      operationId: getPairingsMeUsingGET_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/PairingDTO'
+        '500':
+          description: Server Exception
+      deprecated: false
+  /stadistic/device:
+    get:
+      tags:
+      - stadistic-controller
+      summary: Get STATISTICS from device
+      operationId: getStadisticsByDeviceUsingGET_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: chargeDateEnd
+        in: query
+        description: chargeDateEnd
+        required: false
+        type: string
+      - name: chargeDateStart
+        in: query
+        description: chargeDateStart
+        required: false
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Stadistic'
+        '500':
+          description: Server Exception
+      deprecated: false
+  /stadistic/global/me:
+    get:
+      tags:
+      - stadistic-controller
+      summary: Get STATISTICS from all my devices
+      operationId: getGlobalStadisticMeUsingGET_1
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: endChargeDateEnd
+        in: query
+        description: endChargeDateEnd
+        required: false
+        type: string
+      - name: endChargeDateStart
+        in: query
+        description: endChargeDateStart
+        required: false
+        type: string
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/GlobalStadisticInfo'
+        '500':
+          description: Server Exception
+      deprecated: false
+  /version:
+    get:
+      tags:
+      - version-controller
+      summary: Get VERSION of my device
+      operationId: getMyVersionUsingGET
+      parameters:
+      - name: apikey
+        in: header
+        description: apikey
+        required: true
+        type: string
+      - name: deviceId
+        in: query
+        description: deviceId
+        required: true
+        type: string
+      responses:
+        '200':
+          description: Command executed succesfully
+          schema:
+            type: string
+        '401':
+          description: Unauthorized
+        '404':
+          description: Device version not found
+        '500':
+          description: Server Exception
+      deprecated: false
+definitions:
+  DeviceCommandDTO:
+    type: object
+    required:
+    - method
+    properties:
+      method:
+        type: string
+        description: Method name
+      payload:
+        type: object
+        description: Arguments
+    title: DeviceCommandDTO
+  GlobalStadisticInfo:
+    type: object
+    properties:
+      cost:
+        type: number
+        format: float
+      energy:
+        type: number
+        format: float
+    title: GlobalStadisticInfo
+  PairingDTO:
+    type: object
+    required:
+    - deviceId
+    - model
+    - priceMode
+    - tag
+    properties:
+      coCost:
+        type: number
+        format: float
+        description: CO_COST
+      createdAt:
+        type: string
+        format: date-time
+        description: CREATE_AT
+      deviceId:
+        type: string
+        description: DEVICE_ID
+      latitude:
+        type: number
+        format: double
+        description: LATITUDE
+      longitude:
+        type: number
+        format: double
+        description: LONGITUDE
+      master:
+        type: boolean
+      model:
+        type: integer
+        format: int32
+        example: 1
+        description: MODEL
+      price:
+        type: number
+        format: float
+        description: PRICE
+      priceMode:
+        type: integer
+        format: int32
+        example: 1
+        description: PRICE_MODE
+      tag:
+        type: string
+        description: TAG
+      updatedAt:
+        type: string
+        format: date-time
+        description: UPDATE_AT
+    title: PairingDTO
+  Stadistic:
+    type: object
+    required:
+    - deviceId
+    - idCharge
+    - startChargeDate
+    properties:
+      coCost:
+        type: number
+        format: float
+        description: CO_COST
+      cost:
+        type: number
+        format: float
+        description: COST
+      createdAt:
+        type: string
+        format: date-time
+      deviceId:
+        type: string
+        description: DEVICE_ID
+      endChargeDate:
+        type: string
+        format: date-time
+        description: END_CHARGE_DATE
+      energy:
+        type: number
+        format: float
+        description: ENERGY
+      energyByHour:
+        type: string
+        description: ENERGY_BY_HOUR
+      finished:
+        type: boolean
+      id:
+        type: integer
+        format: int32
+      idCharge:
+        type: string
+        description: IDCHARGE
+      message:
+        type: string
+        description: MESSAGE
+      rfidCode:
+        type: string
+        description: RFID_CODE
+      startChargeDate:
+        type: string
+        format: date-time
+        description: START_CHARGE_DATE
+      updatedAt:
+        type: string
+        format: date-time
+      warning:
+        type: boolean
+        description: WARNING
+    title: Stadistic
+  TimerDTO:
+    type: object
+    properties:
+      daysOfWeek:
+        type: string
+      timeEnd:
+        type: string
+      timeStart:
+        type: string
+    title: TimerDTO

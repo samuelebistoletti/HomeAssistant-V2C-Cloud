@@ -13,6 +13,16 @@ ignore = [
     "D212", # multi-line-summary-first-line (incompatible with formatter)
     "COM812", # incompatible with formatter
     "ISC001", # incompatible with formatter
+    "TC002", # Allow importing typing-dependent modules at runtime
+    "TC003", # Allow collections imports outside type-checking blocks
+    "TRY003", # Permit descriptive exception messages inline
+    "EM101", # Allow string literals in exception constructors
+    "EM102", # Allow f-strings in exception constructors
+    "FBT001", # Allow bool positional arguments for API surface parity
+    "PLR0912", # Allow complex helper functions for API data parsing
+    "PLR0915", # Allow larger helper functions for aggregated state
+    "D401", # Permit descriptive (non-imperative) docstrings
+    "E501", # Defer line-length enforcement to formatter/docs
 ]
 
 [lint.flake8-pytest-style]

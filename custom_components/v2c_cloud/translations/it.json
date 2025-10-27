@@ -1,46 +1,145 @@
 {
   "config": {
     "abort": {
-      "already_configured": "Il dispositivo e gia configurato",
-      "reconfigure_failed": "Riconfigurazione non riuscita",
-      "reconfigure_successful": "Riconfigurazione completata"
+      "already_configured": "Il dispositivo è già configurato",
+      "reauth_successful": "Re-autenticazione completata"
     },
     "error": {
-      "invalid_auth": "Email o password non sono valide.",
-      "no_accounts": "Nessun account trovato per questo utente",
-      "unknown": "Si e verificato un errore imprevisto"
+      "cannot_connect": "Impossibile contattare il servizio V2C Cloud.",
+      "invalid_api_key": "La API key fornita non è valida.",
+      "unknown": "Si è verificato un errore imprevisto"
     },
     "step": {
       "user": {
-        "title": "Octopus Energy Italy",
-        "description": "Inserisci le credenziali Octopus Energy Italy",
+        "title": "V2C Cloud",
+        "description": "Inserisci la tua API key V2C Cloud. Puoi generarla da https://v2c.cloud/api.",
         "data": {
-          "email": "Email",
-          "password": "Password"
+          "api_key": "API key",
+          "base_url": "URL di base"
         }
       },
-      "reconfigure": {
-        "title": "Riconfigura Octopus Energy Italy",
-        "description": "Aggiorna le tue credenziali Octopus Energy Italy. Email corrente: {current_email}",
+      "reauth_confirm": {
+        "title": "Ri-autentica V2C Cloud",
+        "description": "La API key salvata non è più valida. Inserisci una nuova chiave.",
         "data": {
-          "email": "Email",
-          "password": "Password"
+          "api_key": "API key"
         }
       }
     }
   },
-  "options": {
-    "error": {
-      "invalid_auth": "Email o password non sono valide."
-    },
-    "step": {
-      "init": {
-        "title": "Opzioni Octopus Energy Italy",
-        "data": {
-          "email": "Email",
-          "password": "Password"
-        }
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Connesso"
       }
+    },
+    "sensor": {
+      "charging_state": {
+        "name": "Stato di ricarica"
+      },
+      "current_intensity": {
+        "name": "Intensità corrente"
+      },
+      "min_intensity": {
+        "name": "Intensità minima"
+      },
+      "max_intensity": {
+        "name": "Intensità massima"
+      },
+      "max_power": {
+        "name": "Potenza massima"
+      },
+      "firmware_version": {
+        "name": "Versione firmware"
+      },
+      "mac_address": {
+        "name": "Indirizzo MAC"
+      },
+      "rfid_cards": {
+        "name": "Tessere RFID"
+      }
+    },
+    "switch": {
+      "dynamic_mode": {
+        "name": "Modalità dinamica"
+      },
+      "locked": {
+        "name": "Caricatore bloccato"
+      },
+      "logo_led": {
+        "name": "Logo LED"
+      },
+      "rfid_reader": {
+        "name": "Lettore RFID"
+      }
+    },
+    "select": {
+      "installation_type": {
+        "name": "Tipo di installazione"
+      },
+      "slave_type": {
+        "name": "Dispositivo slave"
+      },
+      "language": {
+        "name": "Lingua"
+      },
+      "fv_mode": {
+        "name": "Modalità fotovoltaica"
+      }
+    },
+    "number": {
+      "current_intensity": {
+        "name": "Intensità corrente"
+      },
+      "min_intensity": {
+        "name": "Intensità minima"
+      },
+      "max_intensity": {
+        "name": "Intensità massima"
+      },
+      "max_power": {
+        "name": "Potenza massima"
+      }
+    },
+    "button": {
+      "start_charge": {
+        "name": "Avvia ricarica"
+      },
+      "pause_charge": {
+        "name": "Metti in pausa"
+      },
+      "reboot": {
+        "name": "Riavvia caricatore"
+      },
+      "trigger_update": {
+        "name": "Avvia aggiornamento firmware"
+      }
+    }
+  },
+  "services": {
+    "set_wifi_credentials": {
+      "name": "Aggiorna credenziali Wi-Fi",
+      "description": "Configura SSID e password della rete Wi-Fi del caricatore."
+    },
+    "program_timer": {
+      "name": "Configura timer di ricarica",
+      "description": "Imposta le finestre temporali di uno dei timer disponibili."
+    },
+    "register_rfid": {
+      "name": "Registra tessera RFID",
+      "description": "Attiva la modalità registrazione tessera con l'etichetta indicata."
+    },
+    "update_rfid_tag": {
+      "name": "Aggiorna etichetta RFID",
+      "description": "Rinomina una tessera RFID esistente."
+    },
+    "delete_rfid": {
+      "name": "Elimina tessera RFID",
+      "description": "Rimuove una tessera RFID registrata dal dispositivo."
+    },
+    "trigger_update": {
+      "name": "Avvia aggiornamento firmware",
+      "description": "Richiede al caricatore di cercare e installare aggiornamenti firmware."
     }
   }
 }

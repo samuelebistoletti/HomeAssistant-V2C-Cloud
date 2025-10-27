@@ -2,44 +2,144 @@
   "config": {
     "step": {
       "user": {
-        "title": "Octopus Energy Italy",
-        "description": "Enter your Octopus Energy Italy credentials",
+        "title": "V2C Cloud",
+        "description": "Enter your V2C Cloud API key. You can generate it from https://v2c.cloud/api.",
         "data": {
-          "email": "Email",
-          "password": "Password"
+          "api_key": "API key",
+          "base_url": "Base URL"
         }
       },
-      "reconfigure": {
-        "title": "Reconfigure Octopus Energy Italy",
-        "description": "Update your Octopus Energy Italy credentials. Current email: {current_email}",
+      "reauth_confirm": {
+        "title": "Reauthenticate V2C Cloud",
+        "description": "The API key is no longer valid. Please enter a new key.",
         "data": {
-          "email": "Email",
-          "password": "Password"
+          "api_key": "API key"
         }
       }
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]",
-      "no_accounts": "No accounts found for this user"
+      "invalid_api_key": "The provided API key is not valid.",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-      "reconfigure_failed": "Reconfiguration failed",
-      "reconfigure_successful": "Reconfiguration successful"
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Octopus Energy Italy Options",
-        "description": "Configure Octopus Energy Italy integration",
-        "data": {
-          "email": "Email",
-          "password": "Password"
-        }
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Connected"
       }
+    },
+    "sensor": {
+      "charging_state": {
+        "name": "Charging state"
+      },
+      "current_intensity": {
+        "name": "Current intensity"
+      },
+      "min_intensity": {
+        "name": "Minimum intensity"
+      },
+      "max_intensity": {
+        "name": "Maximum intensity"
+      },
+      "max_power": {
+        "name": "Maximum power"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "mac_address": {
+        "name": "MAC address"
+      },
+      "rfid_cards": {
+        "name": "RFID cards"
+      }
+    },
+    "switch": {
+      "dynamic_mode": {
+        "name": "Dynamic mode"
+      },
+      "locked": {
+        "name": "Charger locked"
+      },
+      "logo_led": {
+        "name": "Logo LED"
+      },
+      "rfid_reader": {
+        "name": "RFID reader"
+      }
+    },
+    "select": {
+      "installation_type": {
+        "name": "Installation type"
+      },
+      "slave_type": {
+        "name": "Slave device"
+      },
+      "language": {
+        "name": "Language"
+      },
+      "fv_mode": {
+        "name": "Photovoltaic mode"
+      }
+    },
+    "number": {
+      "current_intensity": {
+        "name": "Current intensity"
+      },
+      "min_intensity": {
+        "name": "Minimum intensity"
+      },
+      "max_intensity": {
+        "name": "Maximum intensity"
+      },
+      "max_power": {
+        "name": "Maximum power"
+      }
+    },
+    "button": {
+      "start_charge": {
+        "name": "Start charge"
+      },
+      "pause_charge": {
+        "name": "Pause charge"
+      },
+      "reboot": {
+        "name": "Reboot charger"
+      },
+      "trigger_update": {
+        "name": "Trigger firmware update"
+      }
+    }
+  },
+  "services": {
+    "set_wifi_credentials": {
+      "name": "Update Wi-Fi credentials",
+      "description": "Configure the Wi-Fi SSID and password for a charger."
+    },
+    "program_timer": {
+      "name": "Configure charging timer",
+      "description": "Set schedule windows for one of the device timers."
+    },
+    "register_rfid": {
+      "name": "Register RFID card",
+      "description": "Enable card registration mode with the supplied label."
+    },
+    "update_rfid_tag": {
+      "name": "Update RFID label",
+      "description": "Rename an existing RFID card."
+    },
+    "delete_rfid": {
+      "name": "Delete RFID card",
+      "description": "Remove a registered RFID card from the device."
+    },
+    "trigger_update": {
+      "name": "Trigger firmware update",
+      "description": "Ask the charger to search and install available firmware updates."
     }
   }
 }

@@ -1,1631 +1,553 @@
-"""
-Provide the OctopusEnergyIT class for interacting with the Octopus Energy API.
+"""Asynchronous client for the V2C Cloud public API."""
 
-Includes methods for authentication, fetching account details, managing devices, and retrieving
-various data related to electricity usage and tariffs.
-"""
+from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from typing import Any, Iterable
 
-import jwt
-from homeassistant.exceptions import ConfigEntryNotReady
-from python_graphql_client import GraphqlClient
-
-from .const import LOG_API_RESPONSES, LOG_TOKEN_RESPONSES, TOKEN_AUTO_REFRESH_INTERVAL, TOKEN_REFRESH_MARGIN
+import async_timeout
+from aiohttp import ClientError, ClientSession
 
 _LOGGER = logging.getLogger(__name__)
 
-GRAPH_QL_ENDPOINT = "https://api.oeit-kraken.energy/v1/graphql/"
-ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
-
-# Global token manager to prevent multiple instances from making redundant token requests
-# Comprehensive query that gets all data in one go
-COMPREHENSIVE_QUERY = """
-query ComprehensiveDataQuery($accountNumber: String!) {
-  account(accountNumber: $accountNumber) {
-    id
-    ledgers {
-      balance
-      ledgerType
-    }
-    properties {
-      id
-      electricitySupplyPoints {
-        id
-        pod
-        status
-        enrolmentStatus
-        enrolmentStartDate
-        supplyStartDate
-        cancellationReason
-        isSmartMeter
-        product {
-          __typename
-          ... on ElectricityProductType {
-            code
-            description
-            displayName
-            fullName
-            termsAndConditionsUrl
-            validTo
-            params {
-              productType
-              annualStandingCharge
-              consumptionCharge
-              consumptionChargeF2
-              consumptionChargeF3
-            }
-            prices {
-              productType
-              annualStandingCharge
-              annualStandingChargeUnits
-              consumptionCharge
-              consumptionChargeF2
-              consumptionChargeF3
-              consumptionChargeUnits
-            }
-          }
-        }
-        agreements(first: 10) {
-          edges {
-            node {
-              id
-              validFrom
-              validTo
-              agreedAt
-              terminatedAt
-              isActive
-              product {
-                __typename
-                ... on ElectricityProductType {
-                  code
-                  description
-                  displayName
-                  fullName
-                  termsAndConditionsUrl
-                  validTo
-                  params {
-                    productType
-                    annualStandingCharge
-                    consumptionCharge
-                    consumptionChargeF2
-                    consumptionChargeF3
-                  }
-                  prices {
-                    productType
-                    annualStandingCharge
-                    annualStandingChargeUnits
-                    consumptionCharge
-                    consumptionChargeF2
-                    consumptionChargeF3
-                    consumptionChargeUnits
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      gasSupplyPoints {
-        id
-        pdr
-        status
-        enrolmentStatus
-        enrolmentStartDate
-        supplyStartDate
-        cancellationReason
-        isSmartMeter
-        product {
-          __typename
-          ... on GasProductType {
-            code
-            description
-            displayName
-            fullName
-            termsAndConditionsUrl
-            validTo
-            params {
-              productType
-              annualStandingCharge
-              consumptionCharge
-            }
-            prices {
-              annualStandingCharge
-              consumptionCharge
-            }
-          }
-        }
-        agreements(first: 10) {
-          edges {
-            node {
-              id
-              validFrom
-              validTo
-              agreedAt
-              terminatedAt
-              isActive
-              product {
-                __typename
-                ... on GasProductType {
-                  code
-                  description
-                  displayName
-                  fullName
-                  termsAndConditionsUrl
-                  validTo
-                  params {
-                    productType
-                    annualStandingCharge
-                    consumptionCharge
-                  }
-                  prices {
-                    annualStandingCharge
-                    consumptionCharge
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  completedDispatches(accountNumber: $accountNumber) {
-    delta
-    deltaKwh
-    end
-    endDt
-    meta {
-      location
-      source
-    }
-    start
-    startDt
-  }
-  devices(accountNumber: $accountNumber) {
-    status {
-      current
-      currentState
-      isSuspended
-    }
-    provider
-    preferences {
-      mode
-      schedules {
-        dayOfWeek
-        max
-        min
-        time
-      }
-      targetType
-      unit
-      gridExport
-    }
-    preferenceSetting {
-      deviceType
-      id
-      mode
-      scheduleSettings {
-        id
-        max
-        min
-        step
-        timeFrom
-        timeStep
-        timeTo
-      }
-      unit
-    }
-    name
-    integrationDeviceId
-    id
-    deviceType
-    alerts {
-      message
-      publishedAt
-    }
-    ... on SmartFlexVehicle {
-      id
-      name
-      status {
-        current
-        currentState
-        isSuspended
-      }
-      vehicleVariant {
-        model
-        batterySize
-      }
-    }
-  }
-}
-"""
-
-# Query to get latest gas meter readings
-GAS_METER_READINGS_QUERY = """
-query GasMeterReadings(
-  $accountNumber: String!
-  $pdr: String!
-  $dateFrom: Date
-  $dateTo: Date
-  $first: Int
-  $last: Int
-) {
-  gasMeterReadings(
-    accountNumber: $accountNumber
-    pdr: $pdr
-    dateFrom: $dateFrom
-    dateTo: $dateTo
-    first: $first
-    last: $last
-  ) {
-    edges {
-      node {
-        readingDate
-        readingType
-        readingSource
-        consumptionValue
-      }
-    }
-  }
-}
-"""
-
-# Query to get electricity measurements for a supply point
-PROPERTY_ELECTRICITY_MEASUREMENTS_QUERY = """
-query ElectricityMeasurements(
-  $propertyId: ID!
-  $pod: String!
-  $startOn: Date
-  $endOn: Date
-  $first: Int
-  $last: Int
-) {
-  property(id: $propertyId) {
-    measurements(
-      startOn: $startOn
-      endOn: $endOn
-      first: $first
-      last: $last
-      utilityFilters: [
-        {
-          electricityFilters: {
-            marketSupplyPointId: $pod
-            readingFrequencyType: POINT_IN_TIME
-            readingDirection: CONSUMPTION
-          }
-        }
-      ]
-    ) {
-      edges {
-        node {
-          value
-          unit
-          readAt
-          source
-        }
-      }
-    }
-  }
-}
-"""
+DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
+DEFAULT_TIMEOUT = 15
 
 
-# Query to get vehicle device details with preference settings
-VEHICLE_DETAILS_QUERY = """
-query Vehicle($accountNumber: String = "") {
-  devices(accountNumber: $accountNumber) {
-    deviceType
-    id
-    integrationDeviceId
-    name
-    preferenceSetting {
-      deviceType
-      id
-      mode
-      scheduleSettings {
-        id
-        max
-        min
-        step
-        timeFrom
-        timeStep
-        timeTo
-      }
-      unit
-    }
-    preferences {
-      gridExport
-      mode
-      targetType
-      unit
-    }
-  }
-}
-"""
-
-# Simple account discovery query
-ACCOUNT_DISCOVERY_QUERY = """
-query {
-  viewer {
-    accounts {
-      number
-      ledgers {
-        balance
-        ledgerType
-      }
-    }
-  }
-}
-"""
+class V2CError(Exception):
+    """Base exception for V2C client errors."""
 
 
-
-SET_DEVICE_PREFERENCES_MUTATION = """
-mutation SetDevicePreferences($input: SmartFlexDevicePreferencesInput!) {
-  setDevicePreferences(input: $input) {
-    id
-  }
-}
-"""
-
-DEVICE_SUSPENSION_MUTATION = """
-mutation UpdateDeviceSmartControl($input: SmartControlInput!) {
-  updateDeviceSmartControl(input: $input) {
-    id
-  }
-}
-"""
-
-FLEX_PLANNED_DISPATCHES_QUERY = """
-query FlexPlannedDispatches($deviceId: String!) {
-  flexPlannedDispatches(deviceId: $deviceId) {
-    end
-    energyAddedKwh
-    start
-    type
-  }
-}
-"""
+class V2CAuthError(V2CError):
+    """Raised when authentication fails (HTTP 401)."""
 
 
+class V2CRequestError(V2CError):
+    """Raised when the V2C API responds with an unexpected error."""
 
-class TokenManager:
-    """Store and validate auth token details."""
-
-    def __init__(self) -> None:
-        self._token: str | None = None
-        self._expiry: float | None = None
-
-    @property
-    def token(self) -> str | None:
-        """Return the current token, if any."""
-        return self._token
-
-    @property
-    def expiry(self) -> float | None:
-        """Return the token expiry timestamp."""
-        return self._expiry
-
-    @property
-    def is_valid(self) -> bool:
-        """Return True when a token exists and is not close to expiry."""
-        if not self._token:
-            return False
-
-        if self._expiry is None:
-            return True
-
-        now = datetime.now(UTC).timestamp()
-        if now >= self._expiry - TOKEN_REFRESH_MARGIN:
-            _LOGGER.debug(
-                "Token validity check: INVALID (expires in %s seconds)",
-                int(self._expiry - now),
-            )
-            return False
-
-        return True
-
-    def set_token(self, token: str, expiry: float | None = None) -> None:
-        """Store a new token and calculate its expiry."""
-        self._token = token
-
-        if expiry is not None:
-            self._expiry = float(expiry)
-            return
-
-        try:
-            decoded = jwt.decode(token, options={"verify_signature": False})
-            exp = decoded.get("exp")
-            self._expiry = float(exp) if exp is not None else None
-        except Exception as exc:
-            now = datetime.now(UTC).timestamp()
-            self._expiry = now + TOKEN_AUTO_REFRESH_INTERVAL
-            _LOGGER.debug(
-                "Unable to decode token expiry (%s). Falling back to %s minutes.",
-                exc,
-                TOKEN_AUTO_REFRESH_INTERVAL // 60,
-            )
-
-    def clear(self) -> None:
-        """Forget the current token."""
-        self._token = None
-        self._expiry = None
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
-class OctopusEnergyIT:
-    def __init__(self, email: str, password: str):
-        """
-        Initialize the OctopusEnergyIT API client.
-
-        Args:
-            email: The email address for the Octopus Energy Italy account
-            password: The password for the Octopus Energy Italy account
-
-        """
-        self._email = email
-        self._password = password
-
-        self._token_manager = TokenManager()
-        self._login_lock = asyncio.Lock()
-
-    @property
-    def _token(self):
-        """Get the current token from the token manager."""
-        return self._token_manager.token
-
-    def _get_auth_headers(self):
-        """Get headers with authorization token."""
-        return {"Authorization": self._token} if self._token else {}
-
-    def _get_graphql_client(self, *, use_auth: bool = True, additional_headers=None):
-        """Return a GraphQL client configured with optional auth headers."""
-        headers = self._get_auth_headers() if use_auth else {}
-        if additional_headers:
-            headers.update(additional_headers)
-        return GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-
-
-    async def _execute_graphql(
-        self,
-        query: str,
-        variables: dict | None = None,
-        *,
-        require_auth: bool = True,
-        retry_on_token_error: bool = True,
-    ) -> dict | None:
-        """Execute a GraphQL request with optional auth and retry handling."""
-        if require_auth and not await self.ensure_token():
-            _LOGGER.error("Cannot execute GraphQL query without a valid token")
-            return None
-
-        client = self._get_graphql_client(use_auth=require_auth)
-        try:
-            response = await client.execute_async(
-                query=query,
-                variables=variables or {},
-            )
-        except Exception as exc:
-            _LOGGER.error("GraphQL request failed: %s", exc)
-            return None
-
-        if (
-            require_auth
-            and retry_on_token_error
-            and isinstance(response, dict)
-            and any(
-                (error or {}).get("extensions", {}).get("errorCode") == "KT-CT-1124"
-                for error in response.get("errors", [])
-            )
-        ):
-            _LOGGER.warning("Token expired during GraphQL request; refreshing and retrying")
-            self._token_manager.clear()
-            if await self.login():
-                return await self._execute_graphql(
-                    query,
-                    variables,
-                    require_auth=require_auth,
-                    retry_on_token_error=False,
-                )
-            return None
-
-        return response
-
-    async def login(self) -> bool:
-            """Login and obtain a new token."""
-            # Import constants for logging options
-
-            # Use a lock to prevent multiple concurrent login attempts
-            async with self._login_lock:
-                # Check if token is still valid after waiting for the lock
-                if self._token_manager.is_valid:
-                    _LOGGER.debug("Token still valid after lock, skipping login")
-                    return True
-
-                query = """
-                    mutation krakenTokenAuthentication($email: String!, $password: String!) {
-                      obtainKrakenToken(input: { email: $email, password: $password }) {
-                        token
-                        payload
-                      }
-                    }
-                """
-                variables = {"email": self._email, "password": self._password}
-                retries = 5  # Reduced from 10 to 5 retries for simpler logic
-                attempt = 0
-                delay = 1  # Start with 1 second delay
-                max_delay = 30  # Cap the delay at 30 seconds
-
-                while attempt < retries:
-                    attempt += 1
-                    try:
-                        _LOGGER.debug("Making login attempt %s of %s", attempt, retries)
-                        response = await self._execute_graphql(
-                            query=query,
-                            variables=variables,
-                            require_auth=False,
-                            retry_on_token_error=False,
-                        )
-
-                        # Log token response when LOG_TOKEN_RESPONSES is enabled
-                        if LOG_TOKEN_RESPONSES:
-                            # Create a safe copy of the response for logging
-                            import copy
-
-                            safe_response = copy.deepcopy(response)
-                            if isinstance(safe_response, dict):
-                                # Check if we have a token in the response and mask most of it for logging
-                                token_container = (
-                                    safe_response.get("data", {}).get("obtainKrakenToken")
-                                )
-                                if isinstance(token_container, dict) and "token" in (
-                                    token_container
-                                ):
-                                    token = token_container["token"]
-                                    if token and len(token) > 10:
-                                        # Keep first 5 and last 5 chars, mask the rest
-                                        mask_length = len(token) - 10
-                                        masked_token = (
-                                            token[:5] + "*" * mask_length + token[-5:]
-                                        )
-                                        token_container["token"] = masked_token
-                            _LOGGER.info(
-                                "Token response (partial): %s",
-                                json.dumps(safe_response, indent=2),
-                            )
-
-                        if not isinstance(response, dict):
-                            _LOGGER.error(
-                                "Unexpected login response type at attempt %s: %s",
-                                attempt,
-                                response,
-                            )
-                            await asyncio.sleep(delay)
-                            delay = min(delay * 2, max_delay)
-                            continue
-
-                        if "errors" in response:
-                            first_error = response["errors"][0]
-                            extensions = first_error.get("extensions", {})
-                            error_code = extensions.get("errorCode")
-                            error_message = first_error.get("message", "Unknown error")
-
-                            if error_code == "KT-CT-1138":  # Invalid credentials
-                                _LOGGER.error(
-                                    "Login failed: %s (attempt %s of %s). The credentials appear to be invalid; aborting further attempts.",
-                                    error_message,
-                                    attempt,
-                                    retries,
-                                )
-                                return False
-
-                            if error_code == "KT-CT-1199":  # Too many requests
-                                _LOGGER.warning(
-                                    "Rate limit hit. Retrying in %s seconds... (attempt %s of %s)",
-                                    delay,
-                                    attempt,
-                                    retries,
-                                )
-                                await asyncio.sleep(delay)
-                                delay = min(
-                                    delay * 2, max_delay
-                                )  # Exponential backoff with max cap
-                                continue
-                            _LOGGER.error(
-                                "Login failed: %s (attempt %s of %s)",
-                                error_message,
-                                attempt,
-                                retries,
-                            )
-                            # For other types of errors, continue with retries
-                            await asyncio.sleep(delay)
-                            delay = min(delay * 2, max_delay)
-                            continue
-
-                        if "data" in response and "obtainKrakenToken" in response["data"]:
-                            token_data = response["data"]["obtainKrakenToken"]
-                            token = token_data.get("token")
-                            payload = token_data.get("payload")
-
-                            if token:
-                                # Pass both token and expiration time to the token manager
-                                if (
-                                    payload
-                                    and isinstance(payload, dict)
-                                    and "exp" in payload
-                                ):
-                                    expiration = payload["exp"]
-                                    self._token_manager.set_token(token, expiration)
-                                else:
-                                    # Fall back to JWT decoding if no payload available
-                                    self._token_manager.set_token(token)
-
-                                return True
-                            _LOGGER.error(
-                                "No token in response despite successful request (attempt %s of %s)",
-                                attempt,
-                                retries,
-                            )
-                        else:
-                            _LOGGER.error(
-                                "Unexpected API response format at attempt %s: %s",
-                                attempt,
-                                response,
-                            )
-
-                        # If we got here with an invalid response, try again
-                        await asyncio.sleep(delay)
-                        delay = min(delay * 2, max_delay)
-
-                    except Exception as e:
-                        _LOGGER.error("Error during login attempt %s: %s", attempt, e)
-                        await asyncio.sleep(delay)
-                        delay = min(delay * 2, max_delay)
-
-                _LOGGER.error("All %s login attempts failed.", retries)
-                return False
-
-    async def ensure_token(self):
-            """Ensure a valid token is available, refreshing if necessary."""
-            if not self._token_manager.is_valid:
-                _LOGGER.debug("Token invalid or expired, logging in again")
-                return await self.login()
-            return True
-
-        # Consolidated query to get both accounts list and initial data in one API call
-
-    async def fetch_accounts_with_initial_data(self):
-        """Fetch accounts and initial data in a single API call."""
-        response = await self._execute_graphql(ACCOUNT_DISCOVERY_QUERY)
-
-        if not isinstance(response, dict):
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            return None
-
-        if "data" in response and "viewer" in response["data"]:
-            accounts = response["data"]["viewer"].get("accounts") or []
-            if not accounts:
-                _LOGGER.error("No accounts found")
-                return None
-            return accounts
-
-        errors = response.get("errors") if isinstance(response, dict) else None
-        if errors:
-            _LOGGER.error("GraphQL errors fetching accounts: %s", errors)
+def _coerce_scalar(text: str) -> Any:
+    """Try to interpret a textual response as JSON, number or boolean."""
+    stripped = text.strip()
+    if not stripped:
         return None
 
-
-    async def accounts(self):
-            """Fetch account numbers."""
-            accounts = await self.fetch_accounts_with_initial_data()
-            if not accounts:
-                _LOGGER.error("Failed to fetch accounts")
-                raise ConfigEntryNotReady("Failed to fetch accounts")
-
-            return [account["number"] for account in accounts]
-
-    async def fetch_accounts(self):
-            """Fetch accounts data."""
-            return await self.fetch_accounts_with_initial_data()
-
-        # Comprehensive data fetch in a single query
-    async def fetch_all_data(self, account_number: str):
-            """
-            Fetch all data for an account including devices, dispatches and account details.
-
-            This comprehensive query consolidates multiple separate queries into one
-            to minimize API calls and improve performance.
-            """
-            variables = {"accountNumber": account_number}
-
-            try:
-                _LOGGER.debug(
-                    "Making API request to fetch_all_data for account %s",
-                    account_number,
-                )
-                response = await self._execute_graphql(
-                    COMPREHENSIVE_QUERY,
-                    variables=variables,
-                )
-
-                if response is None:
-                    _LOGGER.error("API returned None response")
-                    return None
-
-                if LOG_API_RESPONSES:
-                    _LOGGER.info("API Response: %s", json.dumps(response, indent=2))
-                else:
-                    _LOGGER.debug(
-                        "API request completed. Set LOG_API_RESPONSES=True for full response logging"
-                    )
-
-                # Initialize the result structure - note that 'products' is an empty list
-                # since we removed that field from the query
-                result = {
-                    "account": {},
-                    "products": [],  # This will stay empty as we removed the property field
-                    "completedDispatches": [],
-                    "devices": [],
-                    "plannedDispatches": [],
-                    "gas_products": [],
-                }
-
-                # Process the GraphQL response, tolerate partial data when possible
-                if "data" in response:
-                    data = response["data"]
-
-                    account_payload = data.get("account")
-                    if account_payload:
-                        self.normalise_account_properties(account_payload)
-                        result["account"] = account_payload
-
-                        electricity_products = self.extract_electricity_products(account_payload)
-                        if electricity_products:
-                            result["products"] = electricity_products
-                            _LOGGER.debug(
-                                "Extracted %d electricity products from account data",
-                                len(electricity_products),
-                            )
-                        gas_products = self.extract_gas_products(account_payload)
-                        if gas_products:
-                            result["gas_products"] = gas_products
-                            _LOGGER.debug(
-                                "Extracted %d gas products from account data",
-                                len(gas_products),
-                            )
-                    else:
-                        _LOGGER.debug("No account payload returned in response")
-
-                    result["devices"] = data.get("devices") or []
-                    result["completedDispatches"] = data.get("completedDispatches") or []
-
-                    # Fetch flex planned dispatches for all devices with the new API
-                    result["plannedDispatches"] = []
-                    if result["devices"]:
-                        _LOGGER.debug(
-                            "Fetching flex planned dispatches for %d devices",
-                            len(result["devices"]),
-                        )
-                        for device in result["devices"]:
-                            device_id = device.get("id")
-                            device_name = device.get("name", "Unknown")
-                            if device_id:
-                                try:
-                                    flex_dispatches = (
-                                        await self.fetch_flex_planned_dispatches(device_id)
-                                    )
-                                    if flex_dispatches:
-                                        # Transform the new API format to match the old format for backward compatibility
-                                        for dispatch in flex_dispatches:
-                                            # Map new fields to old field names where possible
-                                            transformed_dispatch = {
-                                                "start": dispatch.get("start"),
-                                                "startDt": dispatch.get(
-                                                    "start"
-                                                ),  # Same as start
-                                                "end": dispatch.get("end"),
-                                                "endDt": dispatch.get("end"),  # Same as end
-                                                "deltaKwh": dispatch.get("energyAddedKwh"),
-                                                "delta": dispatch.get(
-                                                    "energyAddedKwh"
-                                                ),  # Same as deltaKwh
-                                                "type": dispatch.get(
-                                                    "type", "UNKNOWN"
-                                                ),  # Add type as top-level attribute
-                                                "meta": {
-                                                    "source": "flex_api",
-                                                    "type": dispatch.get("type", "UNKNOWN"),
-                                                    "deviceId": device_id,
-                                                },
-                                            }
-                                            result["plannedDispatches"].append(
-                                                transformed_dispatch
-                                            )
-                                        _LOGGER.debug(
-                                            "Added %d flex planned dispatches from device %s (%s)",
-                                            len(flex_dispatches),
-                                            device_id,
-                                            device_name,
-                                        )
-                                except Exception as e:
-                                    _LOGGER.warning(
-                                        "Failed to fetch flex planned dispatches for device %s: %s",
-                                        device_id,
-                                        e,
-                                    )
-                    else:
-                        _LOGGER.debug(
-                            "No devices found, skipping flex planned dispatches fetch"
-                        )
-
-                    # Only log errors but don't fail the whole request if we got at least account data
-                    if "errors" in response and result["account"]:
-                        # Filter only the errors that are about missing devices or dispatches
-                        non_critical_errors = [
-                            error
-                            for error in response["errors"]
-                            if (
-                                error.get("path", [])
-                                and error.get("path")[0]
-                                in ["completedDispatches", "devices"]
-                                and error.get("extensions", {}).get("errorCode")
-                                == "KT-CT-4301"
-                            )
-                        ]
-
-                        # Handle other errors that might affect the account data
-                        other_errors = [
-                            error
-                            for error in response["errors"]
-                            if error not in non_critical_errors
-                        ]
-
-                        if non_critical_errors:
-                            _LOGGER.warning(
-                                "API returned non-critical errors (expected for accounts without devices/dispatches): %s",
-                                non_critical_errors,
-                            )
-
-                        if other_errors:
-                            _LOGGER.error("API returned critical errors: %s", other_errors)
-
-                            # Check for token expiry in the other errors
-                            for error in other_errors:
-                                error_code = error.get("extensions", {}).get("errorCode")
-                                if error_code == "KT-CT-1124":  # JWT expired
-                                    _LOGGER.warning("Token expired, refreshing...")
-                                    self._token_manager.clear()
-                                    success = await self.login()
-                                    if success:
-                                        # Retry with new token
-                                        return await self.fetch_all_data(account_number)
-
-                    return result
-                if "errors" in response:
-                    # Handle critical errors that prevent any data from being returned
-                    error = response.get("errors", [{}])[0]
-                    error_code = error.get("extensions", {}).get("errorCode")
-
-                    # Check if token expired error
-                    if error_code == "KT-CT-1124":  # JWT expired
-                        _LOGGER.warning("Token expired, refreshing...")
-                        self._token_manager.clear()
-                        success = await self.login()
-                        if success:
-                            # Retry with new token
-                            return await self.fetch_all_data(account_number)
-
-                    _LOGGER.error(
-                        "API returned critical errors with no data: %s",
-                        response.get("errors"),
-                    )
-                    return None
-                _LOGGER.error("API response contains neither data nor errors")
-                return None
-
-            except Exception as e:
-                _LOGGER.error("Error fetching all data: %s", e)
-                return None
-
-    @staticmethod
-    def flatten_connection(connection):
-            """Convert Relay-style connections to plain lists of nodes."""
-            if isinstance(connection, dict):
-                edges = connection.get("edges") or []
-                nodes = [edge.get("node") for edge in edges if edge and edge.get("node")]
-                return nodes
-            return connection if isinstance(connection, list) else []
-
-    def normalise_account_properties(self, account_data):
-            """Ensure property collections are usable within Home Assistant."""
-            properties = account_data.get("properties") or []
-            account_data["properties"] = properties
-
-            for property_data in properties:
-                for key in ("electricitySupplyPoints", "gasSupplyPoints"):
-                    supply_points = property_data.get(key) or []
-                    property_data[key] = supply_points
-
-                    for supply_point in supply_points:
-                        agreements = supply_point.get("agreements")
-                        supply_point["agreements"] = self.flatten_connection(agreements)
-
-    @staticmethod
-    def to_float_or_none(value):
-            """Best-effort conversion of API decimal values to floats."""
-            if value is None:
-                return None
-            if isinstance(value, (int, float)):
-                return float(value)
-            try:
-                return float(str(value))
-            except (TypeError, ValueError):
-                return None
-
-    @staticmethod
-    def format_cents_from_eur(amount):
-            """Convert an amount in EUR/kWh to a string of cents for legacy consumers."""
-            if amount is None:
-                return "0"
-            try:
-                cents = float(amount) * 100.0
-                formatted = f"{cents:.6f}".rstrip("0").rstrip(".")
-                return formatted or "0"
-            except (TypeError, ValueError):
-                return "0"
-
-    def build_electricity_product_entry(self, supply_point, agreement):
-            """Create a simplified product descriptor for electricity tariffs."""
-            product = {}
-            valid_from = None
-            valid_to = None
-            agreement_id = None
-
-            if agreement:
-                product = agreement.get("product") or {}
-                valid_from = agreement.get("validFrom")
-                valid_to = agreement.get("validTo")
-                agreement_id = agreement.get("id")
-            else:
-                product = supply_point.get("product") or {}
-
-            if not product:
-                return None
-
-            params = product.get("params") or {}
-            prices = product.get("prices") or {}
-
-            def pick_value(key):
-                if prices.get(key) is not None:
-                    return prices.get(key)
-                if params.get(key) is not None:
-                    return params.get(key)
-                return None
-
-            base_rate = self.to_float_or_none(pick_value("consumptionCharge"))
-            f2_rate = self.to_float_or_none(pick_value("consumptionChargeF2"))
-            f3_rate = self.to_float_or_none(pick_value("consumptionChargeF3"))
-            annual_charge = self.to_float_or_none(pick_value("annualStandingCharge"))
-            units = pick_value("consumptionChargeUnits")
-            annual_units = pick_value("annualStandingChargeUnits")
-
-            product_type = params.get("productType") or prices.get("productType") or ""
-            normalised_type = product_type.lower() if isinstance(product_type, str) else ""
-            is_time_of_use = any(rate is not None for rate in (f2_rate, f3_rate)) or normalised_type in {
-                "time_of_use",
-                "timeofuse",
-                "tou",
-            }
-
-            entry = {
-                "code": product.get("code"),
-                "description": product.get("description"),
-                "name": product.get("fullName") or product.get("displayName"),
-                "displayName": product.get("displayName"),
-                "validFrom": valid_from,
-                "validTo": valid_to,
-                "agreementId": agreement_id,
-                "productType": product_type,
-                "isTimeOfUse": is_time_of_use,
-                "type": "TimeOfUse" if is_time_of_use else "Simple",
-                "timeslots": [],
-                "termsAndConditionsUrl": product.get("termsAndConditionsUrl"),
-                "pricing": {
-                    "base": base_rate,
-                    "f2": f2_rate,
-                    "f3": f3_rate,
-                    "units": units,
-                    "annualStandingCharge": annual_charge,
-                    "annualStandingChargeUnits": annual_units,
-                },
-                "params": params,
-                "rawPrices": prices,
-                "supplyPoint": {
-                    "id": supply_point.get("id"),
-                    "pod": supply_point.get("pod"),
-                    "status": supply_point.get("status"),
-                    "enrolmentStatus": supply_point.get("enrolmentStatus"),
-                    "enrolmentStartDate": supply_point.get("enrolmentStartDate"),
-                    "supplyStartDate": supply_point.get("supplyStartDate"),
-                    "isSmartMeter": supply_point.get("isSmartMeter"),
-                    "cancellationReason": supply_point.get("cancellationReason"),
-                },
-                "unitRateForecast": [],
-            }
-
-            entry["grossRate"] = self.format_cents_from_eur(base_rate)
-
-            return entry
-
-    def build_gas_product_entry(self, supply_point, agreement):
-            """Create a simplified product descriptor for gas tariffs."""
-            product = {}
-            valid_from = None
-            valid_to = None
-            agreement_id = None
-
-            if agreement:
-                product = agreement.get("product") or {}
-                valid_from = agreement.get("validFrom")
-                valid_to = agreement.get("validTo")
-                agreement_id = agreement.get("id")
-            else:
-                product = supply_point.get("product") or {}
-
-            if not product:
-                return None
-
-            params = product.get("params") or {}
-            prices = product.get("prices") or {}
-
-            def pick_value(key):
-                if prices.get(key) is not None:
-                    return prices.get(key)
-                if params.get(key) is not None:
-                    return params.get(key)
-                return None
-
-            base_rate = self.to_float_or_none(pick_value("consumptionCharge"))
-            annual_charge = self.to_float_or_none(pick_value("annualStandingCharge"))
-
-            entry = {
-                "code": product.get("code"),
-                "description": product.get("description"),
-                "name": product.get("fullName") or product.get("displayName"),
-                "displayName": product.get("displayName"),
-                "validFrom": valid_from,
-                "validTo": valid_to,
-                "agreementId": agreement_id,
-                "termsAndConditionsUrl": product.get("termsAndConditionsUrl"),
-                "pricing": {
-                    "base": base_rate,
-                    "units": params.get("consumptionChargeUnits"),
-                    "annualStandingCharge": annual_charge,
-                },
-                "params": params,
-                "rawPrices": prices,
-                "supplyPoint": {
-                    "id": supply_point.get("id"),
-                    "pdr": supply_point.get("pdr"),
-                    "status": supply_point.get("status"),
-                    "enrolmentStatus": supply_point.get("enrolmentStatus"),
-                    "enrolmentStartDate": supply_point.get("enrolmentStartDate"),
-                    "supplyStartDate": supply_point.get("supplyStartDate"),
-                    "isSmartMeter": supply_point.get("isSmartMeter"),
-                    "cancellationReason": supply_point.get("cancellationReason"),
-                },
-            }
-
-            entry["grossRate"] = self.format_cents_from_eur(base_rate)
-
-            return entry
-
-    def extract_gas_products(self, account_data):
-            """Collect gas products from the account payload."""
-            products = []
-            seen_keys = set()
-
-            for property_data in account_data.get("properties") or []:
-                for supply_point in property_data.get("gasSupplyPoints") or []:
-                    agreements = supply_point.get("agreements") or []
-
-                    if agreements:
-                        for agreement in agreements:
-                            entry = self.build_gas_product_entry(supply_point, agreement)
-                            if entry:
-                                key = (
-                                    entry.get("code"),
-                                    entry.get("validFrom"),
-                                    entry.get("validTo"),
-                                    entry.get("agreementId"),
-                                    entry.get("supplyPoint", {}).get("id"),
-                                )
-                                if key not in seen_keys:
-                                    seen_keys.add(key)
-                                    products.append(entry)
-                    else:
-                        entry = self.build_gas_product_entry(supply_point, None)
-                        if entry:
-                            key = (
-                                entry.get("code"),
-                                entry.get("validFrom"),
-                                entry.get("validTo"),
-                                entry.get("agreementId"),
-                                entry.get("supplyPoint", {}).get("id"),
-                            )
-                            if key not in seen_keys:
-                                seen_keys.add(key)
-                                products.append(entry)
-
-            return products
-
-    def extract_electricity_products(self, account_data):
-            """Collect electricity products from the account payload."""
-            products = []
-            seen_keys = set()
-
-            for property_data in account_data.get("properties") or []:
-                for supply_point in property_data.get("electricitySupplyPoints") or []:
-                    agreements = supply_point.get("agreements") or []
-
-                    if agreements:
-                        for agreement in agreements:
-                            entry = self.build_electricity_product_entry(
-                                supply_point, agreement
-                            )
-                            if entry:
-                                key = (
-                                    entry.get("code"),
-                                    entry.get("validFrom"),
-                                    entry.get("validTo"),
-                                    entry.get("agreementId"),
-                                    entry.get("supplyPoint", {}).get("id"),
-                                )
-                                if key not in seen_keys:
-                                    seen_keys.add(key)
-                                    products.append(entry)
-                    else:
-                        entry = self.build_electricity_product_entry(supply_point, None)
-                        if entry:
-                            key = (
-                                entry.get("code"),
-                                entry.get("validFrom"),
-                                entry.get("validTo"),
-                                entry.get("agreementId"),
-                                entry.get("supplyPoint", {}).get("id"),
-                            )
-                            if key not in seen_keys:
-                                seen_keys.add(key)
-                                products.append(entry)
-
-            return products
-
-
-    async def change_device_suspension(self, device_id: str, action: str):
-        """Change device suspension state."""
-        payload = {"input": {"deviceId": device_id, "action": action}}
-        _LOGGER.debug(
-            "Executing change_device_suspension: device_id=%s, action=%s",
-            device_id,
-            action,
-        )
-
-        response = await self._execute_graphql(
-            DEVICE_SUSPENSION_MUTATION,
-            variables=payload,
-        )
-
-        if not isinstance(response, dict):
-            _LOGGER.error("Invalid response while changing device suspension: %s", response)
-            return None
-
-        if errors := response.get("errors"):
-            first_error = errors[0] if errors else {}
-            error_code = first_error.get("extensions", {}).get("errorCode")
-            error_message = first_error.get("message", "Unknown error")
-            _LOGGER.error(
-                "API returned errors when changing device suspension: %s (code: %s)",
-                error_message,
-                error_code,
-            )
-            return None
-
-        return (
-            response.get("data", {})
-            .get("updateDeviceSmartControl", {})
-            .get("id")
-        )
-
-
-
-    async def set_device_preferences(
-        self,
-        device_id: str,
-        target_percentage: int,
-        target_time: str,
-    ) -> bool:
-        """Set device charging preferences using the SmartFlex API."""
-        if not await self.ensure_token():
-            _LOGGER.error("Failed to ensure valid token for set_device_preferences")
-            return False
-
-        original_percentage = target_percentage
-        target_percentage = max(20, min(100, int(round(target_percentage / 5) * 5)))
-        if target_percentage != original_percentage:
-            _LOGGER.debug(
-                "Adjusted target percentage from %s to %s to satisfy 5%% step requirement",
-                original_percentage,
-                target_percentage,
-            )
-
-        if not 20 <= target_percentage <= 100 or target_percentage % 5 != 0:
-            _LOGGER.error(
-                "Invalid target percentage: %s. Must be between 20 and 100 in 5%% steps.",
-                target_percentage,
-            )
-            return False
-
+    # Some endpoints reply with json encoded as text/plain.
+    if stripped.startswith("{") or stripped.startswith("["):
         try:
-            formatted_time = self.format_time_to_hh_mm(target_time)
-            hour = int(formatted_time.split(":")[0])
-            if not 4 <= hour <= 17:
-                _LOGGER.error(
-                    "Invalid target time: %s. Must be between 04:00 and 17:00.",
-                    formatted_time,
-                )
-                return False
-        except ValueError as exc:
-            _LOGGER.error("Time format validation error: %s", exc)
-            return False
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
 
-        days = [
-            "MONDAY",
-            "TUESDAY",
-            "WEDNESDAY",
-            "THURSDAY",
-            "FRIDAY",
-            "SATURDAY",
-            "SUNDAY",
-        ]
-        schedules = [
-            {"dayOfWeek": day, "time": formatted_time, "max": target_percentage}
-            for day in days
-        ]
+    lowered = stripped.lower()
+    if lowered in ("true", "false"):
+        return lowered == "true"
 
-        variables = {
-            "input": {
-                "deviceId": device_id,
-                "mode": "CHARGE",
-                "unit": "PERCENTAGE",
-                "schedules": schedules,
-            }
+    try:
+        if "." in stripped:
+            return float(stripped)
+        return int(stripped)
+    except ValueError:
+        return stripped
+
+
+@dataclass(slots=True)
+class V2CDeviceState:
+    """State snapshot for a single V2C device."""
+
+    device_id: str
+    pairing: dict[str, Any]
+    connected: bool | None = None
+    current_state: Any | None = None
+    reported_raw: Any | None = None
+    reported: dict[str, Any] | None = None
+    rfid_cards: list[dict[str, Any]] | None = None
+    version: str | None = None
+    mac_address: str | None = None
+    additional: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation for coordinator storage."""
+        return {
+            "device_id": self.device_id,
+            "pairing": self.pairing,
+            "connected": self.connected,
+            "current_state": self.current_state,
+            "reported_raw": self.reported_raw,
+            "reported": self.reported,
+            "rfid_cards": self.rfid_cards,
+            "version": self.version,
+            "mac_address": self.mac_address,
+            "additional": self.additional,
+        }
+
+
+class V2CClient:
+    """Simple asynchronous client for the V2C Cloud API."""
+
+    def __init__(
+        self,
+        session: ClientSession,
+        api_key: str,
+        *,
+        base_url: str | None = None,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self._session = session
+        self._api_key = api_key
+        self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        self._timeout = timeout
+
+    @property
+    def base_url(self) -> str:
+        """Return the base URL used by the client."""
+        return self._base_url
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: Any | None = None,
+    ) -> Any:
+        """Perform an HTTP request and normalise the response."""
+        url = f"{self._base_url}{path}"
+        headers = {
+            "apikey": self._api_key,
         }
 
         _LOGGER.debug(
-            "Making set_device_preferences API request with device_id: %s, target: %s%%, time: %s",
+            "V2C request %s %s params=%s body=%s", method, url, params, json_body
+        )
+
+        try:
+            async with async_timeout.timeout(self._timeout):
+                async with self._session.request(
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
+                    json=json_body,
+                ) as response:
+                    status = response.status
+                    content_type = response.headers.get("Content-Type", "")
+
+                    if status == 401:
+                        text = await response.text()
+                        raise V2CAuthError(f"V2C authentication failed: {text}")
+
+                    if status >= 400:
+                        text = await response.text()
+                        raise V2CRequestError(
+                            f"V2C API error {status}: {text or 'unknown error'}",
+                            status=status,
+                        )
+
+                    if status == 204:
+                        return None
+
+                    if "application/json" in content_type:
+                        return await response.json(content_type=None)
+
+                    text = await response.text()
+                    return _coerce_scalar(text)
+        except async_timeout.TimeoutError as err:
+            raise V2CRequestError("Request to V2C API timed out") from err
+        except ClientError as err:
+            raise V2CRequestError(f"HTTP error while calling V2C API: {err}") from err
+
+    async def async_get_pairings(self) -> list[dict[str, Any]]:
+        """Return the pairings linked to the current account."""
+        data = await self._request("GET", "/pairings/me")
+        if isinstance(data, list):
+            return data
+        if data is None:
+            return []
+        _LOGGER.debug("Unexpected pairings payload type: %s", type(data))
+        return []
+
+    async def async_get_global_statistics(
+        self,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return aggregated statistics across all devices."""
+        params: dict[str, Any] = {}
+        if start:
+            params["endChargeDateStart"] = start
+        if end:
+            params["endChargeDateEnd"] = end
+        data = await self._request(
+            "GET",
+            "/stadistic/global/me",
+            params=params if params else None,
+        )
+        if isinstance(data, list):
+            return data
+        return []
+
+    async def async_get_device_statistics(
+        self,
+        device_id: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return charge statistics for a single device."""
+        params: dict[str, Any] = {"deviceId": device_id}
+        if start:
+            params["chargeDateStart"] = start
+        if end:
+            params["chargeDateEnd"] = end
+        data = await self._request(
+            "GET",
+            "/stadistic/device",
+            params=params,
+        )
+        if isinstance(data, list):
+            return data
+        return []
+
+    async def async_get_version(self, device_id: str) -> Any:
+        """Return the firmware version for the given device."""
+        return await self._request(
+            "GET",
+            "/version",
+            params={"deviceId": device_id},
+        )
+
+    async def async_get_connected(self, device_id: str) -> Any:
+        """Return whether the device is connected."""
+        return await self._request(
+            "GET",
+            "/device/connected",
+            params={"deviceId": device_id},
+        )
+
+    async def async_get_reported(self, device_id: str) -> Any:
+        """Return the reported state of the device."""
+        return await self._request(
+            "GET",
+            "/device/reported",
+            params={"deviceId": device_id},
+        )
+
+    async def async_get_current_state_charge(self, device_id: str) -> Any:
+        """Return the current charging state of the device."""
+        return await self._device_command("/device/currentstatecharge", device_id)
+
+    async def async_get_rfid_cards(self, device_id: str) -> Any:
+        """Return registered RFID cards for the device."""
+        return await self._request(
+            "GET",
+            "/device/rfid",
+            params={"deviceId": device_id},
+        )
+
+    async def async_set_rfid_mode(self, device_id: str, enabled: bool) -> Any:
+        """Enable or disable the RFID reader."""
+        value = "1" if enabled else "0"
+        return await self._device_command(
+            "/device/set_rfid",
             device_id,
-            target_percentage,
-            formatted_time,
+            extra_params={"value": value},
         )
 
-        response = await self._execute_graphql(
-            SET_DEVICE_PREFERENCES_MUTATION,
-            variables=variables,
-        )
-
-        if not isinstance(response, dict):
-            _LOGGER.error("Invalid response setting device preferences: %s", response)
-            return False
-
-        if errors := response.get("errors"):
-            first_error = errors[0] if errors else {}
-            error_code = first_error.get("extensions", {}).get("errorCode")
-            error_message = first_error.get("message", "Unknown error")
-            _LOGGER.error(
-                "API error setting device preferences: %s (code: %s)",
-                error_message,
-                error_code,
-            )
-            return False
-
-        return True
-
-
-
-    async def get_vehicle_devices(self, account_number: str):
-        """Return SmartFlex vehicle devices for a given account."""
-        response = await self._execute_graphql(
-            VEHICLE_DETAILS_QUERY,
-            variables={"accountNumber": account_number},
-        )
-
-        if not isinstance(response, dict):
-            _LOGGER.error("Invalid response fetching vehicle devices: %s", response)
-            return None
-
-        if errors := response.get("errors"):
-            _LOGGER.error("GraphQL errors in vehicle devices response: %s", errors)
-            return None
-
-        devices = response.get("data", {}).get("devices") or []
-        vehicle_devices = [
-            device
-            for device in devices
-            if device.get("deviceType") == "ELECTRIC_VEHICLES"
-        ]
-
-        _LOGGER.debug(
-            "Found %d vehicle devices for account %s",
-            len(vehicle_devices),
-            account_number,
-        )
-        return vehicle_devices
-
-
-
-    async def fetch_flex_planned_dispatches(self, device_id: str):
-        """Fetch planned dispatches for a SmartFlex device."""
-        response = await self._execute_graphql(
-            FLEX_PLANNED_DISPATCHES_QUERY,
-            variables={"deviceId": device_id},
-        )
-
-        if not isinstance(response, dict):
-            _LOGGER.error(
-                "Invalid response fetching flex planned dispatches for %s: %s",
-                device_id,
-                response,
-            )
-            return None
-
-        if errors := response.get("errors"):
-            _LOGGER.error(
-                "GraphQL errors fetching flex planned dispatches for %s: %s",
-                device_id,
-                errors,
-            )
-            return None
-
-        dispatches = response.get("data", {}).get("flexPlannedDispatches") or []
-        _LOGGER.debug(
-            "Fetched %d flex planned dispatches for device %s",
-            len(dispatches),
+    async def async_register_rfid_card(
+        self,
+        device_id: str,
+        tag: str,
+    ) -> Any:
+        """Put device in registration mode for a new RFID tag."""
+        return await self._device_command(
+            "/device/rfid",
             device_id,
+            extra_params={"tag": tag},
         )
-        return dispatches
+
+    async def async_update_rfid_tag(
+        self,
+        device_id: str,
+        code: str,
+        tag: str,
+    ) -> Any:
+        """Update the description for an existing RFID card."""
+        params = {"code": code, "tag": tag}
+        return await self._device_command(
+            "/device/rfid/tag",
+            device_id,
+            extra_params=params,
+        )
+
+    async def async_delete_rfid_card(
+        self,
+        device_id: str,
+        code: str,
+    ) -> Any:
+        """Delete an RFID card from the device."""
+        params = {"code": code}
+        return await self._request(
+            "DELETE",
+            "/device/rfid",
+            params={"deviceId": device_id, **params},
+        )
+
+    async def async_start_charge(self, device_id: str) -> Any:
+        """Start charging."""
+        return await self._device_command("/device/startcharge", device_id)
+
+    async def async_pause_charge(self, device_id: str) -> Any:
+        """Pause charging."""
+        return await self._device_command("/device/pausecharge", device_id)
+
+    async def async_reboot(self, device_id: str) -> Any:
+        """Reboot the charger."""
+        return await self._device_command("/device/reboot", device_id)
+
+    async def async_trigger_update(self, device_id: str) -> Any:
+        """Trigger firmware update."""
+        return await self._device_command("/device/update", device_id)
+
+    async def async_get_mac(self, device_id: str) -> Any:
+        """Retrieve device MAC address."""
+        return await self._device_command("/device/mac", device_id)
+
+    async def async_set_dynamic(self, device_id: str, enabled: bool) -> Any:
+        """Enable or disable dynamic mode."""
+        value = "1" if enabled else "0"
+        return await self._device_command(
+            "/device/dynamic",
+            device_id,
+            extra_params={"value": value},
+        )
+
+    async def async_set_fv_mode(self, device_id: str, mode: int) -> Any:
+        """Set the FV mode of the charger."""
+        return await self._device_command(
+            "/device/chargefvmode",
+            device_id,
+            extra_params={"value": str(mode)},
+        )
+
+    async def async_set_installation_type(self, device_id: str, value: int) -> Any:
+        """Set the installation type."""
+        return await self._device_command(
+            "/device/inst_type",
+            device_id,
+            extra_params={"value": str(value)},
+        )
+
+    async def async_set_slave_type(self, device_id: str, value: int) -> Any:
+        """Set the slave type."""
+        return await self._device_command(
+            "/device/slave_type",
+            device_id,
+            extra_params={"value": str(value)},
+        )
+
+    async def async_set_language(self, device_id: str, value: int) -> Any:
+        """Set the charger language."""
+        return await self._device_command(
+            "/device/language",
+            device_id,
+            extra_params={"value": str(value)},
+        )
+
+    async def async_lock(self, device_id: str, locked: bool) -> Any:
+        """Lock or unlock the charge point."""
+        value = "1" if locked else "0"
+        return await self._device_command(
+            "/device/locked",
+            device_id,
+            extra_params={"value": value},
+        )
+
+    async def async_set_logo_led(self, device_id: str, enabled: bool) -> Any:
+        """Turn the logo LED on or off."""
+        value = "1" if enabled else "0"
+        return await self._device_command(
+            "/device/logo_led",
+            device_id,
+            extra_params={"value": value},
+        )
+
+    async def async_set_min_car_intensity(self, device_id: str, amps: int) -> Any:
+        """Set minimum car intensity."""
+        return await self._device_command(
+            "/device/min_car_int",
+            device_id,
+            extra_params={"value": str(amps)},
+        )
+
+    async def async_set_max_car_intensity(self, device_id: str, amps: int) -> Any:
+        """Set maximum car intensity."""
+        return await self._device_command(
+            "/device/max_car_int",
+            device_id,
+            extra_params={"value": str(amps)},
+        )
+
+    async def async_set_intensity(self, device_id: str, amps: int) -> Any:
+        """Set current charging intensity."""
+        return await self._device_command(
+            "/device/intensity",
+            device_id,
+            extra_params={"value": str(amps)},
+        )
+
+    async def async_set_max_power(self, device_id: str, kw: float) -> Any:
+        """Set maximum power delivery."""
+        return await self._device_command(
+            "/device/maxpower",
+            device_id,
+            extra_params={"value": str(kw)},
+        )
+
+    async def async_set_wifi(
+        self,
+        device_id: str,
+        ssid: str,
+        password: str,
+    ) -> Any:
+        """Update Wi-Fi credentials for the device."""
+        params = {"ssid": ssid, "password": password}
+        return await self._device_command(
+            "/device/wifi",
+            device_id,
+            extra_params=params,
+        )
+
+    async def async_program_timer(
+        self,
+        device_id: str,
+        timer_id: int,
+        *,
+        days_of_week: str,
+        time_start: str,
+        time_end: str,
+    ) -> Any:
+        """Configure a timer slot on the charger."""
+        timer_value = str(timer_id)
+        params = {"timerId": timer_value, "timer id": timer_value}
+        body = {
+            "daysOfWeek": days_of_week,
+            "timeStart": time_start,
+            "timeEnd": time_end,
+        }
+        return await self._device_command(
+            "/device/timer",
+            device_id,
+            extra_params=params,
+            json_body=body,
+        )
+
+    async def _device_command(
+        self,
+        path: str,
+        device_id: str,
+        *,
+        extra_params: dict[str, Any] | None = None,
+        json_body: Any | None = None,
+    ) -> Any:
+        """Helper for POST commands that target a specific device."""
+        params = {"deviceId": device_id}
+        if extra_params:
+            params.update(extra_params)
+        return await self._request(
+            "POST",
+            path,
+            params=params,
+            json_body=json_body,
+        )
 
 
+async def async_gather_devices_state(
+    client: V2CClient,
+    pairings: Iterable[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Fetch the current state for each paired device."""
+    results: dict[str, dict[str, Any]] = {}
 
-    async def _fetch_account_and_devices(self, account_number: str):
-            """Fetch account and device data (legacy helper)."""
-            _LOGGER.info(
-                "Using _fetch_account_and_devices (deprecated - using comprehensive query)"
-            )
-            all_data = await self.fetch_all_data(account_number)
-            if not all_data:
-                return {"account": {}, "devices": []}
-            return {
-                "account": all_data.get("account", {}),
-                "devices": all_data.get("devices", []),
-            }
+    for pairing in pairings:
+        device_id = pairing.get("deviceId")
+        if not device_id:
+            continue
 
-    async def fetch_gas_meter_readings(
-            self,
-            account_number: str,
-            pdr: str,
-            *,
-            date_from: str | None = None,
-            date_to: str | None = None,
-            first: int | None = None,
-            last: int | None = None,
-        ) -> list[dict]:
-            """Fetch gas meter readings for the specified PDR."""
-            variables = {
-                "accountNumber": account_number,
-                "pdr": pdr,
-                "dateFrom": date_from,
-                "dateTo": date_to,
-                "first": first,
-                "last": last,
-            }
+        state = V2CDeviceState(device_id=device_id, pairing=pairing)
 
+        try:
+            connected = await client.async_get_connected(device_id)
+            state.connected = bool(connected) if connected is not None else None
+        except V2CError as err:
+            _LOGGER.warning("Failed to fetch connection status for %s: %s", device_id, err)
+
+        try:
+            reported = await client.async_get_reported(device_id)
+            state.reported_raw = reported
+            if isinstance(reported, dict):
+                state.reported = reported
+                state.additional["reported_lower"] = {
+                    str(key).lower(): value for key, value in reported.items()
+                }
+            elif isinstance(reported, str):
+                try:
+                    parsed = json.loads(reported)
+                    if isinstance(parsed, dict):
+                        state.reported = parsed
+                        state.additional["reported_lower"] = {
+                            str(key).lower(): value for key, value in parsed.items()
+                        }
+                    else:
+                        state.reported_raw = parsed
+                except json.JSONDecodeError:
+                    pass
+        except V2CError as err:
+            _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, err)
+
+        try:
+            current_state = await client.async_get_current_state_charge(device_id)
+            state.current_state = current_state
+        except V2CError as err:
             _LOGGER.debug(
-                "Fetching gas meter readings for account %s, PDR %s (first=%s, last=%s, date_from=%s, date_to=%s)",
-                account_number,
-                pdr,
-                first,
-                last,
-                date_from,
-                date_to,
+                "Failed to fetch current state charge for %s: %s", device_id, err
             )
 
-            response = await self._execute_graphql(
-                GAS_METER_READINGS_QUERY,
-                variables=variables,
-            )
+        try:
+            rfid_cards = await client.async_get_rfid_cards(device_id)
+            if isinstance(rfid_cards, list):
+                state.rfid_cards = rfid_cards
+            elif rfid_cards is not None:
+                state.additional["rfid_cards_raw"] = rfid_cards
+        except V2CError as err:
+            _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
 
-            if not isinstance(response, dict):
-                _LOGGER.error(
-                    "Invalid response fetching gas meter readings for account %s, PDR %s: %s",
-                    account_number,
-                    pdr,
-                    response,
-                )
-                return []
-
-            if errors := response.get("errors"):
-                _LOGGER.error(
-                    "GraphQL errors in gas meter readings response: %s",
-                    errors,
-                )
-                return []
-
-            readings_data = response.get("data", {}).get("gasMeterReadings")
-            if not readings_data:
-                _LOGGER.debug(
-                    "No gas meter readings returned for account %s, PDR %s",
-                    account_number,
-                    pdr,
-                )
-                return []
-
-            edges = readings_data.get("edges") or []
-            readings: list[dict] = []
-            for edge in edges:
-                node = (edge or {}).get("node") or {}
-                if not node:
-                    continue
-                readings.append(
-                    {
-                        "readingDate": node.get("readingDate"),
-                        "readingType": node.get("readingType"),
-                        "readingSource": node.get("readingSource"),
-                        "value": self.to_float_or_none(node.get("consumptionValue")),
-                        "unit": "m3",
-                        "raw": node,
-                    }
-                )
-
-            if readings:
-                latest = readings[0]
-                _LOGGER.debug(
-                    "Fetched gas meter reading: %s on %s (type: %s, source: %s)",
-                    latest.get("value"),
-                    latest.get("readingDate"),
-                    latest.get("readingType"),
-                    latest.get("readingSource"),
-                )
-
-            return readings
-
-    async def fetch_electricity_measurements(
-            self,
-            property_id: str,
-            pod: str,
-            *,
-            start_on: str | None = None,
-            end_on: str | None = None,
-            first: int | None = None,
-            last: int | None = None,
-        ) -> list[dict]:
-            """Fetch electricity measurements for the given property/POD."""
-            variables = {
-                "propertyId": property_id,
-                "pod": pod,
-                "startOn": start_on,
-                "endOn": end_on,
-                "first": first,
-                "last": last,
-            }
-
-            _LOGGER.debug(
-                "Fetching electricity measurements for property %s, POD %s (first=%s, last=%s, start_on=%s, end_on=%s)",
-                property_id,
-                pod,
-                first,
-                last,
-                start_on,
-                end_on,
-            )
-
-            response = await self._execute_graphql(
-                PROPERTY_ELECTRICITY_MEASUREMENTS_QUERY,
-                variables=variables,
-            )
-
-            if not isinstance(response, dict):
-                _LOGGER.error(
-                    "Invalid response fetching electricity measurements for property %s: %s",
-                    property_id,
-                    response,
-                )
-                return []
-
-            if errors := response.get("errors"):
-                _LOGGER.error(
-                    "GraphQL errors in electricity measurements response: %s",
-                    errors,
-                )
-                return []
-
-            property_data = response.get("data", {}).get("property") or {}
-            measurements_data = property_data.get("measurements") or {}
-            edges = measurements_data.get("edges") or []
-
-            measurements: list[dict] = []
-            for edge in edges:
-                node = (edge or {}).get("node") or {}
-                if not node:
-                    continue
-                unit = node.get("unit") or "kWh"
-                if isinstance(unit, str) and unit.lower() == "kwh":
-                    unit = "kWh"
-
-                measurements.append(
-                    {
-                        "readAt": node.get("readAt"),
-                        "value": self.to_float_or_none(node.get("value")),
-                        "unit": unit,
-                        "source": node.get("source"),
-                        "raw": node,
-                    }
-                )
-
-            if measurements:
-                latest = measurements[-1] if last else measurements[0]
-                _LOGGER.debug(
-                    "Fetched electricity measurement: %s %s at %s (source: %s)",
-                    latest.get("value"),
-                    latest.get("unit"),
-                    latest.get("readAt"),
-                    latest.get("source"),
-                )
+        try:
+            version = await client.async_get_version(device_id)
+            if isinstance(version, str):
+                state.version = version
             else:
-                _LOGGER.debug(
-                    "No electricity measurements found for property %s, POD %s",
-                    property_id,
-                    pod,
-                )
+                state.version = str(version)
+        except V2CError as err:
+            _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
 
-            return measurements
+        try:
+            mac_address = await client.async_get_mac(device_id)
+            if mac_address:
+                if isinstance(mac_address, dict) and "mac" in mac_address:
+                    state.mac_address = str(mac_address["mac"])
+                else:
+                    state.mac_address = str(mac_address)
+        except V2CError as err:
+            _LOGGER.debug("Failed to fetch MAC address for %s: %s", device_id, err)
 
-    @staticmethod
-    def format_time_to_hh_mm(time_str: str) -> str:
-            """Normalise user-provided time values to HH:MM format."""
-            try:
-                if isinstance(time_str, (int, float)):
-                    if 0 <= time_str <= 23:
-                        return f"{int(time_str):02d}:00"
-                    raise ValueError("Numeric hour values must be between 0 and 23")
+        results[device_id] = state.as_dict()
 
-                if isinstance(time_str, str):
-                    stripped = time_str.strip()
-                    if stripped.isdigit() and len(stripped) <= 2:
-                        hour = int(stripped)
-                        if 0 <= hour <= 23:
-                            return f"{hour:02d}:00"
-                        raise ValueError("Hour component must be between 0 and 23")
-
-                    for fmt in ("%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"):
-                        try:
-                            dt = datetime.strptime(stripped, fmt)
-                            return f"{dt.hour:02d}:{dt.minute:02d}"
-                        except ValueError:
-                            continue
-
-                    raise ValueError(
-                        f"Could not parse time: '{time_str}'. Please use HH:MM format (e.g. '05:00')"
-                    )
-
-                raise ValueError(
-                    f"Unsupported time value type: {type(time_str).__name__}"
-                )
-
-            except Exception as exc:
-                if isinstance(exc, ValueError):
-                    raise
-                raise ValueError(f"Error processing time '{time_str}': {exc!s}")
-
+    return results

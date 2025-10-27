@@ -1,254 +1,158 @@
-"""Number entities per Octopus Energy Italy."""
+"""Number entities for configurable numeric values on the V2C charger."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfElectricCurrent, UnitOfPower
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .entity import V2CEntity
 
-
-def _get_account_data(coordinator, account_number: str) -> dict[str, Any] | None:
-    """Recupera i dati dell'account dal coordinatore condiviso."""
-    data = getattr(coordinator, "data", None)
-    if isinstance(data, dict):
-        account_data = data.get(account_number)
-        if isinstance(account_data, dict):
-            return account_data
-    return None
-
-
-def _first_device_schedule(device: dict[str, Any]) -> dict[str, Any] | None:
-    preferences = device.get("preferences") or {}
-    if not isinstance(preferences, dict):
-        return None
-    schedules = preferences.get("schedules") or []
-    if not isinstance(schedules, list):
-        return None
-    for entry in schedules:
-        if isinstance(entry, dict):
-            return entry
-    return None
-
-
-def _schedule_setting(device: dict[str, Any]) -> dict[str, Any] | None:
-    pref_setting = device.get("preferenceSetting") or {}
-    if not isinstance(pref_setting, dict):
-        return None
-    settings = pref_setting.get("scheduleSettings") or []
-    if not isinstance(settings, list):
-        return None
-    for entry in settings:
-        if isinstance(entry, dict):
-            return entry
-    return None
+CURRENT_MIN = 6.0
+CURRENT_MAX = 80.0
+CURRENT_STEP = 1.0
+POWER_MIN = 1.0
+POWER_MAX = 50.0
+POWER_STEP = 0.1
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Configura le entità number."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
-    api = data["api"]
+    """Set up V2C number entities."""
+    runtime_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = runtime_data.coordinator
+    client = runtime_data.client
 
-    account_numbers = data.get("account_numbers") or []
-    if not account_numbers:
-        primary = data.get("account_number")
-        if primary:
-            account_numbers = [primary]
+    devices = coordinator.data.get("devices", {}) if coordinator.data else {}
+    entities: list[NumberEntity] = []
 
-    entities: list[OctopusDeviceChargeTargetNumber] = []
-
-    for account_number in account_numbers:
-        account_data = _get_account_data(coordinator, account_number)
-        if not account_data:
-            continue
-
-        devices = account_data.get("devices") or []
-        if not isinstance(devices, list):
-            continue
-
-        for device in devices:
-            if not isinstance(device, dict):
-                continue
-            device_id = device.get("id")
-            schedule = _first_device_schedule(device)
-            if not device_id or not schedule:
-                continue
-
-            entities.append(
-                OctopusDeviceChargeTargetNumber(
-                    account_number=account_number,
-                    device_id=device_id,
-                    coordinator=coordinator,
-                    api=api,
-                )
+    for device_id in devices:
+        entities.extend(
+            (
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    device_id,
+                    name_key="current_intensity",
+                    unique_suffix="intensity",
+                    reported_keys=("intensity", "currentintensity", "current_intensity"),
+                    setter=lambda value, _device_id=device_id: client.async_set_intensity(
+                        _device_id, int(value)
+                    ),
+                    native_unit=UnitOfElectricCurrent.AMPERE,
+                    minimum=CURRENT_MIN,
+                    maximum=CURRENT_MAX,
+                    step=CURRENT_STEP,
+                ),
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    device_id,
+                    name_key="min_intensity",
+                    unique_suffix="min_intensity",
+                    reported_keys=("mincarint", "min_intensity", "mincarintensity"),
+                    setter=lambda value, _device_id=device_id: client.async_set_min_car_intensity(
+                        _device_id, int(value)
+                    ),
+                    native_unit=UnitOfElectricCurrent.AMPERE,
+                    minimum=CURRENT_MIN,
+                    maximum=CURRENT_MAX,
+                    step=CURRENT_STEP,
+                ),
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    device_id,
+                    name_key="max_intensity",
+                    unique_suffix="max_intensity",
+                    reported_keys=("maxcarint", "max_intensity", "maxcarintensity"),
+                    setter=lambda value, _device_id=device_id: client.async_set_max_car_intensity(
+                        _device_id, int(value)
+                    ),
+                    native_unit=UnitOfElectricCurrent.AMPERE,
+                    minimum=CURRENT_MIN,
+                    maximum=CURRENT_MAX,
+                    step=CURRENT_STEP,
+                ),
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    device_id,
+                    name_key="max_power",
+                    unique_suffix="max_power",
+                    reported_keys=("maxpower", "max_power"),
+                    setter=lambda value, _device_id=device_id: client.async_set_max_power(
+                        _device_id, float(value)
+                    ),
+                    native_unit=UnitOfPower.KILO_WATT,
+                    minimum=POWER_MIN,
+                    maximum=POWER_MAX,
+                    step=POWER_STEP,
+                ),
             )
+        )
 
-    if entities:
-        async_add_entities(entities)
+    async_add_entities(entities)
 
 
-class OctopusDeviceChargeTargetNumber(CoordinatorEntity, NumberEntity):
-    """Numero per modificare la percentuale di carica SmartFlex."""
+class V2CNumberEntity(V2CEntity, NumberEntity):
+    """Generic number entity for V2C Chargers."""
 
-    _attr_native_unit_of_measurement = "%"
-    _attr_mode = NumberMode.SLIDER
-    _attr_entity_registry_enabled_default = True
+    _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, account_number: str, device_id: str, coordinator, api) -> None:
-        super().__init__(coordinator)
-        self._account_number = account_number
-        self._device_id = device_id
-        self._api = api
-
-        self._attr_name = f"Octopus {account_number} EV Charge Target"
-        self._attr_unique_id = f"octopus_{account_number}_{device_id}_charge_target"
-        self._attr_icon = "mdi:target"
-        self._attr_has_entity_name = False
-
-    # Helpers --------------------------------------------------------------
-    def _current_device(self) -> dict[str, Any] | None:
-        account = _get_account_data(self.coordinator, self._account_number)
-        if not account:
-            return None
-        devices = account.get("devices") or []
-        if not isinstance(devices, list):
-            return None
-        for device in devices:
-            if isinstance(device, dict) and device.get("id") == self._device_id:
-                return device
-        return None
-
-    def _current_schedule(self) -> dict[str, Any] | None:
-        device = self._current_device()
-        if not device:
-            return None
-        return _first_device_schedule(device)
-
-    def _schedule_setting(self) -> dict[str, Any] | None:
-        device = self._current_device()
-        if not device:
-            return None
-        return _schedule_setting(device)
-
-    def _parse_float(self, value: Any, default: float) -> float:
-        try:
-            if value is None:
-                return default
-            return float(str(value))
-        except (TypeError, ValueError):
-            return default
-
-    def _current_target_time(self) -> str | None:
-        schedule = self._current_schedule()
-        if not schedule:
-            return None
-        time_value = schedule.get("time")
-        if not time_value:
-            return None
-        return str(time_value)[:5]
-
-    def _current_target_percentage(self) -> int | None:
-        schedule = self._current_schedule()
-        if not schedule:
-            return None
-        value = schedule.get("max")
-        if value is None:
-            return None
-        try:
-            return int(float(value))
-        except (TypeError, ValueError):
-            return None
-
-    def _update_local_schedule(
-        self, *, target_percentage: int | None = None, target_time: str | None = None
+    def __init__(
+        self,
+        coordinator,
+        client,
+        device_id: str,
+        *,
+        name_key: str,
+        unique_suffix: str,
+        reported_keys: tuple[str, ...],
+        setter: Callable[[float], Awaitable[Any]],
+        native_unit: str,
+        minimum: float,
+        maximum: float,
+        step: float,
     ) -> None:
-        account = _get_account_data(self.coordinator, self._account_number)
-        if not account:
-            return
-        devices = account.get("devices") or []
-        if not isinstance(devices, list):
-            return
-        for device in devices:
-            if not isinstance(device, dict) or device.get("id") != self._device_id:
-                continue
-            preferences = device.setdefault("preferences", {})
-            if not isinstance(preferences, dict):
-                preferences = {}
-                device["preferences"] = preferences
-            schedules = preferences.setdefault("schedules", [])
-            if not isinstance(schedules, list) or not schedules:
-                break
-            schedule = schedules[0]
-            if not isinstance(schedule, dict):
-                break
-            if target_percentage is not None:
-                schedule["max"] = target_percentage
-            if target_time is not None:
-                stored_time = (
-                    target_time if len(target_time) > 5 else f"{target_time}:00"
-                )
-                schedule["time"] = stored_time
-            break
-        self.coordinator.async_set_updated_data(dict(self.coordinator.data))
+        super().__init__(coordinator, client, device_id)
+        self._reported_keys = reported_keys
+        self._setter = setter
+        self._attr_translation_key = name_key
+        self._attr_unique_id = f"{device_id}_{unique_suffix}_number"
+        self._attr_native_unit_of_measurement = native_unit
+        self._attr_native_min_value = minimum
+        self._attr_native_max_value = maximum
+        self._attr_native_step = step
+        self._optimistic_value: float | None = None
 
-    # NumberEntity API ----------------------------------------------------
     @property
     def native_value(self) -> float | None:
-        return self._current_target_percentage()
+        value = self.get_reported_value(*self._reported_keys)
+        if value is None:
+            value = self.device_state.get(self._reported_keys[0])
 
-    @property
-    def native_min_value(self) -> float:
-        setting = self._schedule_setting()
-        if setting:
-            return self._parse_float(setting.get("min"), 20)
-        return 20
+        if value is None:
+            return self._optimistic_value
 
-    @property
-    def native_max_value(self) -> float:
-        setting = self._schedule_setting()
-        if setting:
-            return self._parse_float(setting.get("max"), 100)
-        return 100
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return self._optimistic_value
 
-    @property
-    def native_step(self) -> float:
-        return 5
+        self._optimistic_value = numeric
+        return numeric
 
     async def async_set_native_value(self, value: float) -> None:
-        target_time = self._current_target_time()
-        if not target_time:
-            setting = self._schedule_setting()
-            target_time = (
-                str(setting.get("timeFrom", "06:00"))[:5] if setting else "06:00"
-            )
-
-        step = self.native_step or 5
-        target_percentage = int(round(value / step) * step)
-
-        min_value = int(self.native_min_value)
-        max_value = int(self.native_max_value)
-        if min_value > max_value:
-            min_value, max_value = max_value, min_value
-        target_percentage = max(min_value, min(max_value, target_percentage))
-
-        success = await self._api.set_device_preferences(
-            self._device_id,
-            target_percentage,
-            target_time,
-        )
-        if not success:
-            raise HomeAssistantError("Impossibile aggiornare il target di carica")
-
-        self._update_local_schedule(
-            target_percentage=target_percentage, target_time=f"{target_time}:00"
-        )
-        await self.coordinator.async_request_refresh()
+        self._optimistic_value = value
+        await self._async_call_and_refresh(self._setter(value))

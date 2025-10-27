@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0] - 2025-10-27
+## [1.0.1] - 2025-10-27
 
 ### Added
 - Full asynchronous REST client covering every documented V2C Cloud endpoint (device commands, RFID management, timers, statistics, version lookup).

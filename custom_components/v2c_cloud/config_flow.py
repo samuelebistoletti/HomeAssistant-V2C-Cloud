@@ -58,7 +58,12 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
             else:
-                unique_suffix = hashlib.sha256(api_key.encode()).hexdigest()
+                unique_suffix = hashlib.pbkdf2_hmac(
+                    "sha256",
+                    api_key.encode(),
+                    b"v2c_cloud_unique_id",
+                    200_000,
+                ).hex()
                 await self.async_set_unique_id(unique_suffix)
                 self._abort_if_unique_id_configured()
 

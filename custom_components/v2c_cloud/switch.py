@@ -158,4 +158,5 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
 
     async def _async_call(self, state: bool) -> None:
         self._optimistic_state = state
+        self.async_write_ha_state()
         await self._async_call_and_refresh(self._setter(state))

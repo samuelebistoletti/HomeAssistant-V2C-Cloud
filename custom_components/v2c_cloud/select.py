@@ -158,6 +158,7 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         for key, label in self._options_map.items():
             if label == option:
                 self._optimistic_value = key
+                self.async_write_ha_state()
                 await self._async_call_and_refresh(self._setter(key))
                 return
         raise ValueError(f"Unsupported option {option}")

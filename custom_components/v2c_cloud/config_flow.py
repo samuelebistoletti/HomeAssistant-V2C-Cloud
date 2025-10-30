@@ -67,13 +67,6 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(unique_suffix)
                 self._abort_if_unique_id_configured()
 
-                title = "V2C Cloud"
-                if pairings:
-                    first = pairings[0]
-                    label = first.get("tag") or first.get("deviceId")
-                    if label:
-                        title = f"V2C Cloud - {label}"
-
                 data = {
                     CONF_API_KEY: api_key,
                     "initial_pairings": pairings,
@@ -81,7 +74,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if base_url != DEFAULT_BASE_URL:
                     data[CONF_BASE_URL] = base_url
 
-                return self.async_create_entry(title=title, data=data)
+                return self.async_create_entry(title="V2C Cloud", data=data)
 
         schema = vol.Schema(
             {

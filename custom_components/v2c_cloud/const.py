@@ -12,6 +12,10 @@ CONF_BASE_URL = "base_url"
 DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=1)
 
+# Power limits (kW)
+MAX_POWER_MIN_KW = 1.0
+MAX_POWER_MAX_KW = 50.0
+
 # Select options exposed by the API
 INSTALLATION_TYPES = {
     0: "Monophase",

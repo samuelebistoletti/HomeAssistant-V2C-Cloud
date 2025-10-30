@@ -99,7 +99,39 @@ class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
         """Return device registry information."""
         pairing = self.pairing
         name = pairing.get("tag") or pairing.get("deviceId") or self._device_id
-        model = str(pairing.get("model")) if pairing.get("model") is not None else None
+        model: str | None = None
+
+        version_info = self.device_state.get("additional", {}).get("version_info")
+        if isinstance(version_info, dict):
+            preferred_order = (
+                version_info.get("modelName"),
+                version_info.get("modelId"),
+                version_info.get("commercialName"),
+            )
+            for candidate in preferred_order:
+                if isinstance(candidate, str) and candidate.strip():
+                    model = candidate
+                    break
+            if isinstance(model, str):
+                normalized = model.strip()
+                if normalized.upper() == "INIT":
+                    normalized = ""
+                else:
+                    normalized = normalized.replace("_", " ").title()
+                model = normalized or None
+
+        if model is None:
+            pairing_model = pairing.get("modelName") or pairing.get("model_name")
+            if pairing_model:
+                model = str(pairing_model).strip()
+                model = model.replace("_", " ").title()
+            else:
+                pairing_model_code = pairing.get("model")
+                if isinstance(pairing_model_code, str) and pairing_model_code.strip():
+                    model = pairing_model_code.replace("_", " ").title()
+                elif isinstance(pairing_model_code, (int, float)) and pairing_model_code not in (0, 0.0):
+                    model = f"Model {pairing_model_code}"
+
         version = self.device_state.get("version")
 
         return DeviceInfo(

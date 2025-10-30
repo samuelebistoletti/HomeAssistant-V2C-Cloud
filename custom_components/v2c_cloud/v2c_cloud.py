@@ -483,12 +483,12 @@ class V2CClient:
             extra_params={"value": str(amps)},
         )
 
-    async def async_set_max_power(self, device_id: str, kw: float) -> Any:
+    async def async_set_max_power(self, device_id: str, watts: int) -> Any:
         """Set maximum power delivery."""
         return await self._device_command(
             "/device/maxpower",
             device_id,
-            extra_params={"value": str(kw)},
+            extra_params={"value": str(int(watts))},
         )
 
     async def async_set_wifi(

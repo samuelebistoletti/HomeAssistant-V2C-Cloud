@@ -14,7 +14,7 @@ from homeassistant.const import UnitOfElectricCurrent, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CHARGE_STATE_LABELS, DOMAIN
+from .const import CHARGE_STATE_LABELS, DOMAIN, MAX_POWER_MAX_KW
 from .entity import V2CEntity
 
 
@@ -132,7 +132,13 @@ class _IntensityBaseSensor(V2CEntity, SensorEntity):
 class V2CIntensitySensor(_IntensityBaseSensor):
     """Sensor for the currently configured charging intensity."""
 
-    reported_keys = ("intensity", "currentintensity", "current_intensity")
+    reported_keys = (
+        "intensity",
+        "currentintensity",
+        "current_intensity",
+        "current_int",
+        "car_intensity",
+    )
 
     def __init__(self, coordinator, client, device_id) -> None:
         super().__init__(coordinator, client, device_id, "intensity")
@@ -143,7 +149,13 @@ class V2CIntensitySensor(_IntensityBaseSensor):
 class V2CMinIntensitySensor(_IntensityBaseSensor):
     """Sensor for the minimum allowed car intensity."""
 
-    reported_keys = ("mincarint", "min_intensity", "mincarintensity")
+    reported_keys = (
+        "mincarint",
+        "min_intensity",
+        "mincarintensity",
+        "min_car_int",
+        "mincar_int",
+    )
 
     def __init__(self, coordinator, client, device_id) -> None:
         super().__init__(coordinator, client, device_id, "min_intensity")
@@ -154,7 +166,13 @@ class V2CMinIntensitySensor(_IntensityBaseSensor):
 class V2CMaxIntensitySensor(_IntensityBaseSensor):
     """Sensor for the maximum allowed car intensity."""
 
-    reported_keys = ("maxcarint", "max_intensity", "maxcarintensity")
+    reported_keys = (
+        "maxcarint",
+        "max_intensity",
+        "maxcarintensity",
+        "max_car_int",
+        "maxcar_int",
+    )
 
     def __init__(self, coordinator, client, device_id) -> None:
         super().__init__(coordinator, client, device_id, "max_intensity")
@@ -184,7 +202,10 @@ class V2CMaxPowerSensor(V2CEntity, SensorEntity):
         if reported_value is None:
             return None
         try:
-            return float(reported_value)
+            numeric = float(reported_value)
+            if numeric > MAX_POWER_MAX_KW + 1:
+                numeric = numeric / 1000
+            return numeric
         except (TypeError, ValueError):
             return None
 

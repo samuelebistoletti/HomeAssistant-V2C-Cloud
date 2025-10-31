@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable
+from datetime import timedelta
 from dataclasses import dataclass
 
 import voluptuous as vol
@@ -24,13 +26,27 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    ATTR_DATE_END,
+    ATTR_DATE_START,
     ATTR_DEVICE_ID,
-    ATTR_DAYS_OF_WEEK,
+    ATTR_ENABLED,
+    ATTR_IP_ADDRESS,
+    ATTR_KWH,
+    ATTR_MINUTES,
+    ATTR_MODE,
+    ATTR_OCPP_ID,
+    ATTR_OCPP_URL,
+    ATTR_PROFILE_NAME,
+    ATTR_PROFILE_PAYLOAD,
+    ATTR_PROFILE_TIMESTAMP,
     ATTR_RFID_CODE,
     ATTR_RFID_TAG,
     ATTR_TIME_END,
     ATTR_TIME_START,
+    ATTR_TIMER_ACTIVE,
     ATTR_TIMER_ID,
+    ATTR_UPDATED_AT,
+    ATTR_WATTS,
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
     CONF_API_KEY,
@@ -38,11 +54,36 @@ from .const import (
     DEFAULT_BASE_URL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    MIN_UPDATE_INTERVAL,
+    TARGET_DAILY_BUDGET,
+    EVENT_DEVICE_STATISTICS,
+    EVENT_GLOBAL_STATISTICS,
+    EVENT_POWER_PROFILES,
+    EVENT_WIFI_SCAN,
+    SERVICE_ADD_RFID_CARD,
+    SERVICE_CREATE_POWER_PROFILE,
+    SERVICE_DELETE_POWER_PROFILE,
     SERVICE_DELETE_RFID,
+    SERVICE_GET_DEVICE_STATISTICS,
+    SERVICE_GET_GLOBAL_STATISTICS,
+    SERVICE_GET_POWER_PROFILE,
+    SERVICE_LIST_POWER_PROFILES,
     SERVICE_PROGRAM_TIMER,
     SERVICE_REGISTER_RFID,
+    SERVICE_SCAN_WIFI,
+    SERVICE_SET_DENKA_MAX_POWER,
+    SERVICE_SET_INVERTER_IP,
+    SERVICE_SET_OCPP_ADDRESS,
+    SERVICE_SET_OCPP_ENABLED,
+    SERVICE_SET_OCPP_ID,
+    SERVICE_SET_STOP_CHARGE_KWH,
+    SERVICE_SET_STOP_CHARGE_MINUTES,
+    SERVICE_SET_THIRDPARTY_MODE,
     SERVICE_SET_WIFI,
+    SERVICE_START_CHARGE_KWH,
+    SERVICE_START_CHARGE_MINUTES,
     SERVICE_TRIGGER_UPDATE,
+    SERVICE_UPDATE_POWER_PROFILE,
     SERVICE_UPDATE_RFID_TAG,
 )
 from .v2c_cloud import (
@@ -105,6 +146,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not pairings:
         _LOGGER.warning("No V2C devices associated with this API key")
 
+    def _calculate_update_interval(device_count: int) -> timedelta:
+        """Compute a polling interval that honours the daily rate limit."""
+        if device_count <= 0:
+            return DEFAULT_UPDATE_INTERVAL
+        min_seconds = max(
+            DEFAULT_UPDATE_INTERVAL.total_seconds(),
+            MIN_UPDATE_INTERVAL.total_seconds(),
+        )
+        budget = max(1, TARGET_DAILY_BUDGET)
+        seconds = math.ceil((device_count * 86400) / budget)
+        if seconds < min_seconds:
+            seconds = min_seconds
+        return timedelta(seconds=seconds)
+
     async def _async_update_data() -> dict[str, object]:
         """Fetch the latest data from the API."""
         try:
@@ -117,7 +172,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 latest_pairings,
                 previous_devices=previous_devices if isinstance(previous_devices, dict) else None,
             )
-            global_statistics = await client.async_get_global_statistics()
         except V2CAuthError as err:
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
         except V2CRateLimitError as err:
@@ -128,11 +182,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except V2CError as err:
             raise UpdateFailed(f"Failed to update V2C data: {err}") from err
 
-        return {
+        device_count = len(devices)
+        new_interval = _calculate_update_interval(device_count)
+        if coordinator.update_interval != new_interval:
+            _LOGGER.debug(
+                "Adjusting polling interval to %s based on %s device(s) and %s daily budget",
+                new_interval,
+                device_count,
+                TARGET_DAILY_BUDGET,
+            )
+            coordinator.update_interval = new_interval
+
+        result: dict[str, object] = {
             "pairings": latest_pairings,
             "devices": devices,
-            "global_statistics": global_statistics,
         }
+        if client.last_rate_limit is not None:
+            result["rate_limit"] = client.last_rate_limit
+
+        return result
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -190,6 +258,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
     async def _execute_and_refresh(
         entry_data: V2CEntryRuntimeData,
         call_coroutine,
+        *,
+        refresh: bool = True,
     ) -> None:
         try:
             await call_coroutine
@@ -198,7 +268,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
         except V2CRequestError as err:
             raise HomeAssistantError(str(err)) from err
 
-        await entry_data.coordinator.async_request_refresh()
+        if refresh:
+            await entry_data.coordinator.async_request_refresh()
+
+    async def _call_with_error_handling(call_coroutine):
+        try:
+            return await call_coroutine
+        except V2CAuthError as err:
+            raise ConfigEntryAuthFailed("Authentication failed during service call") from err
+        except V2CRequestError as err:
+            raise HomeAssistantError(str(err)) from err
 
     async def async_handle_set_wifi(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
@@ -226,9 +305,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
     async def async_handle_program_timer(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         timer_id = call.data[ATTR_TIMER_ID]
-        days_of_week = call.data[ATTR_DAYS_OF_WEEK]
         time_start = call.data[ATTR_TIME_START]
         time_end = call.data[ATTR_TIME_END]
+        active = call.data.get(ATTR_TIMER_ACTIVE, True)
 
         entry_data = await _async_get_entry_for_device(device_id)
         await _execute_and_refresh(
@@ -236,9 +315,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
             entry_data.client.async_program_timer(
                 device_id,
                 timer_id,
-                days_of_week=days_of_week,
                 time_start=time_start,
                 time_end=time_end,
+                active=bool(active),
             ),
         )
 
@@ -250,9 +329,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
                 vol.Required(ATTR_TIMER_ID): vol.Coerce(int),
-                vol.Required(ATTR_DAYS_OF_WEEK): cv.string,
                 vol.Required(ATTR_TIME_START): cv.matches_regex(r"^\\d{2}:\\d{2}$"),
                 vol.Required(ATTR_TIME_END): cv.matches_regex(r"^\\d{2}:\\d{2}$"),
+                vol.Optional(ATTR_TIMER_ACTIVE, default=True): cv.boolean,
             }
         ),
     )
@@ -273,6 +352,29 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_RFID_TAG): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_add_rfid_card(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        code = call.data[ATTR_RFID_CODE]
+        tag = call.data[ATTR_RFID_TAG]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_add_rfid_card(device_id, code, tag),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADD_RFID_CARD,
+        async_handle_add_rfid_card,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_RFID_CODE): cv.string,
                 vol.Required(ATTR_RFID_TAG): cv.string,
             }
         ),
@@ -318,6 +420,452 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
                 vol.Required(ATTR_RFID_CODE): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_set_stop_energy(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        kwh = call.data[ATTR_KWH]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_charge_stop_energy(device_id, float(kwh)),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_STOP_CHARGE_KWH,
+        async_handle_set_stop_energy,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_KWH): vol.Coerce(float),
+            }
+        ),
+    )
+
+    async def async_handle_set_stop_minutes(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        minutes = call.data[ATTR_MINUTES]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_charge_stop_minutes(device_id, int(minutes)),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_STOP_CHARGE_MINUTES,
+        async_handle_set_stop_minutes,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_MINUTES): vol.Coerce(int),
+            }
+        ),
+    )
+
+    async def async_handle_start_charge_kwh(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        kwh = call.data[ATTR_KWH]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_start_charge_kwh(device_id, float(kwh)),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_START_CHARGE_KWH,
+        async_handle_start_charge_kwh,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_KWH): vol.Coerce(float),
+            }
+        ),
+    )
+
+    async def async_handle_start_charge_minutes(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        minutes = call.data[ATTR_MINUTES]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_start_charge_minutes(device_id, int(minutes)),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_START_CHARGE_MINUTES,
+        async_handle_start_charge_minutes,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_MINUTES): vol.Coerce(int),
+            }
+        ),
+    )
+
+    async def async_handle_thirdparty_mode(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        mode = call.data.get(ATTR_MODE, "1")
+        enabled = call.data[ATTR_ENABLED]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_thirdparty_mode(
+                device_id,
+                str(mode),
+                bool(enabled),
+            ),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_THIRDPARTY_MODE,
+        async_handle_thirdparty_mode,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Optional(ATTR_MODE, default="1"): cv.string,
+                vol.Required(ATTR_ENABLED): cv.boolean,
+            }
+        ),
+    )
+
+    async def async_handle_set_ocpp_enabled(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        enabled = call.data[ATTR_ENABLED]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_ocpp_enabled(device_id, bool(enabled)),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_OCPP_ENABLED,
+        async_handle_set_ocpp_enabled,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_ENABLED): cv.boolean,
+            }
+        ),
+    )
+
+    async def async_handle_set_ocpp_id(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        ocpp_id = call.data[ATTR_OCPP_ID]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_ocpp_id(device_id, ocpp_id),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_OCPP_ID,
+        async_handle_set_ocpp_id,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_OCPP_ID): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_set_ocpp_address(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        url = call.data[ATTR_OCPP_URL]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_ocpp_address(device_id, url),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_OCPP_ADDRESS,
+        async_handle_set_ocpp_address,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_OCPP_URL): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_set_denka_max_power(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        watts = call.data[ATTR_WATTS]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_denka_max_power(device_id, int(watts)),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_DENKA_MAX_POWER,
+        async_handle_set_denka_max_power,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_WATTS): vol.Coerce(int),
+            }
+        ),
+    )
+
+    async def async_handle_set_inverter_ip(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        address = call.data[ATTR_IP_ADDRESS]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_set_inverter_ip(device_id, address),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_INVERTER_IP,
+        async_handle_set_inverter_ip,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_IP_ADDRESS): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_scan_wifi(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        entry_data = await _async_get_entry_for_device(device_id)
+        result = await _call_with_error_handling(
+            entry_data.client.async_get_wifi_list(device_id)
+        )
+        hass.bus.async_fire(
+            EVENT_WIFI_SCAN,
+            {
+                ATTR_DEVICE_ID: device_id,
+                "networks": result,
+            },
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SCAN_WIFI,
+        async_handle_scan_wifi,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_create_power_profile(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        name = call.data[ATTR_PROFILE_NAME]
+        update_at = call.data[ATTR_UPDATED_AT]
+        profile = call.data[ATTR_PROFILE_PAYLOAD]
+        if not isinstance(profile, dict):
+            raise HomeAssistantError("Profile payload must be a JSON object")
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_save_personal_power_profile(
+                device_id, name, update_at, profile
+            ),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CREATE_POWER_PROFILE,
+        async_handle_create_power_profile,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_PROFILE_NAME): cv.string,
+                vol.Required(ATTR_UPDATED_AT): cv.string,
+                vol.Required(ATTR_PROFILE_PAYLOAD): dict,
+            }
+        ),
+    )
+
+    async def async_handle_update_power_profile(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        name = call.data[ATTR_PROFILE_NAME]
+        update_at = call.data[ATTR_UPDATED_AT]
+        profile = call.data[ATTR_PROFILE_PAYLOAD]
+        if not isinstance(profile, dict):
+            raise HomeAssistantError("Profile payload must be a JSON object")
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_update_personal_power_profile(
+                device_id, name, update_at, profile
+            ),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UPDATE_POWER_PROFILE,
+        async_handle_update_power_profile,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_PROFILE_NAME): cv.string,
+                vol.Required(ATTR_UPDATED_AT): cv.string,
+                vol.Required(ATTR_PROFILE_PAYLOAD): dict,
+            }
+        ),
+    )
+
+    async def async_handle_get_power_profile(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        timestamp = call.data[ATTR_PROFILE_TIMESTAMP]
+        entry_data = await _async_get_entry_for_device(device_id)
+        result = await _call_with_error_handling(
+            entry_data.client.async_get_personal_power_profile(device_id, timestamp)
+        )
+        hass.bus.async_fire(
+            EVENT_POWER_PROFILES,
+            {
+                ATTR_DEVICE_ID: device_id,
+                "profile": result,
+                ATTR_PROFILE_TIMESTAMP: timestamp,
+            },
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_POWER_PROFILE,
+        async_handle_get_power_profile,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_PROFILE_TIMESTAMP): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_delete_power_profile(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        name = call.data[ATTR_PROFILE_NAME]
+        update_at = call.data[ATTR_UPDATED_AT]
+        entry_data = await _async_get_entry_for_device(device_id)
+        await _execute_and_refresh(
+            entry_data,
+            entry_data.client.async_delete_personal_power_profile(
+                device_id, name, update_at
+            ),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DELETE_POWER_PROFILE,
+        async_handle_delete_power_profile,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_PROFILE_NAME): cv.string,
+                vol.Required(ATTR_UPDATED_AT): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_list_power_profiles(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        entry_data = await _async_get_entry_for_device(device_id)
+        result = await _call_with_error_handling(
+            entry_data.client.async_list_personal_power_profiles(device_id)
+        )
+        hass.bus.async_fire(
+            EVENT_POWER_PROFILES,
+            {
+                ATTR_DEVICE_ID: device_id,
+                "profiles": result,
+            },
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_LIST_POWER_PROFILES,
+        async_handle_list_power_profiles,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_get_device_statistics(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        date_start = call.data.get(ATTR_DATE_START)
+        date_end = call.data.get(ATTR_DATE_END)
+        entry_data = await _async_get_entry_for_device(device_id)
+        result = await _call_with_error_handling(
+            entry_data.client.async_get_device_statistics(
+                device_id,
+                start=date_start,
+                end=date_end,
+            )
+        )
+        hass.bus.async_fire(
+            EVENT_DEVICE_STATISTICS,
+            {
+                ATTR_DEVICE_ID: device_id,
+                "statistics": result,
+                ATTR_DATE_START: date_start,
+                ATTR_DATE_END: date_end,
+            },
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_DEVICE_STATISTICS,
+        async_handle_get_device_statistics,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Optional(ATTR_DATE_START): cv.string,
+                vol.Optional(ATTR_DATE_END): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_get_global_statistics(call: ServiceCall) -> None:
+        date_start = call.data.get(ATTR_DATE_START)
+        date_end = call.data.get(ATTR_DATE_END)
+        # Use the first available entry to perform the call.
+        first_entry = next(_iter_entries(hass), None)
+        if first_entry is None:
+            raise HomeAssistantError("V2C Cloud integration is not configured")
+        result = await _call_with_error_handling(
+            first_entry.client.async_get_global_statistics(
+                start=date_start,
+                end=date_end,
+            )
+        )
+        hass.bus.async_fire(
+            EVENT_GLOBAL_STATISTICS,
+            {
+                "statistics": result,
+                ATTR_DATE_START: date_start,
+                ATTR_DATE_END: date_end,
+            },
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_GLOBAL_STATISTICS,
+        async_handle_get_global_statistics,
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_DATE_START): cv.string,
+                vol.Optional(ATTR_DATE_END): cv.string,
             }
         ),
     )

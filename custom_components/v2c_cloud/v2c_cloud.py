@@ -16,9 +16,13 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
 DEFAULT_TIMEOUT = 15
-PAIRINGS_CACHE_TTL = 300  # seconds
+PAIRINGS_CACHE_TTL = 3600  # seconds
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2.0
+RFID_REFRESH_INTERVAL = 6 * 3600  # seconds
+RFID_RETRY_INTERVAL = 30 * 60  # seconds
+VERSION_REFRESH_INTERVAL = 12 * 3600  # seconds
+VERSION_RETRY_INTERVAL = 60 * 60  # seconds
 
 
 class V2CError(Exception):
@@ -39,6 +43,21 @@ class V2CRequestError(V2CError):
 
 class V2CRateLimitError(V2CRequestError):
     """Raised when the V2C API responds with HTTP 429."""
+
+
+def _normalize_bool(value: Any) -> bool | None:
+    """Coerce various payload values to boolean."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on", "online"}:
+            return True
+        if lowered in {"false", "0", "no", "off", "offline"}:
+            return False
+    return None
 
 
 def _coerce_scalar(text: str) -> Any:
@@ -78,7 +97,6 @@ class V2CDeviceState:
     reported: dict[str, Any] | None = None
     rfid_cards: list[dict[str, Any]] | None = None
     version: str | None = None
-    mac_address: str | None = None
     additional: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
@@ -92,7 +110,6 @@ class V2CDeviceState:
             "reported": self.reported,
             "rfid_cards": self.rfid_cards,
             "version": self.version,
-            "mac_address": self.mac_address,
             "additional": self.additional,
         }
 
@@ -114,11 +131,17 @@ class V2CClient:
         self._timeout = timeout
         self._pairings_cache: list[dict[str, Any]] | None = None
         self._pairings_cache_expiry: float = 0.0
+        self._last_rate_limit: dict[str, Any] | None = None
 
     @property
     def base_url(self) -> str:
         """Return the base URL used by the client."""
         return self._base_url
+
+    @property
+    def last_rate_limit(self) -> dict[str, Any] | None:
+        """Return the last RateLimit header snapshot."""
+        return self._last_rate_limit
 
     def preload_pairings(self, pairings: list[dict[str, Any]] | None, ttl: float | None = None) -> None:
         """Preload cached pairings to avoid initial rate-limit failures."""
@@ -194,6 +217,27 @@ class V2CClient:
                                 f"V2C API error {status}: {text or 'unknown error'}",
                                 status=status,
                             )
+
+                        rate_limit: dict[str, Any] | None = None
+                        if response.headers:
+                            rate_limit = {}
+                            limit_header = response.headers.get("RateLimit-Limit")
+                            remaining_header = response.headers.get("RateLimit-Remaining")
+                            reset_header = response.headers.get("RateLimit-Reset")
+                            try:
+                                rate_limit["limit"] = int(limit_header) if limit_header is not None else None
+                            except (TypeError, ValueError):
+                                rate_limit["limit"] = None
+                            try:
+                                rate_limit["remaining"] = int(remaining_header) if remaining_header is not None else None
+                            except (TypeError, ValueError):
+                                rate_limit["remaining"] = None
+                            try:
+                                rate_limit["reset"] = int(reset_header) if reset_header is not None else None
+                            except (TypeError, ValueError):
+                                rate_limit["reset"] = None
+                            if any(value is not None for value in rate_limit.values()):
+                                self._last_rate_limit = rate_limit
 
                         if status == 204:
                             return None
@@ -322,7 +366,10 @@ class V2CClient:
 
     async def async_get_current_state_charge(self, device_id: str) -> Any:
         """Return the current charging state of the device."""
-        return await self._device_command("/device/currentstatecharge", device_id)
+        return await self._device_command(
+            "/device/currentstatecharge",
+            device_id,
+        )
 
     async def async_get_rfid_cards(self, device_id: str) -> Any:
         """Return registered RFID cards for the device."""
@@ -353,6 +400,20 @@ class V2CClient:
             extra_params={"tag": tag},
         )
 
+    async def async_add_rfid_card(
+        self,
+        device_id: str,
+        code: str,
+        tag: str,
+    ) -> Any:
+        """Register an RFID card by providing its UID and friendly name."""
+        params = {"code": code, "tag": tag}
+        return await self._device_command(
+            "/device/rfid/tag",
+            device_id,
+            extra_params=params,
+        )
+
     async def async_update_rfid_tag(
         self,
         device_id: str,
@@ -365,6 +426,7 @@ class V2CClient:
             "/device/rfid/tag",
             device_id,
             extra_params=params,
+            method="PUT",
         )
 
     async def async_delete_rfid_card(
@@ -388,6 +450,40 @@ class V2CClient:
         """Pause charging."""
         return await self._device_command("/device/pausecharge", device_id)
 
+    async def async_set_charge_stop_energy(self, device_id: str, kwh: float) -> Any:
+        """Configure automatic stop once a given energy (kWh) has been delivered."""
+        value = format(float(kwh), "g")
+        return await self._device_command(
+            "/device/charger_until_energy",
+            device_id,
+            extra_params={"value": value},
+        )
+
+    async def async_set_charge_stop_minutes(self, device_id: str, minutes: int) -> Any:
+        """Configure automatic stop after a given number of minutes."""
+        return await self._device_command(
+            "/device/charger_until_minutes",
+            device_id,
+            extra_params={"value": str(int(minutes))},
+        )
+
+    async def async_start_charge_kwh(self, device_id: str, kwh: float) -> Any:
+        """Start a charge programmed to stop after delivering a target kWh."""
+        value = format(float(kwh), "g")
+        return await self._device_command(
+            "/device/startchargekw",
+            device_id,
+            extra_params={"kw": value},
+        )
+
+    async def async_start_charge_minutes(self, device_id: str, minutes: int) -> Any:
+        """Start a charge programmed to stop after a target duration."""
+        return await self._device_command(
+            "/device/startchargeminutes",
+            device_id,
+            extra_params={"minutes": str(int(minutes))},
+        )
+
     async def async_reboot(self, device_id: str) -> Any:
         """Reboot the charger."""
         return await self._device_command("/device/reboot", device_id)
@@ -395,10 +491,6 @@ class V2CClient:
     async def async_trigger_update(self, device_id: str) -> Any:
         """Trigger firmware update."""
         return await self._device_command("/device/update", device_id)
-
-    async def async_get_mac(self, device_id: str) -> Any:
-        """Retrieve device MAC address."""
-        return await self._device_command("/device/mac", device_id)
 
     async def async_set_dynamic(self, device_id: str, enabled: bool) -> Any:
         """Enable or disable dynamic mode."""
@@ -459,6 +551,48 @@ class V2CClient:
             extra_params={"value": value},
         )
 
+    async def async_set_thirdparty_mode(
+        self,
+        device_id: str,
+        mode: str,
+        enabled: bool,
+    ) -> Any:
+        """Enable or disable the third-party control mode."""
+        value = "1" if enabled else "0"
+        return await self._device_command(
+            "/device/thirdparty_mode",
+            device_id,
+            extra_params={"mode": str(mode), "value": value},
+        )
+
+    async def async_set_ocpp_enabled(self, device_id: str, enabled: bool) -> Any:
+        """Toggle the OCPP functionality."""
+        value = "1" if enabled else "0"
+        return await self._device_command(
+            "/device/ocpp",
+            device_id,
+            extra_params={"value": value},
+            device_param="id",
+        )
+
+    async def async_set_ocpp_id(self, device_id: str, ocpp_id: str) -> Any:
+        """Configure the charge point identifier used for OCPP."""
+        return await self._device_command(
+            "/device/ocpp_id",
+            device_id,
+            extra_params={"value": ocpp_id},
+            device_param="id",
+        )
+
+    async def async_set_ocpp_address(self, device_id: str, url: str) -> Any:
+        """Configure the remote OCPP server URL."""
+        return await self._device_command(
+            "/device/ocpp_addr",
+            device_id,
+            extra_params={"value": url},
+            device_param="id",
+        )
+
     async def async_set_min_car_intensity(self, device_id: str, amps: int) -> Any:
         """Set minimum car intensity."""
         return await self._device_command(
@@ -491,6 +625,23 @@ class V2CClient:
             extra_params={"value": str(int(watts))},
         )
 
+    async def async_set_denka_max_power(self, device_id: str, watts: int) -> Any:
+        """Set maximum power for Denka devices."""
+        return await self._device_command(
+            "/device/denka/max_power",
+            device_id,
+            extra_params={"value": str(int(watts))},
+        )
+
+    async def async_set_inverter_ip(self, device_id: str, address: str) -> Any:
+        """Configure the IP address of the linked inverter."""
+        return await self._device_command(
+            "/device/inverter_ip",
+            device_id,
+            extra_params={"value": address},
+            device_param="id",
+        )
+
     async def async_set_wifi(
         self,
         device_id: str,
@@ -505,28 +656,106 @@ class V2CClient:
             extra_params=params,
         )
 
+    async def async_get_wifi_list(self, device_id: str) -> Any:
+        """Trigger a Wi-Fi scan and return visible networks."""
+        return await self._request(
+            "GET",
+            "/device/wifilist",
+            params={"id": device_id},
+        )
+
     async def async_program_timer(
         self,
         device_id: str,
         timer_id: int,
         *,
-        days_of_week: str,
         time_start: str,
         time_end: str,
+        active: bool,
     ) -> Any:
         """Configure a timer slot on the charger."""
         timer_value = str(timer_id)
         params = {"timerId": timer_value, "timer id": timer_value}
         body = {
-            "daysOfWeek": days_of_week,
+            "start_time": time_start,
+            "end_time": time_end,
             "timeStart": time_start,
             "timeEnd": time_end,
+            "active": active,
         }
         return await self._device_command(
             "/device/timer",
             device_id,
             extra_params=params,
             json_body=body,
+        )
+
+    async def async_save_personal_power_profile(
+        self,
+        device_id: str,
+        name: str,
+        update_at: str,
+        profile: dict[str, Any],
+    ) -> Any:
+        """Create a personalised power profile (v2)."""
+        params = {"name": name, "updateAt": update_at}
+        return await self._device_command(
+            "/device/savepersonalicepower/v2",
+            device_id,
+            extra_params=params,
+            json_body=profile,
+        )
+
+    async def async_update_personal_power_profile(
+        self,
+        device_id: str,
+        name: str,
+        update_at: str,
+        profile: dict[str, Any],
+    ) -> Any:
+        """Update a personalised power profile (v2)."""
+        params = {"name": name, "updateAt": update_at}
+        return await self._device_command(
+            "/device/personalicepower/v2",
+            device_id,
+            extra_params=params,
+            json_body=profile,
+            device_param="id",
+        )
+
+    async def async_get_personal_power_profile(
+        self,
+        device_id: str,
+        update_at: str,
+    ) -> Any:
+        """Retrieve a specific personalised power profile."""
+        params = {"deviceId": device_id, "updateAt": update_at}
+        return await self._request(
+            "GET",
+            "/device/personalicepower/v2",
+            params=params,
+        )
+
+    async def async_delete_personal_power_profile(
+        self,
+        device_id: str,
+        name: str,
+        update_at: str,
+    ) -> Any:
+        """Delete a personalised power profile."""
+        params = {"deviceId": device_id, "name": name, "updateAt": update_at}
+        return await self._request(
+            "DELETE",
+            "/device/personalicepower/v2",
+            params=params,
+        )
+
+    async def async_list_personal_power_profiles(self, device_id: str) -> Any:
+        """List all personalised power profiles for a device."""
+        return await self._request(
+            "GET",
+            "/device/personalicepower/all",
+            params={"deviceId": device_id},
         )
 
     async def _device_command(
@@ -536,13 +765,15 @@ class V2CClient:
         *,
         extra_params: dict[str, Any] | None = None,
         json_body: Any | None = None,
+        method: str = "POST",
+        device_param: str = "deviceId",
     ) -> Any:
         """Helper for POST commands that target a specific device."""
-        params = {"deviceId": device_id}
+        params = {device_param: device_id}
         if extra_params:
             params.update(extra_params)
         return await self._request(
-            "POST",
+            method,
             path,
             params=params,
             json_body=json_body,
@@ -556,6 +787,7 @@ async def async_gather_devices_state(
 ) -> dict[str, dict[str, Any]]:
     """Fetch the current state for each paired device."""
     results: dict[str, dict[str, Any]] = {}
+    now = time.time()
 
     for pairing in pairings:
         device_id = pairing.get("deviceId")
@@ -563,116 +795,140 @@ async def async_gather_devices_state(
             continue
 
         state = V2CDeviceState(device_id=device_id, pairing=pairing)
-        previous_state = (
-            previous_devices.get(device_id, {}) if previous_devices else {}
-        )
-
-        try:
-            connected = await client.async_get_connected(device_id)
-            state.connected = bool(connected) if connected is not None else None
-        except V2CRateLimitError:
-            raise
-        except V2CError as err:
-            _LOGGER.warning("Failed to fetch connection status for %s: %s", device_id, err)
+        previous_state = previous_devices.get(device_id, {}) if previous_devices else {}
+        previous_additional = previous_state.get("additional", {})
+        if isinstance(previous_additional, dict):
+            state.additional.update({k: v for k, v in previous_additional.items() if k != "reported_lower"})
 
         try:
             reported = await client.async_get_reported(device_id)
-            state.reported_raw = reported
-            if isinstance(reported, dict):
-                state.reported = reported
-                state.additional["reported_lower"] = {
-                    str(key).lower(): value for key, value in reported.items()
-                }
-            elif isinstance(reported, str):
-                try:
-                    parsed = json.loads(reported)
-                    if isinstance(parsed, dict):
-                        state.reported = parsed
-                        state.additional["reported_lower"] = {
-                            str(key).lower(): value for key, value in parsed.items()
-                        }
-                    else:
-                        state.reported_raw = parsed
-                except json.JSONDecodeError:
-                    pass
         except V2CRateLimitError:
             raise
         except V2CError as err:
             _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, err)
+            reported = None
 
-        try:
-            current_state = await client.async_get_current_state_charge(device_id)
-            state.current_state = current_state
-        except V2CRateLimitError:
-            raise
-        except V2CError as err:
-            _LOGGER.debug(
-                "Failed to fetch current state charge for %s: %s", device_id, err
-            )
+        state.reported_raw = reported
+        reported_dict: dict[str, Any] | None = None
+        if isinstance(reported, dict):
+            reported_dict = reported
+        elif isinstance(reported, str):
+            try:
+                parsed = json.loads(reported)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                reported_dict = parsed
+            else:
+                state.reported_raw = parsed if parsed is not None else reported
+        elif reported is not None and isinstance(reported, Iterable):
+            # Some payloads may be list-like; keep as raw
+            state.reported_raw = reported
 
-        try:
-            rfid_cards = await client.async_get_rfid_cards(device_id)
-            if isinstance(rfid_cards, list):
-                state.rfid_cards = rfid_cards
-            elif rfid_cards is not None:
-                state.additional["rfid_cards_raw"] = rfid_cards
-        except V2CRateLimitError:
-            raise
-        except V2CError as err:
-            _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
-
-        if previous_state.get("version") is not None:
-            state.version = previous_state.get("version")
-            version_info_prev = (
-                previous_state.get("additional", {}).get("version_info")
-            )
-            if isinstance(version_info_prev, dict):
-                state.additional["version_info"] = version_info_prev
+        if reported_dict is not None:
+            state.reported = reported_dict
+            lowered = {str(key).lower(): value for key, value in reported_dict.items()}
+            state.additional["reported_lower"] = lowered
+            state.additional["reported_timestamp"] = now
         else:
+            state.additional.pop("reported_lower", None)
+            if isinstance(previous_state.get("reported"), dict):
+                state.reported = previous_state.get("reported")
+                lowered_prev = previous_state.get("additional", {}).get("reported_lower")
+                if isinstance(lowered_prev, dict):
+                    state.additional["reported_lower"] = lowered_prev
+
+        connected_value: Any | None = None
+        lowered = state.additional.get("reported_lower")
+        if isinstance(lowered, dict):
+            for key in ("connected", "isconnected", "online", "is_online", "statusconnection"):
+                if key in lowered:
+                    connected_value = lowered[key]
+                    break
+        if connected_value is None:
+            connected_value = previous_state.get("connected")
+        state.connected = _normalize_bool(connected_value)
+
+        if state.reported is not None:
+            state.current_state = state.reported
+        elif previous_state.get("current_state") is not None:
+            state.current_state = previous_state.get("current_state")
+
+        previous_cards = previous_state.get("rfid_cards")
+        next_rfid_refresh = state.additional.get("_rfid_next_refresh", 0.0)
+        refresh_rfid = previous_cards is None or now >= float(next_rfid_refresh or 0)
+        if refresh_rfid:
+            try:
+                rfid_cards = await client.async_get_rfid_cards(device_id)
+            except V2CRateLimitError:
+                raise
+            except V2CError as err:
+                _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
+                rfid_cards = None
+            else:
+                if isinstance(rfid_cards, list):
+                    state.rfid_cards = rfid_cards
+                    state.additional["_rfid_last_success"] = now
+                    state.additional["_rfid_next_refresh"] = now + RFID_REFRESH_INTERVAL
+                elif rfid_cards is not None:
+                    state.additional["rfid_cards_raw"] = rfid_cards
+                    state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+                else:
+                    state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+                    state.rfid_cards = None
+            if state.rfid_cards is None and previous_cards is not None:
+                state.rfid_cards = previous_cards
+                state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+        else:
+            state.rfid_cards = previous_cards
+
+        previous_version = previous_state.get("version")
+        version_info_prev = previous_state.get("additional", {}).get("version_info")
+        next_version_refresh = state.additional.get("_version_next_refresh", 0.0)
+        refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
+        if refresh_version:
             try:
                 version_response = await client.async_get_version(device_id)
-                version_info: dict[str, Any] | None = None
-
-                if isinstance(version_response, dict):
-                    version_info = version_response
-                elif isinstance(version_response, str):
-                    try:
-                        parsed_version = json.loads(version_response)
-                        if isinstance(parsed_version, dict):
-                            version_info = parsed_version
-                        else:
-                            state.version = str(version_response)
-                    except json.JSONDecodeError:
-                        state.version = version_response
-                elif version_response is not None:
-                    state.version = str(version_response)
-
-                if version_info:
-                    state.version = (
-                        version_info.get("versionId")
-                        or version_info.get("version")
-                        or version_info.get("version_id")
-                    )
-                    state.additional["version_info"] = version_info
             except V2CRateLimitError:
                 raise
             except V2CError as err:
                 _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
+                version_response = None
+            version_info: dict[str, Any] | None = None
+            if isinstance(version_response, dict):
+                version_info = version_response
+            elif isinstance(version_response, str):
+                try:
+                    parsed_version = json.loads(version_response)
+                except json.JSONDecodeError:
+                    parsed_version = None
+                if isinstance(parsed_version, dict):
+                    version_info = parsed_version
+                elif version_response:
+                    state.version = version_response
+            elif version_response is not None:
+                state.version = str(version_response)
 
-        if previous_state.get("mac_address") is not None:
-            state.mac_address = previous_state.get("mac_address")
+            if version_info:
+                state.version = (
+                    version_info.get("versionId")
+                    or version_info.get("version")
+                    or version_info.get("version_id")
+                )
+                state.additional["version_info"] = version_info
+            elif previous_version is not None:
+                state.version = previous_version
+                if isinstance(version_info_prev, dict):
+                    state.additional["version_info"] = version_info_prev
+
+            state.additional["_version_next_refresh"] = now + (
+                VERSION_REFRESH_INTERVAL if state.version is not None else VERSION_RETRY_INTERVAL
+            )
         else:
-            try:
-                mac_address = await client.async_get_mac(device_id)
-                if mac_address:
-                    if isinstance(mac_address, dict) and "mac" in mac_address:
-                        state.mac_address = str(mac_address["mac"])
-                    else:
-                        state.mac_address = str(mac_address)
-            except V2CRateLimitError:
-                raise
-            except V2CError as err:
-                _LOGGER.debug("Failed to fetch MAC address for %s: %s", device_id, err)
+            state.version = previous_version
+            if isinstance(version_info_prev, dict):
+                state.additional["version_info"] = version_info_prev
+            state.additional["_version_next_refresh"] = next_version_refresh
 
         results[device_id] = state.as_dict()
 

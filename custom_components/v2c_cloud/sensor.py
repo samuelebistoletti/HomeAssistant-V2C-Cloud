@@ -40,7 +40,6 @@ async def async_setup_entry(
                 V2CMaxIntensitySensor(coordinator, client, device_id),
                 V2CMaxPowerSensor(coordinator, client, device_id),
                 V2CVersionSensor(coordinator, client, device_id),
-                V2CMacAddressSensor(coordinator, client, device_id),
                 V2CRfidCardsSensor(coordinator, client, device_id),
             )
         )
@@ -60,18 +59,18 @@ class V2CChargingStateSensor(V2CEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         """Return the current charging state as a label."""
-        raw_value = self.device_state.get("current_state")
-        resolved: str | None = None
-
-        if isinstance(raw_value, dict):
-            raw_value = raw_value.get("charge_state") or raw_value.get("state")
-
+        raw_value = self.get_reported_value(
+            "charge_state",
+            "charging_state",
+            "status",
+            "state",
+        )
         if raw_value is None:
-            raw_value = self.get_reported_value(
-                "charge_state",
-                "charging_state",
-                "status",
-            )
+            legacy_state = self.device_state.get("current_state")
+            if isinstance(legacy_state, dict):
+                raw_value = legacy_state.get("charge_state") or legacy_state.get("state")
+            elif legacy_state is not None:
+                raw_value = legacy_state
 
         if raw_value is None:
             return None
@@ -89,13 +88,12 @@ class V2CChargingStateSensor(V2CEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return raw state information."""
         attrs: dict[str, Any] = {}
-        current_state = self.device_state.get("current_state")
-        if current_state is not None:
-            attrs["current_state_raw"] = current_state
-
         reported_dict = self.device_state.get("reported")
         if isinstance(reported_dict, dict):
             attrs["reported"] = reported_dict
+        timestamp = self.device_state.get("additional", {}).get("reported_timestamp")
+        if isinstance(timestamp, (int, float)):
+            attrs["reported_timestamp"] = timestamp
 
         return attrs
 
@@ -245,23 +243,6 @@ class V2CVersionSensor(V2CEntity, SensorEntity):
         return None
 
 
-class V2CMacAddressSensor(V2CEntity, SensorEntity):
-    """Sensor exposing the MAC address reported by the charger."""
-
-    def __init__(self, coordinator, client, device_id) -> None:
-        super().__init__(coordinator, client, device_id)
-        self._attr_translation_key = "mac_address"
-        self._attr_unique_id = f"{device_id}_mac"
-        self._attr_icon = "mdi:chip"
-
-    @property
-    def native_value(self) -> str | None:
-        mac = self.device_state.get("mac_address")
-        if mac is None:
-            mac = self.get_reported_value("mac")
-        return str(mac) if mac else None
-
-
 class V2CRfidCardsSensor(V2CEntity, SensorEntity):
     """Sensor indicating the number of configured RFID cards."""
 
@@ -282,10 +263,22 @@ class V2CRfidCardsSensor(V2CEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        attrs: dict[str, Any] = {}
         rfid_cards = self.device_state.get("rfid_cards")
         if isinstance(rfid_cards, list):
-            return {"rfid_cards": rfid_cards}
-        raw = self.device_state.get("additional", {}).get("rfid_cards_raw")
-        if raw is not None:
-            return {"rfid_cards_raw": raw}
-        return None
+            attrs["rfid_cards"] = rfid_cards
+        else:
+            raw = self.device_state.get("additional", {}).get("rfid_cards_raw")
+            if raw is not None:
+                attrs["rfid_cards_raw"] = raw
+
+        meta = self.device_state.get("additional", {})
+        if isinstance(meta, dict):
+            last_success = meta.get("_rfid_last_success")
+            if isinstance(last_success, (int, float)):
+                attrs["rfid_last_success"] = last_success
+            next_refresh = meta.get("_rfid_next_refresh")
+            if isinstance(next_refresh, (int, float)):
+                attrs["rfid_next_refresh"] = next_refresh
+
+        return attrs or None

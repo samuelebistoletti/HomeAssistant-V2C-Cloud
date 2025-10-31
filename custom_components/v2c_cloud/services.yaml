@@ -4,7 +4,7 @@ set_wifi_credentials:
   fields:
     device_id:
       name: Device ID
-      description: Identificativo del dispositivo ottenuto dalla lista pairings.
+      description: Identificativo del dispositivo ottenuto dalla lista di abbinamenti.
       required: true
       example: "ABCDEF123456"
       selector:
@@ -41,25 +41,25 @@ program_timer:
           min: 0
           max: 1
           mode: box
-    days_of_week:
-      name: Giorni della settimana
-      description: Stringa di giorni (1=Lu ... 7=Do, 8=disattiva) come da documentazione V2C.
-      required: true
-      example: "12345"
-      selector:
-        text:
-    time_start:
+    start_time:
       name: Ora inizio
-      description: Ora di partenza in formato HH:MM (24h).
+      description: Ora di avvio in formato HH:MM (24h).
       required: true
       selector:
         time:
-    time_end:
+    end_time:
       name: Ora fine
       description: Ora di termine in formato HH:MM (24h).
       required: true
       selector:
         time:
+    active:
+      name: Timer attivo
+      description: Abilita o disabilita il timer programmato.
+      required: false
+      default: true
+      selector:
+        boolean:
 register_rfid:
   name: Registra nuova tessera RFID
   description: Attiva la modalità di acquisizione per registrare una nuova tessera RFID con il nome desiderato.
@@ -72,6 +72,26 @@ register_rfid:
     tag:
       name: Nome tessera
       description: Testo associato alla nuova tessera RFID.
+      required: true
+      selector:
+        text:
+add_rfid_card:
+  name: Aggiungi tessera RFID manualmente
+  description: Registra una tessera RFID specificando UID e nome senza utilizzare la modalità apprendimento.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    code:
+      name: Codice tessera
+      description: UID esadecimale della tessera RFID.
+      required: true
+      selector:
+        text:
+    tag:
+      name: Nome tessera
       required: true
       selector:
         text:
@@ -109,6 +129,72 @@ delete_rfid:
       required: true
       selector:
         text:
+set_charge_stop_energy:
+  name: Arresto per energia
+  description: Imposta l'energia (kWh) dopo la quale interrompere automaticamente la ricarica.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    kwh:
+      name: Energia (kWh)
+      description: Quantità di energia da erogare prima dello stop.
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.1
+set_charge_stop_minutes:
+  name: Arresto per tempo
+  description: Imposta la durata (minuti) oltre la quale interrompere automaticamente la ricarica.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    minutes:
+      name: Minuti
+      description: Durata della ricarica in minuti.
+      required: true
+      selector:
+        number:
+          min: 1
+          step: 1
+start_charge_for_energy:
+  name: Avvia ricarica per energia
+  description: Avvia una ricarica che terminerà automaticamente al raggiungimento dell'energia impostata.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    kwh:
+      name: Energia (kWh)
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.1
+start_charge_for_minutes:
+  name: Avvia ricarica per tempo
+  description: Avvia una ricarica che terminerà dopo il numero di minuti specificato.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    minutes:
+      name: Minuti
+      required: true
+      selector:
+        number:
+          min: 1
+          step: 1
 trigger_update:
   name: Avvia aggiornamento firmware
   description: Richiede al dispositivo di cercare e installare aggiornamenti firmware disponibili.
@@ -118,3 +204,234 @@ trigger_update:
       required: true
       selector:
         text:
+set_thirdparty_mode:
+  name: Modalità controllo API
+  description: Abilita o disabilita il controllo del caricatore tramite l'API di terze parti.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    mode:
+      name: Modalità
+      description: Identificatore di modalità fornito da V2C (es. 1).
+      required: false
+      default: "1"
+      selector:
+        text:
+    enabled:
+      name: Abilitato
+      required: true
+      selector:
+        boolean:
+set_ocpp_enabled:
+  name: Abilita OCPP
+  description: Abilita o disabilita la connettività OCPP del caricatore.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Abilitato
+      required: true
+      selector:
+        boolean:
+set_ocpp_id:
+  name: Imposta OCPP Charge Point ID
+  description: Configura l'identificativo del punto di ricarica usato nelle sessioni OCPP.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    ocpp_id:
+      name: Charge Point ID
+      required: true
+      selector:
+        text:
+set_ocpp_address:
+  name: Imposta server OCPP
+  description: Configura l'URL del server centrale OCPP.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    ocpp_url:
+      name: Endpoint OCPP
+      required: true
+      selector:
+        text:
+set_denka_max_power:
+  name: Potenza massima Denka
+  description: Imposta la potenza massima consentita per i dispositivi Denka (in watt).
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    watts:
+      name: Watt
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 1
+set_inverter_ip:
+  name: Imposta IP inverter
+  description: Configura l'indirizzo IP dell'inverter fotovoltaico collegato.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    ip_address:
+      name: Indirizzo IP
+      required: true
+      selector:
+        text:
+scan_wifi_networks:
+  name: Scansione reti Wi-Fi
+  description: Avvia una scansione delle reti Wi-Fi visibili e pubblica i risultati su un evento.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+create_power_profile:
+  name: Crea profilo di potenza
+  description: Salva un nuovo profilo personalizzato di potenza (modalità FV).
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    name:
+      name: Nome profilo
+      required: true
+      selector:
+        text:
+    updated_at:
+      name: Timestamp
+      description: Data/ora ISO utilizzata per la versione del profilo.
+      required: true
+      selector:
+        text:
+    profile:
+      name: Contenuto profilo
+      description: Oggetto JSON con i parametri del profilo (es. mode, value).
+      required: true
+      selector:
+        object:
+update_power_profile:
+  name: Aggiorna profilo di potenza
+  description: Modifica un profilo personalizzato esistente.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    name:
+      name: Nome profilo
+      required: true
+      selector:
+        text:
+    updated_at:
+      name: Timestamp
+      description: Data/ora ISO da associare all'aggiornamento.
+      required: true
+      selector:
+        text:
+    profile:
+      name: Contenuto profilo
+      required: true
+      selector:
+        object:
+get_power_profile:
+  name: Recupera profilo di potenza
+  description: Ottiene un profilo specifico utilizzando il timestamp.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    timestamp:
+      name: Timestamp
+      description: Valore updateAt del profilo da recuperare.
+      required: true
+      selector:
+        text:
+delete_power_profile:
+  name: Elimina profilo di potenza
+  description: Cancella un profilo personalizzato tramite nome e timestamp.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    name:
+      name: Nome profilo
+      required: true
+      selector:
+        text:
+    updated_at:
+      name: Timestamp
+      required: true
+      selector:
+        text:
+list_power_profiles:
+  name: Lista profili di potenza
+  description: Recupera l'elenco completo dei profili personalizzati associati al dispositivo.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+get_device_statistics:
+  name: Statistiche per dispositivo
+  description: Ottiene le statistiche di ricarica del dispositivo (facoltativa finestra temporale).
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    date_start:
+      name: Data inizio
+      description: Data iniziale (AAAA-MM-GG) per filtrare le statistiche.
+      required: false
+      selector:
+        date:
+    date_end:
+      name: Data fine
+      description: Data finale (AAAA-MM-GG) per filtrare le statistiche.
+      required: false
+      selector:
+        date:
+get_global_statistics:
+  name: Statistiche globali
+  description: Ottiene le statistiche aggregate di tutte le ricariche associate all'account.
+  fields:
+    date_start:
+      name: Data inizio
+      required: false
+      selector:
+        date:
+    date_end:
+      name: Data fine
+      required: false
+      selector:
+        date:

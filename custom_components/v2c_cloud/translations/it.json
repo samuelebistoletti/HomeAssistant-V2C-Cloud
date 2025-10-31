@@ -52,9 +52,6 @@
       "firmware_version": {
         "name": "Versione firmware"
       },
-      "mac_address": {
-        "name": "Indirizzo MAC"
-      },
       "rfid_cards": {
         "name": "Tessere RFID"
       }
@@ -71,6 +68,12 @@
       },
       "rfid_reader": {
         "name": "Lettore RFID"
+      },
+      "thirdparty_mode": {
+        "name": "Modalità API di terze parti"
+      },
+      "ocpp_enabled": {
+        "name": "OCPP abilitato"
       }
     },
     "select": {
@@ -123,11 +126,15 @@
     },
     "program_timer": {
       "name": "Configura timer di ricarica",
-      "description": "Imposta le finestre temporali di uno dei timer disponibili."
+      "description": "Imposta ora di inizio/fine e stato di attivazione di uno dei timer disponibili."
     },
     "register_rfid": {
       "name": "Registra tessera RFID",
       "description": "Attiva la modalità registrazione tessera con l'etichetta indicata."
+    },
+    "add_rfid_card": {
+      "name": "Aggiungi tessera RFID manualmente",
+      "description": "Registra una tessera RFID specificando UID e nome."
     },
     "update_rfid_tag": {
       "name": "Aggiorna etichetta RFID",
@@ -137,9 +144,81 @@
       "name": "Elimina tessera RFID",
       "description": "Rimuove una tessera RFID registrata dal dispositivo."
     },
+    "set_charge_stop_energy": {
+      "name": "Imposta arresto per energia",
+      "description": "Interrompe la ricarica dopo l'erogazione dell'energia indicata."
+    },
+    "set_charge_stop_minutes": {
+      "name": "Imposta arresto per tempo",
+      "description": "Interrompe la ricarica dopo il numero di minuti specificato."
+    },
+    "start_charge_for_energy": {
+      "name": "Avvia ricarica per energia",
+      "description": "Avvia una ricarica che termina al raggiungimento dell'obiettivo in kWh."
+    },
+    "start_charge_for_minutes": {
+      "name": "Avvia ricarica per tempo",
+      "description": "Avvia una ricarica che termina dopo la durata impostata."
+    },
     "trigger_update": {
       "name": "Avvia aggiornamento firmware",
       "description": "Richiede al caricatore di cercare e installare aggiornamenti firmware."
+    },
+    "set_thirdparty_mode": {
+      "name": "Modalità API di terze parti",
+      "description": "Abilita o disabilita il controllo tramite API esterna."
+    },
+    "set_ocpp_enabled": {
+      "name": "Abilita OCPP",
+      "description": "Abilita o disabilita la funzionalità OCPP."
+    },
+    "set_ocpp_id": {
+      "name": "Imposta Charge Point ID OCPP",
+      "description": "Configura l'identificativo del punto di ricarica nelle sessioni OCPP."
+    },
+    "set_ocpp_address": {
+      "name": "Imposta server OCPP",
+      "description": "Configura l'URL del server centrale OCPP."
+    },
+    "set_denka_max_power": {
+      "name": "Potenza massima Denka",
+      "description": "Aggiorna il limite di potenza per i dispositivi Denka."
+    },
+    "set_inverter_ip": {
+      "name": "Imposta IP inverter",
+      "description": "Configura l'indirizzo IP dell'inverter collegato."
+    },
+    "scan_wifi_networks": {
+      "name": "Scansiona reti Wi-Fi",
+      "description": "Avvia una scansione Wi-Fi e pubblica l'elenco delle reti visibili come evento."
+    },
+    "create_power_profile": {
+      "name": "Crea profilo di potenza",
+      "description": "Salva un nuovo profilo di potenza personalizzato (v2)."
+    },
+    "update_power_profile": {
+      "name": "Aggiorna profilo di potenza",
+      "description": "Aggiorna un profilo di potenza personalizzato (v2)."
+    },
+    "get_power_profile": {
+      "name": "Recupera profilo di potenza",
+      "description": "Recupera un profilo di potenza tramite timestamp."
+    },
+    "delete_power_profile": {
+      "name": "Elimina profilo di potenza",
+      "description": "Rimuove un profilo di potenza personalizzato."
+    },
+    "list_power_profiles": {
+      "name": "Elenco profili di potenza",
+      "description": "Recupera tutti i profili di potenza associati al dispositivo."
+    },
+    "get_device_statistics": {
+      "name": "Statistiche dispositivo",
+      "description": "Ottiene le statistiche di ricarica di un dispositivo."
+    },
+    "get_global_statistics": {
+      "name": "Statistiche globali",
+      "description": "Ottiene le statistiche aggregate di tutte le ricariche dell'account."
     }
   }
 }

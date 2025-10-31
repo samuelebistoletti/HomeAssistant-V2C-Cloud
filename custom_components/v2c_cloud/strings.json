@@ -52,9 +52,6 @@
       "firmware_version": {
         "name": "Firmware version"
       },
-      "mac_address": {
-        "name": "MAC address"
-      },
       "rfid_cards": {
         "name": "RFID cards"
       }
@@ -71,6 +68,12 @@
       },
       "rfid_reader": {
         "name": "RFID reader"
+      },
+      "thirdparty_mode": {
+        "name": "Third-party API mode"
+      },
+      "ocpp_enabled": {
+        "name": "OCPP enabled"
       }
     },
     "select": {
@@ -123,11 +126,15 @@
     },
     "program_timer": {
       "name": "Configure charging timer",
-      "description": "Set schedule windows for one of the device timers."
+      "description": "Set start/end time and activation status for one of the device timers."
     },
     "register_rfid": {
       "name": "Register RFID card",
       "description": "Enable card registration mode with the supplied label."
+    },
+    "add_rfid_card": {
+      "name": "Add RFID card manually",
+      "description": "Register an RFID card by providing its UID and display name."
     },
     "update_rfid_tag": {
       "name": "Update RFID label",
@@ -137,9 +144,81 @@
       "name": "Delete RFID card",
       "description": "Remove a registered RFID card from the device."
     },
+    "set_charge_stop_energy": {
+      "name": "Set energy stop",
+      "description": "Stop charging automatically after delivering a given amount of energy."
+    },
+    "set_charge_stop_minutes": {
+      "name": "Set time stop",
+      "description": "Stop charging automatically after the specified number of minutes."
+    },
+    "start_charge_for_energy": {
+      "name": "Start charge for energy",
+      "description": "Start a charging session that will end after reaching the energy target."
+    },
+    "start_charge_for_minutes": {
+      "name": "Start charge for time",
+      "description": "Start a charging session that will end after the specified duration."
+    },
     "trigger_update": {
       "name": "Trigger firmware update",
       "description": "Ask the charger to search and install available firmware updates."
+    },
+    "set_thirdparty_mode": {
+      "name": "Set third-party API mode",
+      "description": "Enable or disable third-party API control for the charger."
+    },
+    "set_ocpp_enabled": {
+      "name": "Toggle OCPP",
+      "description": "Enable or disable the OCPP functionality."
+    },
+    "set_ocpp_id": {
+      "name": "Set OCPP charge point ID",
+      "description": "Configure the charge point identifier used in OCPP sessions."
+    },
+    "set_ocpp_address": {
+      "name": "Set OCPP server address",
+      "description": "Configure the remote OCPP server URL."
+    },
+    "set_denka_max_power": {
+      "name": "Set Denka max power",
+      "description": "Update the maximum power limit enforced on Denka devices."
+    },
+    "set_inverter_ip": {
+      "name": "Set inverter IP",
+      "description": "Configure the IP address of the linked inverter."
+    },
+    "scan_wifi_networks": {
+      "name": "Scan Wi-Fi networks",
+      "description": "Trigger a Wi-Fi scan and emit the list of visible networks as an event."
+    },
+    "create_power_profile": {
+      "name": "Create power profile",
+      "description": "Store a personalised power profile (v2)."
+    },
+    "update_power_profile": {
+      "name": "Update power profile",
+      "description": "Update an existing personalised power profile (v2)."
+    },
+    "get_power_profile": {
+      "name": "Get power profile",
+      "description": "Retrieve a personalised power profile using its timestamp."
+    },
+    "delete_power_profile": {
+      "name": "Delete power profile",
+      "description": "Remove a personalised power profile."
+    },
+    "list_power_profiles": {
+      "name": "List power profiles",
+      "description": "Retrieve all personalised power profiles for a device."
+    },
+    "get_device_statistics": {
+      "name": "Get device statistics",
+      "description": "Retrieve charging statistics for a specific device."
+    },
+    "get_global_statistics": {
+      "name": "Get global statistics",
+      "description": "Retrieve aggregated charging statistics for the account."
     }
   }
 }

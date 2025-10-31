@@ -81,6 +81,42 @@ async def async_setup_entry(
                     icon_on="mdi:card-account-details",
                     icon_off="mdi:card-off",
                 ),
+                V2CBooleanSwitch(
+                    coordinator,
+                    client,
+                    device_id,
+                    name_key="thirdparty_mode",
+                    unique_suffix="thirdparty_mode",
+                    setter=lambda state, _device_id=device_id: client.async_set_thirdparty_mode(
+                        _device_id, "1", state
+                    ),
+                    reported_keys=(
+                        "thirdparty_mode",
+                        "thirdpartymode",
+                        "thirdparty",
+                        "thirdpartyapi",
+                    ),
+                    icon_on="mdi:cloud-check",
+                    icon_off="mdi:cloud-off-outline",
+                ),
+                V2CBooleanSwitch(
+                    coordinator,
+                    client,
+                    device_id,
+                    name_key="ocpp_enabled",
+                    unique_suffix="ocpp",
+                    setter=lambda state, _device_id=device_id: client.async_set_ocpp_enabled(
+                        _device_id, state
+                    ),
+                    reported_keys=(
+                        "ocpp",
+                        "ocpp_enabled",
+                        "ocppactive",
+                        "ocppenabled",
+                    ),
+                    icon_on="mdi:protocol",
+                    icon_off="mdi:protocol",
+                ),
             )
         )
 

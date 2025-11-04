@@ -204,27 +204,6 @@ trigger_update:
       required: true
       selector:
         text:
-set_thirdparty_mode:
-  name: Modalità controllo API
-  description: Abilita o disabilita il controllo del caricatore tramite l'API di terze parti.
-  fields:
-    device_id:
-      name: Device ID
-      required: true
-      selector:
-        text:
-    mode:
-      name: Modalità
-      description: Identificatore di modalità fornito da V2C (es. 1).
-      required: false
-      default: "1"
-      selector:
-        text:
-    enabled:
-      name: Abilitato
-      required: true
-      selector:
-        boolean:
 set_ocpp_enabled:
   name: Abilita OCPP
   description: Abilita o disabilita la connettività OCPP del caricatore.

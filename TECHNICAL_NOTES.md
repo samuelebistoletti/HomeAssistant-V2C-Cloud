@@ -3,112 +3,105 @@
 ## 1. Architecture Overview
 
 ### Components
-- **REST client** (`custom_components/v2c_cloud/v2c_cloud.py`) wraps every documented endpoint exposed at `https://v2c.cloud/kong/v2c_service`. It normalises text responses, converts booleans and numbers, and exposes helpers for timers, RFID, Wi-Fi, and device commands.
-- **Config flow** collects the API key (and optional base URL for staging), validates credentials by calling `/pairings/me`, and stores a deterministic unique ID derived from the key.
-- **Coordinator** (`DataUpdateCoordinator`) aggiorna pairing e stato dispositivo con un intervallo adattivo (≥90 s) calcolato in base al numero di wallbox, così da rispettare il limite di 1000 richieste/giorno. I pairing vengono messi in cache per 60 minuti; le statistiche globali sono recuperate solo su richiesta servizio.
-- **Platforms** (binary sensor, sensor, switch, number, select, button) are thin wrappers around coordinator data. Each entity inherits from a shared base class (`entity.py`) that builds device info, exposes pairing metadata, and provides helpers for the `reported` payload.
-- **Services** are registered once per Home Assistant instance and route to client helpers; after each call, the coordinator refreshes to keep entities updated.
+- **Cloud REST client** (`custom_components/v2c_cloud/v2c_cloud.py`) incapsula tutti gli endpoint documentati su `https://v2c.cloud/kong/v2c_service`. Converte risposte testuali, gestisce retry, rate limit e caching di pairing/RFID/versione.
+- **Local API helper** (`custom_components/v2c_cloud/local_api.py`) fornisce utilità per determinare l'IP statico, interrogare `http://<IP>/RealTimeData`, emettere comandi `http://<IP>/write/KeyWord=Value` e gestire eccezioni dedicate (`V2CLocalApiError`).
+- **Config flow** raccoglie API key e base URL opzionale, valida l'accesso tramite `/pairings/me` e salva una unique-id deterministica.
+- **Coordinatore cloud** (`DataUpdateCoordinator`) esegue polling di pairings/status con un intervallo adattivo (≥90 s) calcolato per mantenere ~850 chiamate/giorno, lasciando margine per comandi manuali (limite V2C: 1000/die).
+- **Coordinatori locali** vengono creati lazy per ciascun device e interrogano `/RealTimeData` ogni 30 s. Sensori, switch e number condividono i dati locali per evitare richieste duplicate.
+- **Piattaforme** (binary_sensor, sensor, switch, number, select, button) ereditano da `V2CEntity`, che espone helper per pairing, reported payload e conversioni. Le entità scelgono automaticamente il dato locale quando presente.
+- **Servizi** Home Assistant sono registrati una sola volta; quelli che mutano configurazioni cloud usano il client REST, quelli che operano sulla LAN sfruttano `async_write_keyword` o i dati del coordinatore locale.
 
 ### Data Flow
 ```
-Config Flow ──► V2CClient ──► Pairings Validation
+Config Flow ──► V2CClient (cloud)
                       │
-                      └─► DataUpdateCoordinator (pairings + device state + stats)
-                                      │
-                   ┌──────────────────┼──────────────────┐
-                   │                  │                  │
-           Entity Platforms     Home Assistant Services  Diagnostics/Logs
+                      └──► Cloud Coordinator ──► Entities / Services / Diagnostics
+                                │
+                                └──► Local Coordinator(s) ──► Sensors & fast controls
 ```
 
 ## 2. Coordinator Data Model
 
-The coordinator stores a dictionary:
-
 ```python
 coordinator.data = {
-    "pairings": [ ... ],               # Risposta grezza da /pairings/me
+    "pairings": [...],                     # risposta da /pairings/me (cache 60 min)
     "devices": {
-        "<device_id>": {
-            "pairing": {...},          # Entry originale del pairing
+        device_id: {
+            "pairing": {...},
             "connected": bool | None,
             "current_state": Any,
-            "reported": {...} | None,
+            "reported": dict | None,
             "reported_raw": Any,
-            "rfid_cards": [...],
+            "rfid_cards": list | None,
             "version": str | None,
             "additional": {
-                "reported_lower": {...},     # cache con chiavi in minuscolo
-                "reported_timestamp": float, # epoch ottenuto da time.time()
+                "reported_lower": dict,
+                "reported_timestamp": float,
                 "rfid_cards_raw": Any,
                 "_rfid_last_success": float,
                 "_rfid_next_refresh": float,
                 "_version_next_refresh": float,
-                "version_info": {...},
+                "version_info": dict | None,
+                "static_ip": str | None,      # IP usato per la local API
             },
         },
-        ...
     },
-    "rate_limit": {                    # Header RateLimit dell'ultima risposta utile
-        "limit": int | None,
-        "remaining": int | None,
-        "reset": int | None,
-    },
+    "rate_limit": {"limit": int | None, "remaining": int | None, "reset": int | None},
 }
 ```
 
-Entities read this structure exclusively; no platform instantiates its own client or keeps separate caches.
+I coordinatori locali memorizzano direttamente l'ultima risposta `RealTimeData` con un campo `_static_ip` di servizio.
 
 ## 3. API Coverage
 
-The client now wraps every endpoint documented on https://api.v2charge.com/:
+### Cloud
+- **Stato / pairing**: `/pairings/me`, `/device/reported`, `/device/connected`, `/device/wifilist`, `/version`.
+- **Controlli**: `/device/charger_until_*`, `/device/startchargekw`, `/device/startchargeminutes`, `/device/reboot`, `/device/update`.
+- **Configurazione**: `/device/logo_led`, `/device/set_rfid`, `/device/ocpp`, `/device/maxpower`, `/device/chargefvmode`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/denka/max_power`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`.
+- **RFID**: `/device/rfid` (GET/POST/DELETE) e `/device/rfid/tag` (POST/PUT).
+- **Profili FV v2**: `/device/savepersonalicepower/v2`, `/device/personalicepower/v2` (POST/GET/DELETE), `/device/personalicepower/all`.
+- **Statistiche**: `/stadistic/device`, `/stadistic/global/me`.
 
-- **Device status**: `/device/connected`, `/device/currentstatecharge`, `/device/reported`, `/device/wifilist`, `/version`, `/pairings/me`.
-- **Immediate control & scheduling**: `/device/startcharge`, `/device/pausecharge`, `/device/charger_until_energy`, `/device/charger_until_minutes`, `/device/startchargekw`, `/device/startchargeminutes`, `/device/reboot`, `/device/update`.
-- **Configuration toggles**: `/device/dynamic`, `/device/locked`, `/device/logo_led`, `/device/set_rfid`, `/device/thirdparty_mode`, `/device/ocpp`.
-- **Parameter updates**: `/device/intensity`, `/device/min_car_int`, `/device/max_car_int`, `/device/maxpower`, `/device/denka/max_power`, `/device/chargefvmode`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/wifi`, `/device/inverter_ip`, `/device/ocpp_id`, `/device/ocpp_addr`.
-- **RFID management**: `/device/rfid` (GET/POST/DELETE) e `/device/rfid/tag` (POST/PUT) per inserimenti manuali e rinomina.
-- **Advanced power profiles (v2)**: `/device/savepersonalicepower/v2`, `/device/personalicepower/v2` (POST/GET/DELETE), `/device/personalicepower/all`.
-- **Statistics**: `/stadistic/device`, `/stadistic/global/me`.
+I parametri numerici vengono inviati come stringhe per allinearsi con la documentazione ufficiale; tutte le risposte vengono normalizzate a bool/float/int/dict quando possibile.
 
-All numeric query parameters are still submitted as strings to match the public documentation. Responses are normalised into sensible Python types (bool/float/int/dict) even when the API returns plain text.
+### Locale
+- **Realtime**: `GET http://<IP>/RealTimeData` (dizionario con potenze, stati, Wi-Fi, intensità, ecc.).
+- **Scritture**: `GET http://<IP>/write/KeyWord=Value` utilizzato per `Dynamic`, `Locked`, `Intensity`, `MinIntensity`, `MaxIntensity`, `Paused`. Ulteriori keyword possono essere aggiunte riutilizzando gli helper.
+
+Se la local API fallisce viene sollevato `V2CLocalApiError` e l'entità mantiene il valore precedente.
 
 ## 4. Entity Design Guidelines
 
-- **V2CEntity base class** offers `device_state`, `pairing`, `reported`, and `get_reported_value(*keys)` helpers.
-- **Sensors** favour text output when the upstream payload is a dictionary (e.g. charging state). Numeric sensors explicitly convert to float and fall back to cached optimistic values when conversions fail.
-- **Switches/Selectors/Numbers** use optimistic updates: the user command is executed, the coordinator is refreshed, and the entity state is eventually confirmed by the API response.
-- **Buttons** immediately invoke the underlying API helper and refresh the coordinator afterwards.
+- Il mixin `V2CEntity` fornisce `device_state`, `pairing`, `reported`, `reported_lower` e `get_reported_value`. Accetta un flag `refresh` opzionale in `_async_call_and_refresh` per evitare refresh cloud dopo comandi locali.
+- **Sensori** usano i coordinatori locali; quelli cloud (es. connettività) leggono dal dizionario principale. Le conversioni `_as_*` garantiscono tipi numerici coerenti.
+- **Switch/Number locali** applicano un lock ottimistico di 20 s dopo il comando e leggono immediatamente dalla risposta LAN, riducendo l'oscillazione tra `on`/`off`.
+- **Switch/Select cloud** si appoggiano al client REST e attendono il refresh per confermare lo stato.
+- **Buttons** locali (start/pause) non triggerano il refresh del coordinatore cloud; i pulsanti cloud (reboot/update) invece sì.
 
 ## 5. Services
 
-All services are registered once per Home Assistant instance. Those that mutate device state trigger a coordinator refresh; those that simply return data publish the payload as Home Assistant events.
-
-- **Configurazione/Rete**: `set_wifi_credentials`, `program_timer` (ora accetta `start_time`, `end_time`, `active`), `set_thirdparty_mode`, `set_ocpp_enabled`, `set_ocpp_id`, `set_ocpp_address`, `set_denka_max_power`, `set_inverter_ip`, `trigger_update`.
-- **Gestione RFID**: `register_rfid` (learning mode), `add_rfid_card` (inserimento manuale UID), `update_rfid_tag`, `delete_rfid`.
-- **Ricariche programmate**: `set_charge_stop_energy`, `set_charge_stop_minutes`, `start_charge_for_energy`, `start_charge_for_minutes`.
-- **Profili di potenza v2**: `create_power_profile`, `update_power_profile`, `get_power_profile`, `delete_power_profile`, `list_power_profiles` (event `v2c_cloud_power_profiles`).
-- **Statistiche e diagnostica**: `get_device_statistics` (event `v2c_cloud_device_statistics`), `get_global_statistics` (event `v2c_cloud_global_statistics`), `scan_wifi_networks` (event `v2c_cloud_wifi_scan`).
-
-Events payloads always include the `device_id` (when available) and the raw response so that automations can persist or notify the data.
+I servizi sono registrati una sola volta al bootstrap (`_async_register_services`). Mutazioni cloud vengono avvolte da `_execute_and_refresh` che esegue il comando REST e, in caso di successo, chiede il refresh del coordinator principale. I servizi dati pubblicano sempre un evento con il payload originale (`wifi_scan`, `device_statistics`, `global_statistics`, `power_profiles`).
 
 ## 6. Error Handling
 
-- `V2CAuthError` triggers Home Assistant re-auth flows during coordinator refreshes or service invocations.
-- `V2CRequestError` wraps HTTP/network issues with context (status code, message).
-- Coordinator updates log warnings for per-device failures but keep processing other devices, returning the last known good data when an API fetch fails.
-- Risposte `429 Too Many Requests` generano un backoff esponenziale (fino a tre tentativi) e, in caso di fallimento, fanno riutilizzare i dati cached mantenendo l'intervallo corrente; i metadati `rate_limit` aiutano a diagnosticare eventuali soglie raggiunte.
+- `V2CAuthError` ⇒ avvia i flussi di re-autenticazione Home Assistant.
+- `V2CRequestError` e `V2CRateLimitError` circoscrivono problemi HTTP/timeout e mantengono i dati precedenti quando possibile.
+- `V2CLocalApiError` incapsula errori LAN e viene propagato come `HomeAssistantError` così da notificare l'utente senza interrompere il loop.
+- Il coordinatore cloud applica un backoff esponenziale (max 3 tentativi) su timeout / 429; se fallisce, conserva la cache precedente.
 
 ## 7. Development Checklist
 
-- Keep `.ruff.toml` aligned with the repo style (imports, exceptions, and helper complexity are relaxed intentionally).
-- Update translations (`strings.json`, `translations/en.json`, `translations/it.json`) for any new entity or service.
-- Document new behaviour in `README.md`, `CHANGELOG.md`, and the service descriptions.
-- When the public API spec changes, refresh `docs/v2c_service.yaml` and verify all affected endpoints.
+- Aggiornare `strings.json` e le traduzioni per ogni nuova entità/servizio.
+- Documentare le modifiche in `README.md`, `TECHNICAL_NOTES.md` e `CHANGELOG.md`.
+- Rivalutare l'intervallo del coordinatore se vengono introdotte nuove chiamate cloud ricorrenti.
+- Validare le keyword locali aggiuntive confrontandosi con la documentazione V2C.
+- Mantenere i log chiari (livello `debug`) per richieste cloud e locali.
 
 ## 8. Testing Recommendations
 
-1. **API key validation** – confirm invalid keys trigger reauth.
-2. **Device discovery** – ensure multiple pairings are handled.
-3. **Command execution** – start/stop charge, toggles, timers, Wi-Fi credentials, and RFID management.
-4. **Statistics retrieval** – validate both per-device and global endpoints across date ranges.
-5. **Resilience** – simulate temporary network failures to confirm cached data usage and logging.
+1. **Validazione API key** – verificare workflow di onboarding e re-auth.
+2. **Rilevamento dispositivi** – testare più wallbox e valutare l'intervallo calcolato (`coordinator.update_interval`).
+3. **Comandi locali** – start/pause charge, switch dinamica/blocco, intenzità min/max.
+4. **Comandi cloud** – logo LED, OCPP, reboot/update, timer, RFID servizi.
+5. **Fallback** – simulare indisponibilità locale e assicurarsi che l'entità ripieghi sul valore cloud senza errori non gestiti.
+6. **Statistiche** – invocare `get_device_statistics` / `get_global_statistics` e verificare gli eventi generati.

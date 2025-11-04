@@ -12,7 +12,7 @@
     "step": {
       "user": {
         "title": "V2C Cloud",
-        "description": "Enter your V2C Cloud API key. You can generate it from https://v2c.cloud/api.",
+        "description": "Enter your V2C Cloud API key. You can generate it from https://v2c.cloud/home/user.",
         "data": {
           "api_key": "API key",
           "base_url": "Base URL"
@@ -34,11 +34,56 @@
       }
     },
     "sensor": {
-      "charging_state": {
+      "device_identifier": {
+        "name": "Device identifier"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "charge_state": {
         "name": "Charging state"
+      },
+      "ready_state": {
+        "name": "Ready state"
+      },
+      "charge_power": {
+        "name": "Charging power"
+      },
+      "voltage_installation": {
+        "name": "Installation voltage"
+      },
+      "charge_energy": {
+        "name": "Charging energy"
+      },
+      "slave_error": {
+        "name": "Slave error code"
+      },
+      "charge_time": {
+        "name": "Charging time"
+      },
+      "house_power": {
+        "name": "House power"
+      },
+      "fv_power": {
+        "name": "Photovoltaic power"
+      },
+      "battery_power": {
+        "name": "Battery power"
+      },
+      "paused": {
+        "name": "Charging paused"
+      },
+      "locked_state": {
+        "name": "Charger locked"
+      },
+      "timer_state": {
+        "name": "Timer enabled"
       },
       "current_intensity": {
         "name": "Current intensity"
+      },
+      "dynamic_state": {
+        "name": "Dynamic mode enabled"
       },
       "min_intensity": {
         "name": "Minimum intensity"
@@ -46,14 +91,23 @@
       "max_intensity": {
         "name": "Maximum intensity"
       },
-      "max_power": {
-        "name": "Maximum power"
+      "pause_dynamic": {
+        "name": "Pause dynamic control"
       },
-      "firmware_version": {
-        "name": "Firmware version"
+      "dynamic_power_mode": {
+        "name": "Dynamic power mode"
       },
-      "rfid_cards": {
-        "name": "RFID cards"
+      "contracted_power": {
+        "name": "Contracted power"
+      },
+      "wifi_ssid": {
+        "name": "Wi-Fi SSID"
+      },
+      "wifi_ip": {
+        "name": "Wi-Fi IP address"
+      },
+      "signal_status": {
+        "name": "Signal status"
       }
     },
     "switch": {
@@ -68,9 +122,6 @@
       },
       "rfid_reader": {
         "name": "RFID reader"
-      },
-      "thirdparty_mode": {
-        "name": "Third-party API mode"
       },
       "ocpp_enabled": {
         "name": "OCPP enabled"
@@ -163,10 +214,6 @@
     "trigger_update": {
       "name": "Trigger firmware update",
       "description": "Ask the charger to search and install available firmware updates."
-    },
-    "set_thirdparty_mode": {
-      "name": "Set third-party API mode",
-      "description": "Enable or disable third-party API control for the charger."
     },
     "set_ocpp_enabled": {
       "name": "Toggle OCPP",

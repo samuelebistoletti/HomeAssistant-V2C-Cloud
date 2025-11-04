@@ -5,7 +5,7 @@ info:
   description: "<p>Below is the documentation regarding V2C's API.</p>\n<p>To be able\
     \ to use the API, you will require an API key. To obtain an API key you will need\
     \ to generate it from your V2C cloud account. Once you are logged in, you can\
-    \ access the token from the link <a href=\"https://v2c.cloud/api\">https://v2c.cloud/api</a>.</p>\n\
+    \ access the token from the link <a href=\"https://v2c.cloud/home/user\">https://v2c.cloud/home/user</a>.</p>\n\
     \n<p>Some endpoints can optionally receive dates in the parameters. The dates\
     \ are in ISO String format. Example of a date: \"2021-06-24T21:12:12.000Z\".</p>\n\
     <p>The endpoints that have optional dates as parameters are:</p>\n<ul>\n    <li>/stadistic/device</li>\n\

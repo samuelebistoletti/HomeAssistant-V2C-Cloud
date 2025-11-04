@@ -2,23 +2,23 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Questa integrazione consente di collegare Home Assistant al servizio **V2C Cloud** utilizzando la [nuova documentazione ufficiale](https://api.v2charge.com/). Dopo aver configurato l'API key del proprio account V2C viene creato un dispositivo per ogni wallbox associata, con sensori, comandi e servizi per gestire intensità, timer, tessere RFID, profili fotovoltaici e configurazioni avanzate come OCPP e modalità terze parti.
+Questa integrazione consente di collegare Home Assistant al servizio **V2C Cloud** utilizzando la [nuova documentazione ufficiale](https://api.v2charge.com/). Dopo aver configurato l'API key del proprio account V2C viene creato un dispositivo per ogni wallbox associata, con entità che sfruttano in modo combinato le API cloud e gli endpoint **locali** esposti dalla wallbox per ridurre l’impatto sul rate limit.
 
 > ℹ️ Il progetto è stato sviluppato da zero per V2C Cloud, prendendo come riferimento la struttura tipica delle integrazioni Home Assistant.
 
 ## ✨ Funzionalità principali
 
 - **Autenticazione tramite API key** – la procedura guidata richiede solo la chiave generata dal portale V2C Cloud.
-- **Aggiornamento adattivo** – un `DataUpdateCoordinator` raggruppa le letture critiche (principalmente `/device/reported`) e adatta automaticamente l'intervallo di polling in base al numero di wallbox, in modo da non superare il limite di **1000 richieste giornaliere** previsto dalla piattaforma V2C.
-- **Sensori dedicati** – stato di connessione, stato di ricarica (mappa completa 0-5), intensità configurate, potenza massima, versione firmware e tessere RFID (con attributi per timestamp e ultimo refresh).
-- **Comandi rapidi** – pulsanti per avviare/pausare la ricarica, riavviare la wallbox o forzare un aggiornamento firmware.
-- **Controlli configurazione** – switch, select e number per dinamica di ricarica, lingua, modalità FV, tipo installazione, intensità e potenza massime, modalità API di terze parti e attivazione OCPP.
-- **Servizi Home Assistant** – Wi-Fi, timer, ricariche programmate per energia/tempo, tessere RFID (anche inserimento manuale), profili di potenza FV v2, configurazione OCPP/Denka/inverter e raccolta statistiche complete.
-- **Eventi diagnostici** – la scansione Wi-Fi, l'elenco profili e le statistiche vengono pubblicati su eventi della piattaforma (`v2c_cloud_wifi_scan`, `v2c_cloud_power_profiles`, `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`).
+- **Architettura ibrida cloud/local** – i dati in tempo reale (potenza, intensità, fotovoltaico, Wi-Fi, ecc.) sono letti ogni 30 s dall’endpoint locale `http://<IP>/RealTimeData`, mentre il cloud viene contattato solo per pairing, stato generale e comandi non disponibili in LAN.
+- **Aggiornamento adattivo** – il polling cloud (principalmente `/device/reported`) è raggruppato in un unico coordinator che adatta automaticamente l'intervallo in base al numero di wallbox, mantenendo un budget operativo di ~850 richieste/giorno e lasciando margine per comandi manuali.
+- **Automazioni più veloci** – switch e numerici per dinamica di ricarica, blocco e intensità aggiornano immediatamente la wallbox tramite `/write/KeyWord=Value`, senza attendere il refresh cloud.
+- **Comandi rapidi** – pulsanti per avviare/pausare la ricarica (locale), oltre ai comandi cloud necessari come reboot e aggiornamento firmware.
+- **Servizi Home Assistant completi** – Wi-Fi, timer, tessere RFID, profili fotovoltaici v2, configurazione OCPP/Denka/inverter e raccolta statistiche con pubblicazione su eventi dedicati (`v2c_cloud_wifi_scan`, `v2c_cloud_power_profiles`, `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`).
 
 ## 🛠 Prerequisiti
 
-- Account V2C Cloud con almeno una wallbox registrata e accesso all'API key da [https://v2c.cloud/api](https://v2c.cloud/api).
+- Account V2C Cloud con almeno una wallbox registrata e accesso all'API key da [https://v2c.cloud/home/user](https://v2c.cloud/home/user).
+- La wallbox deve essere raggiungibile sulla LAN (l'endpoint locale risponde su `http://<IP>/RealTimeData` e `http://<IP>/write/...`).
 - Home Assistant 2023.12 o successivo.
 - Connettività Internet verso `https://v2c.cloud/kong/v2c_service`.
 
@@ -45,50 +45,42 @@ Questa integrazione consente di collegare Home Assistant al servizio **V2C Cloud
 
 - Ogni ciclo di polling utilizza una sola chiamata `/device/reported` per wallbox; i pairing vengono memorizzati per 60 minuti prima di essere richiesti nuovamente.
 - Le informazioni meno dinamiche (tessere RFID e versione firmware) vengono aggiornate all'avvio e poi a intervalli dilatati (6 ore per RFID, 12 ore per la versione) o quando non sono ancora state recuperate.
-- Il coordinatore ridetermina automaticamente l'intervallo di aggiornamento in base al numero di dispositivi, mantenendo un budget operativo di circa 850 richieste/giorno per lasciare margine a comandi manuali (switch, servizi, pulsanti).
+- Il coordinatore ridetermina automaticamente l'intervallo di aggiornamento in base al numero di dispositivi, mantenendo un budget operativo di circa 850 richieste/giorno per lasciare margine a comandi manuali (switch, servizi, pulsanti). L'intervallo minimo è 90 s, quello di default 120 s; con N wallbox viene calcolato `ceil(N * 86400 / 850)`.
+- I pulsanti e gli switch che usano le API locali si aggiornano in autonomia senza attendere il ciclo cloud; se disponibile la risposta locale viene preferita per evitare oscillazioni dello stato.
 - L'ultima risposta del cloud include gli header `RateLimit-*`; il loro contenuto è disponibile in `coordinator.data["rate_limit"]` per eventuali diagnostiche avanzate.
 
 ## 🔌 Entità esposte
 
-### Sensori
+### Sensori (aggiornati via LAN ogni 30 s)
 
-- **Stato di ricarica** (testuale, con mappatura documentata: Disconnected, Vehicle connected, Charging, ecc.).
-- **Intensità corrente / minima / massima** (Ampere).
-- **Potenza massima** (kW).
-- **Versione firmware**.
-- **Conteggio tessere RFID** (con elenco tra gli attributi e timestamp dell'ultimo refresh).
+- **Identificativo dispositivo / Firmware**.
+- **Stato di ricarica** (mappato da 0 a 5), **stato di prontezza**, **timer attivo**, **caricatore bloccato**, **pausa dinamica**.
+- **Potenza di ricarica**, **energia sessione**, **tempo di ricarica**, **potenza casa/FV/batteria**, **potenza contrattuale**.
+- **Intensità corrente, minima e massima**, **modalità dinamica**, **modalità potenza dinamica**.
+- **Tensione di installazione**, **SSID e IP Wi-Fi**, **qualità segnale**.
 
 ### Sensori binari
 
-- **Connessione cloud** – indica se la wallbox risulta online.
+- **Connessione cloud** – indica se la wallbox risulta online (dati cloud).
 
 ### Switch
 
-- **Modalità dinamica** (`/device/dynamic`).
-- **Blocco caricatore** (`/device/locked`).
-- **Logo LED** (`/device/logo_led`).
-- **Lettore RFID** (`/device/set_rfid`).
-- **Modalità API terze parti** (`/device/thirdparty_mode`, parametro `mode=1`).
-- **OCPP abilitato** (`/device/ocpp`).
+- **Modalità dinamica** e **blocco caricatore** – comandi locali (`/write/Dynamic`, `/write/Locked`).
+- **Logo LED**, **lettore RFID**, **OCPP abilitato** – comandi cloud.
 
 ### Select
 
-- **Tipo di installazione** (`/device/inst_type`).
-- **Dispositivo slave** (`/device/slave_type`).
-- **Lingua** (`/device/language`).
-- **Modalità fotovoltaica** (`/device/chargefvmode`).
+- **Tipo di installazione**, **dispositivo slave**, **lingua**, **modalità fotovoltaica** – comandi cloud.
 
 ### Number
 
-- **Intensità corrente / minima / massima** (`/device/intensity`, `/device/min_car_int`, `/device/max_car_int`).
-- **Potenza massima** (`/device/maxpower`).
+- **Intensità corrente / minima / massima** – comandi locali (`/write/Intensity`, `/write/MinIntensity`, `/write/MaxIntensity`).
+- **Potenza massima** – comando cloud (`/device/maxpower`).
 
 ### Pulsanti
 
-- **Avvia ricarica** (`/device/startcharge`).
-- **Metti in pausa** (`/device/pausecharge`).
-- **Riavvia dispositivo** (`/device/reboot`).
-- **Richiedi aggiornamento firmware** (`/device/update`).
+- **Avvia ricarica** e **metti in pausa** – comandi locali (`/write/Paused=0/1`).
+- **Riavvia dispositivo** e **richiedi aggiornamento firmware** – comandi cloud.
 
 ## 🧰 Servizi disponibili
 
@@ -98,7 +90,6 @@ Questa integrazione consente di collegare Home Assistant al servizio **V2C Cloud
 | --- | --- | --- |
 | `v2c_cloud.set_wifi_credentials` | `/device/wifi` | Aggiorna SSID e password Wi-Fi. |
 | `v2c_cloud.program_timer` | `/device/timer` | Imposta start/end time e stato attivo di un timer. |
-| `v2c_cloud.set_thirdparty_mode` | `/device/thirdparty_mode` | Abilita/disabilita il controllo API di terze parti (mode predefinito `1`). |
 | `v2c_cloud.set_ocpp_enabled` | `/device/ocpp` | Attiva o disattiva la funzionalità OCPP. |
 | `v2c_cloud.set_ocpp_id` | `/device/ocpp_id` | Configura l'identificatore OCPP del punto di ricarica. |
 | `v2c_cloud.set_ocpp_address` | `/device/ocpp_addr` | Configura l'URL del server OCPP centrale. |

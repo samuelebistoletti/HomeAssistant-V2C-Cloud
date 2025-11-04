@@ -6,7 +6,7 @@ import logging
 import math
 from collections.abc import Iterable
 from datetime import timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -33,7 +33,6 @@ from .const import (
     ATTR_IP_ADDRESS,
     ATTR_KWH,
     ATTR_MINUTES,
-    ATTR_MODE,
     ATTR_OCPP_ID,
     ATTR_OCPP_URL,
     ATTR_PROFILE_NAME,
@@ -78,7 +77,6 @@ from .const import (
     SERVICE_SET_OCPP_ID,
     SERVICE_SET_STOP_CHARGE_KWH,
     SERVICE_SET_STOP_CHARGE_MINUTES,
-    SERVICE_SET_THIRDPARTY_MODE,
     SERVICE_SET_WIFI,
     SERVICE_START_CHARGE_KWH,
     SERVICE_START_CHARGE_MINUTES,
@@ -113,6 +111,7 @@ class V2CEntryRuntimeData:
 
     client: V2CClient
     coordinator: DataUpdateCoordinator
+    local_coordinators: dict[str, DataUpdateCoordinator] = field(default_factory=dict)
 
 
 async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
@@ -504,33 +503,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
                 vol.Required(ATTR_MINUTES): vol.Coerce(int),
-            }
-        ),
-    )
-
-    async def async_handle_thirdparty_mode(call: ServiceCall) -> None:
-        device_id = call.data[ATTR_DEVICE_ID]
-        mode = call.data.get(ATTR_MODE, "1")
-        enabled = call.data[ATTR_ENABLED]
-        entry_data = await _async_get_entry_for_device(device_id)
-        await _execute_and_refresh(
-            entry_data,
-            entry_data.client.async_set_thirdparty_mode(
-                device_id,
-                str(mode),
-                bool(enabled),
-            ),
-        )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_THIRDPARTY_MODE,
-        async_handle_thirdparty_mode,
-        schema=vol.Schema(
-            {
-                vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Optional(ATTR_MODE, default="1"): cv.string,
-                vol.Required(ATTR_ENABLED): cv.boolean,
             }
         ),
     )

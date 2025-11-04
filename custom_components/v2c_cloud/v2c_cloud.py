@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import json
 import logging
-import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -83,6 +84,41 @@ def _coerce_scalar(text: str) -> Any:
         return int(stripped)
     except ValueError:
         return stripped
+
+
+def _extract_static_ip(*values: Any) -> str | None:
+    """Extract an IPv4 address from nested payloads."""
+
+    def _parse(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            for key in ("static_ip", "ip", "address"):
+                if key in value:
+                    ip_value = _parse(value[key])
+                    if ip_value:
+                        return ip_value
+            return None
+        if isinstance(value, str):
+            candidate = value.strip()
+            if not candidate:
+                return None
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                try:
+                    return str(ipaddress.ip_address(candidate))
+                except ValueError:
+                    return None
+            else:
+                return _parse(parsed)
+        return None
+
+    for value in values:
+        ip_value = _parse(value)
+        if ip_value:
+            return ip_value
+    return None
 
 
 @dataclass(slots=True)
@@ -551,20 +587,6 @@ class V2CClient:
             extra_params={"value": value},
         )
 
-    async def async_set_thirdparty_mode(
-        self,
-        device_id: str,
-        mode: str,
-        enabled: bool,
-    ) -> Any:
-        """Enable or disable the third-party control mode."""
-        value = "1" if enabled else "0"
-        return await self._device_command(
-            "/device/thirdparty_mode",
-            device_id,
-            extra_params={"mode": str(mode), "value": value},
-        )
-
     async def async_set_ocpp_enabled(self, device_id: str, enabled: bool) -> Any:
         """Toggle the OCPP functionality."""
         value = "1" if enabled else "0"
@@ -830,6 +852,17 @@ async def async_gather_devices_state(
             lowered = {str(key).lower(): value for key, value in reported_dict.items()}
             state.additional["reported_lower"] = lowered
             state.additional["reported_timestamp"] = now
+
+            static_ip = _extract_static_ip(
+                reported_dict.get("wifi_static"),
+                reported_dict.get("wifi_info"),
+                reported_dict.get("huawei_ip"),
+                reported_dict.get("ip"),
+            )
+            if not static_ip and isinstance(previous_additional, dict):
+                static_ip = previous_additional.get("static_ip")
+            if static_ip:
+                state.additional["static_ip"] = static_ip
         else:
             state.additional.pop("reported_lower", None)
             if isinstance(previous_state.get("reported"), dict):

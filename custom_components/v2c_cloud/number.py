@@ -19,6 +19,7 @@ from .const import (
     MAX_POWER_MIN_KW,
 )
 from .entity import V2CEntity
+from .local_api import async_write_keyword, get_local_data, V2CLocalApiError
 from .v2c_cloud import V2CError
 
 CURRENT_MIN = 6.0
@@ -48,54 +49,76 @@ async def async_setup_entry(
                 V2CNumberEntity(
                     coordinator,
                     client,
+                    runtime_data,
                     device_id,
                     name_key="current_intensity",
                     unique_suffix="intensity",
                     reported_keys=("intensity", "currentintensity", "current_int", "current_intensity", "car_intensity"),
-                    setter=lambda api_value, _device_id=device_id: client.async_set_intensity(
-                        _device_id, api_value
+                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "Intensity",
+                        api_value,
                     ),
+                    local_key="Intensity",
                     native_unit=UnitOfElectricCurrent.AMPERE,
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
+                    refresh_after_call=False,
                 ),
                 V2CNumberEntity(
                     coordinator,
                     client,
+                    runtime_data,
                     device_id,
                     name_key="min_intensity",
                     unique_suffix="min_intensity",
                     reported_keys=("mincarint", "min_intensity", "mincarintensity", "min_car_int", "mincar_int"),
-                    setter=lambda api_value, _device_id=device_id: client.async_set_min_car_intensity(
-                        _device_id, api_value
+                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "MinIntensity",
+                        api_value,
                     ),
+                    local_key="MinIntensity",
                     native_unit=UnitOfElectricCurrent.AMPERE,
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
+                    refresh_after_call=False,
                 ),
                 V2CNumberEntity(
                     coordinator,
                     client,
+                    runtime_data,
                     device_id,
                     name_key="max_intensity",
                     unique_suffix="max_intensity",
                     reported_keys=("maxcarint", "max_intensity", "maxcarintensity", "max_car_int", "maxcar_int"),
-                    setter=lambda api_value, _device_id=device_id: client.async_set_max_car_intensity(
-                        _device_id, api_value
+                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "MaxIntensity",
+                        api_value,
                     ),
+                    local_key="MaxIntensity",
                     native_unit=UnitOfElectricCurrent.AMPERE,
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
+                    refresh_after_call=False,
                 ),
                 V2CNumberEntity(
                     coordinator,
                     client,
+                    runtime_data,
                     device_id,
                     name_key="max_power",
                     unique_suffix="max_power",
@@ -131,6 +154,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self,
         coordinator,
         client,
+        runtime_data,
         device_id: str,
         *,
         name_key: str,
@@ -145,10 +169,15 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         source_to_native: Callable[[float], float] | None = None,
         dynamic_max_keys: tuple[str, ...] | None = None,
         dynamic_max_transform: Callable[[float], float] | None = None,
+        local_key: str | None = None,
+        refresh_after_call: bool = True,
     ) -> None:
         super().__init__(coordinator, client, device_id)
         self._reported_keys = reported_keys
         self._setter = setter
+        self._runtime_data = runtime_data
+        self._local_key = local_key
+        self._refresh_after_call = refresh_after_call
         self._attr_translation_key = name_key
         self._attr_unique_id = f"{device_id}_{unique_suffix}_number"
         self._attr_native_unit_of_measurement = native_unit
@@ -163,7 +192,13 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
-        value = self.get_reported_value(*self._reported_keys)
+        value = None
+        if self._local_key:
+            local_data = get_local_data(self._runtime_data, self._device_id)
+            if isinstance(local_data, dict) and self._local_key in local_data:
+                value = local_data.get(self._local_key)
+        if value is None:
+            value = self.get_reported_value(*self._reported_keys)
         if value is None:
             value = self.device_state.get(self._reported_keys[0])
 
@@ -202,8 +237,11 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self.async_write_ha_state()
         api_value = self._value_to_api(value)
         try:
-            await self._async_call_and_refresh(self._setter(api_value))
-        except V2CError as err:
+            await self._async_call_and_refresh(
+                self._setter(api_value),
+                refresh=self._refresh_after_call,
+            )
+        except (V2CError, V2CLocalApiError) as err:
             self._optimistic_value = previous_value
             self.async_write_ha_state()
             raise HomeAssistantError(str(err)) from err

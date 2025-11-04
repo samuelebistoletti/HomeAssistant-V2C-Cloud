@@ -5,11 +5,13 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import V2CEntity
+from .local_api import async_write_keyword, V2CLocalApiError
 
 
 async def async_setup_entry(
@@ -34,10 +36,15 @@ async def async_setup_entry(
                     device_id,
                     name_key="start_charge",
                     unique_suffix="start_charge",
-                    coroutine_factory=lambda _device_id=device_id: client.async_start_charge(
-                        _device_id
+                    coroutine_factory=lambda _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "Paused",
+                        0,
                     ),
                     icon="mdi:play-circle",
+                    refresh_after_call=False,
                 ),
                 V2CButton(
                     coordinator,
@@ -45,10 +52,15 @@ async def async_setup_entry(
                     device_id,
                     name_key="pause_charge",
                     unique_suffix="pause_charge",
-                    coroutine_factory=lambda _device_id=device_id: client.async_pause_charge(
-                        _device_id
+                    coroutine_factory=lambda _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "Paused",
+                        1,
                     ),
                     icon="mdi:pause-circle",
+                    refresh_after_call=False,
                 ),
                 V2CButton(
                     coordinator,
@@ -94,9 +106,11 @@ class V2CButton(V2CEntity, ButtonEntity):
         coroutine_factory,
         icon: str,
         entity_category: EntityCategory | None = None,
+        refresh_after_call: bool = True,
     ) -> None:
         super().__init__(coordinator, client, device_id)
         self._coroutine_factory = coroutine_factory
+        self._refresh_after_call = refresh_after_call
         self._attr_translation_key = name_key
         self._attr_unique_id = f"{device_id}_{unique_suffix}"
         self._attr_icon = icon
@@ -104,4 +118,10 @@ class V2CButton(V2CEntity, ButtonEntity):
             self._attr_entity_category = entity_category
 
     async def async_press(self) -> None:
-        await self._async_call_and_refresh(self._coroutine_factory())
+        try:
+            await self._async_call_and_refresh(
+                self._coroutine_factory(),
+                refresh=self._refresh_after_call,
+            )
+        except V2CLocalApiError as err:
+            raise HomeAssistantError(str(err)) from err

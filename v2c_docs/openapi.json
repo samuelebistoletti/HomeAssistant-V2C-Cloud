@@ -788,66 +788,6 @@
         ]
       }
     },
-    "/device/thirdparty_mode": {
-      "post": {
-        "tags": [
-          "Device Control & Configuration"
-        ],
-        "summary": "Enable/Disable Third-Party API Control Mode",
-        "description": "Enables or disables the device's control mode via the third-party API.",
-        "operationId": "executeThirdPartyModeCommand",
-        "parameters": [
-          {
-            "name": "deviceId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "YOUR_DEVICE_ID"
-          },
-          {
-            "name": "mode",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "1"
-          },
-          {
-            "name": "value",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "1"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Command executed successfully"
-          },
-          "400": {
-            "description": "Bad Request"
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "500": {
-            "description": "Server Exception"
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "curl",
-            "label": "cURL",
-            "source": "curl -X 'POST' \\\n  'https://v2c.cloud/kong/v2c_service/device/thirdparty_mode?deviceId=YOUR_DEVICE_ID&mode=1&value=1' \\\n  -H 'apikey: {APIKEY}'\n"
-          }
-        ]
-      }
-    },
     "/device/inst_type": {
       "post": {
         "tags": [

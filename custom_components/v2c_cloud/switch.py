@@ -211,8 +211,16 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
     def is_on(self) -> bool:
         """Return the current state of the switch."""
         now = time.monotonic()
+        recent_command = (
+            self._optimistic_state is not None
+            and self._last_command_ts is not None
+            and now - self._last_command_ts < self._OPTIMISTIC_HOLD_SECONDS
+        )
         local_value = self._get_local_bool()
         if local_value is not None:
+            if recent_command and local_value != self._optimistic_state:
+                self._apply_icon(self._optimistic_state)
+                return self._optimistic_state
             self._optimistic_state = local_value
             self._last_command_ts = None
             self._apply_icon(local_value)

@@ -26,7 +26,10 @@ except ImportError:  # pragma: no cover - older releases
     UnitOfVoltage = None
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 
 from .const import CHARGE_STATE_LABELS, DOMAIN
 from .entity import build_device_info
@@ -127,8 +130,8 @@ STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
         10: {"en": "Clamp not connected", "it": "Pinza non collegata"},
     },
     "Paused": {
-        0: {"en": "Charging", "it": "In ricarica"},
-        1: {"en": "Paused", "it": "In pausa"},
+        0: {"en": "No", "it": "No"},
+        1: {"en": "Yes", "it": "Si"},
     },
     "ReadyState": {
         0: {"en": "Not ready", "it": "Non pronto"},
@@ -420,12 +423,16 @@ async def async_setup_entry(
     """Set up local realtime sensors for each configured charger."""
     runtime_data = hass.data[DOMAIN][entry.entry_id]
     cloud_coordinator = runtime_data.coordinator
-    devices = cloud_coordinator.data.get("devices", {}) if cloud_coordinator.data else {}
+    devices = (
+        cloud_coordinator.data.get("devices", {}) if cloud_coordinator.data else {}
+    )
 
     entities: list[SensorEntity] = []
 
     for device_id in devices:
-        coordinator = await async_get_or_create_local_coordinator(hass, runtime_data, device_id)
+        coordinator = await async_get_or_create_local_coordinator(
+            hass, runtime_data, device_id
+        )
         for description in REALTIME_SENSOR_DESCRIPTIONS:
             entities.append(
                 V2CLocalRealtimeSensor(
@@ -462,7 +469,9 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         if description.device_class:
             self._attr_device_class = description.device_class
         if description.native_unit_of_measurement:
-            self._attr_native_unit_of_measurement = description.native_unit_of_measurement
+            self._attr_native_unit_of_measurement = (
+                description.native_unit_of_measurement
+            )
         if description.state_class:
             self._attr_state_class = description.state_class
 
@@ -492,8 +501,12 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         data = self.coordinator.data
         if not isinstance(data, dict):
             return {}
-        attributes: dict[str, Any] = {"raw_value": data.get(self.entity_description.key)}
-        static_ip = data.get("_static_ip") or resolve_static_ip(self._runtime_data, self._device_id)
+        attributes: dict[str, Any] = {
+            "raw_value": data.get(self.entity_description.key)
+        }
+        static_ip = data.get("_static_ip") or resolve_static_ip(
+            self._runtime_data, self._device_id
+        )
         if isinstance(static_ip, str):
             attributes["static_ip"] = static_ip
         return attributes

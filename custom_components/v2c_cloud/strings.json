@@ -30,7 +30,11 @@
   "entity": {
     "binary_sensor": {
       "connected": {
-        "name": "Connection status"
+        "name": "V2C Cloud connection status",
+        "state": {
+          "on": "Connected",
+          "off": "Disconnected"
+        }
       }
     },
     "sensor": {

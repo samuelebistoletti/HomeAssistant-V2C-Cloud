@@ -71,7 +71,7 @@ Numeric query parameters are posted as strings (as per the public documentation)
 ## 4. Entity Guidelines
 
 - `V2CEntity.get_reported_value(*keys)` performs case-insensitive lookup on the cloud payload; helpers in `local_api.py` retrieve cached LAN data.
-- Local switches/numbers keep a 20-second optimistic lock after issuing a command to mask discrepancies until the next LAN refresh completes.
+- Switches, selects and numbers keep a ~20-second optimistic lock after issuing a command to mask discrepancies until the next LAN or cloud refresh completes.
 - Local selects/numbers/switches register listeners on the per-device local coordinator, so they repopulate instantly after reloads instead of waiting for the next cloud poll.
 - Cloud commands always go through `_async_call_and_refresh(..., refresh=True)`; LAN commands skip the cloud refresh to avoid extra API calls.
 - Entity unique IDs follow the pattern `f"{device_id}_{keyword}"` using the keyword exposed by the API whenever possible (e.g. `charge_power`, `locked_state`, `intensity`).

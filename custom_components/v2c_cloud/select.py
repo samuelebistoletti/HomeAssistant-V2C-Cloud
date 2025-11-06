@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import time
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
@@ -130,6 +131,7 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
     """Generic select entity backed by an integer option map."""
 
     _attr_entity_category = EntityCategory.CONFIG
+    _OPTIMISTIC_HOLD_SECONDS = 20.0
 
     def __init__(
         self,
@@ -164,6 +166,7 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         self._attr_options = self._options
 
         self._optimistic_value: int | None = None
+        self._last_command_ts: float | None = None
         initial_value = self._get_state_value()
         resolved = self._resolve_value(initial_value)
         if resolved is not None:
@@ -173,11 +176,20 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
     def current_option(self) -> str | None:
         value = self._get_state_value()
         resolved = self._resolve_value(value)
+        now = time.monotonic()
         if resolved is not None:
+            if self._should_hold_value(resolved, now):
+                return self._options_map.get(self._optimistic_value)
             self._optimistic_value = resolved
+            self._last_command_ts = None
             return self._options_map.get(resolved)
 
         if self._optimistic_value is not None:
+            if (
+                self._last_command_ts is not None
+                and now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
+            ):
+                self._last_command_ts = None
             return self._options_map.get(self._optimistic_value)
 
         return None
@@ -216,11 +228,19 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         for key, label in self._options_map.items():
             if label == option:
+                previous = self._optimistic_value
                 self._optimistic_value = key
+                self._last_command_ts = time.monotonic()
                 self.async_write_ha_state()
-                await self._async_call_and_refresh(
-                    self._setter(key), refresh=self._refresh_after_call
-                )
+                try:
+                    await self._async_call_and_refresh(
+                        self._setter(key), refresh=self._refresh_after_call
+                    )
+                except Exception:
+                    self._optimistic_value = previous
+                    self._last_command_ts = None
+                    self.async_write_ha_state()
+                    raise
                 return
         raise ValueError(f"Unsupported option {option}")
 
@@ -238,3 +258,11 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
             if isinstance(additional, dict):
                 value = additional.get(self._local_key.lower())
         return value
+
+    def _should_hold_value(self, resolved: int, now: float) -> bool:
+        return (
+            self._optimistic_value is not None
+            and self._last_command_ts is not None
+            and now - self._last_command_ts < self._OPTIMISTIC_HOLD_SECONDS
+            and resolved != self._optimistic_value
+        )

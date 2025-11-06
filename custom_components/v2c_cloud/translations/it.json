@@ -53,9 +53,6 @@
       "charge_power": {
         "name": "Potenza di ricarica"
       },
-      "voltage_installation": {
-        "name": "Tensione di installazione"
-      },
       "charge_energy": {
         "name": "Energia erogata"
       },
@@ -74,32 +71,8 @@
       "battery_power": {
         "name": "Potenza batteria"
       },
-      "paused": {
-        "name": "Ricarica in pausa"
-      },
-      "locked_state": {
-        "name": "Stato blocco"
-      },
       "timer_state": {
         "name": "Stato timer"
-      },
-      "current_intensity": {
-        "name": "Intensità corrente"
-      },
-      "dynamic_state": {
-        "name": "Stato modalità dinamica"
-      },
-      "min_intensity": {
-        "name": "Intensità minima"
-      },
-      "max_intensity": {
-        "name": "Intensità massima"
-      },
-      "pause_dynamic": {
-        "name": "Pausa controllo dinamico"
-      },
-      "dynamic_power_mode": {
-        "name": "Modalità potenza dinamica"
       },
       "contracted_power": {
         "name": "Potenza contrattuale"
@@ -111,12 +84,15 @@
         "name": "Indirizzo IP Wi-Fi"
       },
       "signal_status": {
-        "name": "Stato segnale"
+        "name": "Segnale Wi-Fi"
       }
     },
     "switch": {
       "dynamic_mode": {
         "name": "Modalità dinamica"
+      },
+      "pause_dynamic": {
+        "name": "Pausa controllo dinamico"
       },
       "locked": {
         "name": "Blocco caricatore"
@@ -163,6 +139,9 @@
       },
       "max_power": {
         "name": "Potenza massima"
+      },
+      "voltage_installation": {
+        "name": "Tensione di installazione"
       }
     },
     "button": {

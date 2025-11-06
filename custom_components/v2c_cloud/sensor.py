@@ -13,12 +13,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    UnitOfElectricCurrent,
-    UnitOfEnergy,
-    UnitOfPower,
-    UnitOfTime,
-)
+from homeassistant.const import UnitOfEnergy, UnitOfPower, UnitOfTime
 
 try:  # Home Assistant >= 2023.8
     from homeassistant.const import UnitOfVoltage
@@ -243,16 +238,6 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
-        key="VoltageInstallation",
-        translation_key="voltage_installation",
-        icon="mdi:flash",
-        device_class=SensorDeviceClass.VOLTAGE,
-        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
-        state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="voltage_installation",
-        value_fn=_as_float,
-    ),
-    V2CLocalRealtimeSensorDescription(
         key="ChargeEnergy",
         translation_key="charge_energy",
         icon="mdi:lightning-bolt-outline",
@@ -310,76 +295,11 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
-        key="Paused",
-        translation_key="paused",
-        icon="mdi:pause-circle-outline",
-        unique_id_suffix="paused_state",
-        value_fn=_as_flag,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="Locked",
-        translation_key="locked_state",
-        icon="mdi:lock",
-        unique_id_suffix="locked_state",
-        value_fn=_as_flag,
-    ),
-    V2CLocalRealtimeSensorDescription(
         key="Timer",
         translation_key="timer_state",
         icon="mdi:calendar-clock",
         unique_id_suffix="timer_state",
         value_fn=_as_flag,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="Intensity",
-        translation_key="current_intensity",
-        icon="mdi:current-ac",
-        device_class=SensorDeviceClass.CURRENT,
-        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-        state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="intensity_value",
-        value_fn=_as_float,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="Dynamic",
-        translation_key="dynamic_state",
-        icon="mdi:flash-auto",
-        unique_id_suffix="dynamic_state",
-        value_fn=_as_flag,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="MinIntensity",
-        translation_key="min_intensity",
-        icon="mdi:current-ac",
-        device_class=SensorDeviceClass.CURRENT,
-        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-        state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="min_intensity",
-        value_fn=_as_float,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="MaxIntensity",
-        translation_key="max_intensity",
-        icon="mdi:current-ac",
-        device_class=SensorDeviceClass.CURRENT,
-        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-        state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="max_intensity",
-        value_fn=_as_float,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="PauseDynamic",
-        translation_key="pause_dynamic",
-        icon="mdi:pause-octagon-outline",
-        unique_id_suffix="pause_dynamic",
-        value_fn=_as_flag,
-    ),
-    V2CLocalRealtimeSensorDescription(
-        key="DynamicPowerMode",
-        translation_key="dynamic_power_mode",
-        icon="mdi:lightning-bolt-circle",
-        unique_id_suffix="dynamic_power_mode",
-        value_fn=_as_int,
     ),
     V2CLocalRealtimeSensorDescription(
         key="ContractedPower",

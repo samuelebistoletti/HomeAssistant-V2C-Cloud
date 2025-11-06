@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import time
 from typing import Any
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfElectricCurrent, UnitOfPower
+
+try:  # Home Assistant >= 2024.3
+    from homeassistant.const import UnitOfVoltage
+except ImportError:  # pragma: no cover - fallback for older cores
+    UnitOfVoltage = None
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
@@ -33,6 +39,9 @@ CURRENT_STEP = 1.0
 POWER_MIN = MAX_POWER_MIN_KW
 POWER_MAX = MAX_POWER_MAX_KW
 POWER_STEP = 0.1
+VOLTAGE_MIN = 100.0
+VOLTAGE_MAX = 300.0
+VOLTAGE_STEP = 1.0
 
 
 async def async_setup_entry(
@@ -71,6 +80,29 @@ async def async_setup_entry(
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
+                    value_to_api=lambda value: int(round(value)),
+                    refresh_after_call=False,
+                ),
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    runtime_data,
+                    device_id,
+                    name_key="voltage_installation",
+                    unique_suffix="voltage_installation",
+                    reported_keys=("voltageinstallation", "voltage_installation"),
+                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "VoltageInstallation",
+                        api_value,
+                    ),
+                    local_key="VoltageInstallation",
+                    native_unit=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+                    minimum=VOLTAGE_MIN,
+                    maximum=VOLTAGE_MAX,
+                    step=VOLTAGE_STEP,
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
                 ),
@@ -178,6 +210,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
     """Generic number entity for V2C Chargers."""
 
     _attr_entity_category = EntityCategory.CONFIG
+    _OPTIMISTIC_HOLD_SECONDS = 20.0
 
     def __init__(
         self,
@@ -218,6 +251,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self._dynamic_max_keys = dynamic_max_keys
         self._dynamic_max_transform = dynamic_max_transform
         self._optimistic_value: float | None = None
+        self._last_command_ts: float | None = None
         self._local_coordinator = None
 
     @property
@@ -241,7 +275,12 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
             return self._optimistic_value
 
         native_numeric = self._source_to_native(float(numeric))
+        now = time.monotonic()
+        if self._should_hold_value(native_numeric, now):
+            return self._optimistic_value
+
         self._optimistic_value = native_numeric
+        self._last_command_ts = None
         return native_numeric
 
     @property
@@ -277,6 +316,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         previous_value = self._optimistic_value
         self._optimistic_value = value
+        self._last_command_ts = time.monotonic()
         self.async_write_ha_state()
         api_value = self._value_to_api(value)
         try:
@@ -286,5 +326,25 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
             )
         except (V2CError, V2CLocalApiError) as err:
             self._optimistic_value = previous_value
+            self._last_command_ts = None
             self.async_write_ha_state()
             raise HomeAssistantError(str(err)) from err
+
+    def _should_hold_value(self, updated_value: float, now: float) -> bool:
+        if (
+            self._optimistic_value is None
+            or self._last_command_ts is None
+            or now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
+        ):
+            if (
+                self._last_command_ts is not None
+                and now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
+            ):
+                self._last_command_ts = None
+            return False
+        return not self._values_match(updated_value, self._optimistic_value)
+
+    def _values_match(self, first: float, second: float) -> bool:
+        step = self._attr_native_step
+        tolerance = step / 2 if isinstance(step, (int, float)) and step else 0.5
+        return abs(first - second) <= tolerance

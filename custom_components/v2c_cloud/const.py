@@ -43,7 +43,10 @@ LANGUAGES = {
     3: {"en": "French", "it": "Francese"},
     4: {"en": "Italian", "it": "Italiano"},
     5: {"en": "German", "it": "Tedesco"},
-    6: {"en": "Dutch", "it": "Olandese"},
+    6: {"en": "Romanian", "it": "Rumeno"},
+    7: {"en": "Dutch", "it": "Olandese"},
+    8: {"en": "Danish", "it": "Danese"},
+    9: {"en": "Catalan", "it": "Catalano"},
 }
 
 DYNAMIC_POWER_MODES = {

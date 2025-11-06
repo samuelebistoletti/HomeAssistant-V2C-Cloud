@@ -7,13 +7,17 @@
 - Coordinated state gathering now relies on `/device/reported` to minimise traffic; charging state and connectivity are derived from the reported payload.
 - README, technical notes and localisation files updated to describe adaptive refresh, rate-limit metadata and the removal of deprecated entities.
 - Local switches, selects and numbers now subscribe to the realtime coordinator so their UI state updates right after each LAN poll, fixing the temporary "flap" that used to happen while waiting for cloud confirmation.
+- Cloud-backed numbers and selects keep their optimistic state for a short period, preventing UI reverts between command execution and the next API refresh.
 - The connection status binary sensor exposes human friendly `Connected` / `Disconnected` labels in every locale.
 
 ### Added
 - Exposure of the latest `RateLimit-*` headers in coordinator data for diagnostics.
+- Number entity for `VoltageInstallation`, letting the installation voltage be tuned through the local API.
+- Pause Dynamic control switch exposed alongside the existing Dynamic mode toggle.
 
 ### Removed
 - MAC address sensor and the unused `/device/mac` helper, as the endpoint is not part of the public OpenAPI specification.
+- Realtime sensors duplicating configurable values (lock state, charging pause, intensities, installation voltage, dynamic state, pause dynamic, dynamic power mode) to avoid reporting the same data twice.
 
 ## [1.1.0] - 2025-11-15
 

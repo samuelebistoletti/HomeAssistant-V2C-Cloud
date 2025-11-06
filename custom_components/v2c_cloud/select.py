@@ -13,12 +13,31 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
-    FV_MODES,
+    DYNAMIC_POWER_MODES,
     INSTALLATION_TYPES,
     LANGUAGES,
     SLAVE_TYPES,
 )
 from .entity import V2CEntity
+from .local_api import (
+    async_get_or_create_local_coordinator,
+    async_write_keyword,
+    get_local_data,
+)
+
+
+def _localized_options(
+    options_map: dict[int, dict[str, str] | str], hass: HomeAssistant
+) -> dict[int, str]:
+    """Return options localized to the configured Home Assistant language."""
+    language = (hass.config.language or "en").split("-")[0]
+    localized: dict[int, str] = {}
+    for key, label in options_map.items():
+        if isinstance(label, dict):
+            localized[key] = label.get(language, label.get("en") or next(iter(label.values())))
+        else:
+            localized[key] = str(label)
+    return localized
 
 
 async def async_setup_entry(
@@ -35,58 +54,74 @@ async def async_setup_entry(
     entities: list[SelectEntity] = []
 
     for device_id in devices:
-        entities.extend(
-            (
-                V2CEnumSelect(
-                    coordinator,
-                    client,
-                    device_id,
-                    name_key="installation_type",
-                    unique_suffix="installation_type",
-                    options_map=INSTALLATION_TYPES,
-                    setter=lambda value, _device_id=device_id: client.async_set_installation_type(
-                        _device_id, value
-                    ),
-                    reported_keys=("inst_type", "installation_type"),
+        device_selects = [
+            V2CEnumSelect(
+                hass,
+                coordinator,
+                client,
+                runtime_data,
+                device_id,
+                name_key="installation_type",
+                unique_suffix="installation_type",
+                options_map=INSTALLATION_TYPES,
+                setter=lambda value, _device_id=device_id: client.async_set_installation_type(
+                    _device_id, value
                 ),
-                V2CEnumSelect(
-                    coordinator,
-                    client,
-                    device_id,
-                    name_key="slave_type",
-                    unique_suffix="slave_type",
-                    options_map=SLAVE_TYPES,
-                    setter=lambda value, _device_id=device_id: client.async_set_slave_type(
-                        _device_id, value
-                    ),
-                    reported_keys=("slave_type",),
+                reported_keys=("inst_type", "installation_type"),
+            ),
+            V2CEnumSelect(
+                hass,
+                coordinator,
+                client,
+                runtime_data,
+                device_id,
+                name_key="slave_type",
+                unique_suffix="slave_type",
+                options_map=SLAVE_TYPES,
+                setter=lambda value, _device_id=device_id: client.async_set_slave_type(
+                    _device_id, value
                 ),
-                V2CEnumSelect(
-                    coordinator,
-                    client,
-                    device_id,
-                    name_key="language",
-                    unique_suffix="language",
-                    options_map=LANGUAGES,
-                    setter=lambda value, _device_id=device_id: client.async_set_language(
-                        _device_id, value
-                    ),
-                    reported_keys=("language",),
+                reported_keys=("slave_type",),
+            ),
+            V2CEnumSelect(
+                hass,
+                coordinator,
+                client,
+                runtime_data,
+                device_id,
+                name_key="language",
+                unique_suffix="language",
+                options_map=LANGUAGES,
+                setter=lambda value, _device_id=device_id: client.async_set_language(
+                    _device_id, value
                 ),
-                V2CEnumSelect(
-                    coordinator,
-                    client,
-                    device_id,
-                    name_key="fv_mode",
-                    unique_suffix="fv_mode",
-                    options_map=FV_MODES,
-                    setter=lambda value, _device_id=device_id: client.async_set_fv_mode(
-                        _device_id, value
-                    ),
-                    reported_keys=("chargefvmode", "fv_mode"),
+                reported_keys=("language",),
+            ),
+        ]
+        await async_get_or_create_local_coordinator(hass, runtime_data, device_id)
+        device_selects.append(
+            V2CEnumSelect(
+                hass,
+                coordinator,
+                client,
+                runtime_data,
+                device_id,
+                name_key="dynamic_power_mode",
+                unique_suffix="dynamic_power_mode",
+                options_map=DYNAMIC_POWER_MODES,
+                setter=lambda value, _device_id=device_id: async_write_keyword(
+                    hass,
+                    runtime_data,
+                    _device_id,
+                    "DynamicPowerMode",
+                    value,
                 ),
+                reported_keys=("dynamicpowermode", "dynamic_power_mode"),
+                local_key="DynamicPowerMode",
+                refresh_after_call=False,
             )
         )
+        entities.extend(device_selects)
 
     async_add_entities(entities)
 
@@ -98,8 +133,10 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
 
     def __init__(
         self,
+        hass: HomeAssistant,
         coordinator,
         client,
+        runtime_data,
         device_id: str,
         *,
         name_key: str,
@@ -107,25 +144,34 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         options_map: dict[int, str],
         setter: Callable[[int], Awaitable[Any]],
         reported_keys: tuple[str, ...],
+        local_key: str | None = None,
+        refresh_after_call: bool = True,
     ) -> None:
         super().__init__(coordinator, client, device_id)
-        self._options_map = options_map
-        self._options = list(options_map.values())
-        self._reverse_map = {
-            label.lower(): key for key, label in options_map.items()
-        }
+        self._runtime_data = runtime_data
+        localized_map = _localized_options(options_map, hass)
+        self._options_map = localized_map
+        self._options = list(localized_map.values())
+        self._reverse_map = {label.lower(): key for key, label in localized_map.items()}
         self._setter = setter
         self._reported_keys = reported_keys
+        self._local_key = local_key
+        self._refresh_after_call = refresh_after_call
+        self._local_coordinator = None
 
         self._attr_translation_key = name_key
-        self._attr_unique_id = f"{device_id}_{unique_suffix}"
+        self._attr_unique_id = f"v2c_{device_id}_{unique_suffix}"
         self._attr_options = self._options
 
         self._optimistic_value: int | None = None
+        initial_value = self._get_state_value()
+        resolved = self._resolve_value(initial_value)
+        if resolved is not None:
+            self._optimistic_value = resolved
 
     @property
     def current_option(self) -> str | None:
-        value = self.get_reported_value(*self._reported_keys)
+        value = self._get_state_value()
         resolved = self._resolve_value(value)
         if resolved is not None:
             self._optimistic_value = resolved
@@ -135,6 +181,19 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
             return self._options_map.get(self._optimistic_value)
 
         return None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if not self._local_key:
+            return
+        coordinator = await async_get_or_create_local_coordinator(
+            self.hass,
+            self._runtime_data,
+            self._device_id,
+        )
+        self._local_coordinator = coordinator
+        remove_listener = coordinator.async_add_listener(self.async_write_ha_state)
+        self.async_on_remove(remove_listener)
 
     def _resolve_value(self, value: Any) -> int | None:
         if value is None:
@@ -159,6 +218,23 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
             if label == option:
                 self._optimistic_value = key
                 self.async_write_ha_state()
-                await self._async_call_and_refresh(self._setter(key))
+                await self._async_call_and_refresh(
+                    self._setter(key), refresh=self._refresh_after_call
+                )
                 return
         raise ValueError(f"Unsupported option {option}")
+
+    def _get_state_value(self) -> Any:
+        """Retrieve the latest value from local data or reported payload."""
+        if self._local_key:
+            local_data = get_local_data(self._runtime_data, self._device_id)
+            if isinstance(local_data, dict) and self._local_key in local_data:
+                return local_data.get(self._local_key)
+        value = self.get_reported_value(*self._reported_keys)
+        if value is None and self._reported_keys:
+            value = self.device_state.get(self._reported_keys[0])
+        if value is None and self._local_key:
+            additional = self.device_state.get("additional")
+            if isinstance(additional, dict):
+                value = additional.get(self._local_key.lower())
+        return value

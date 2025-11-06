@@ -1,143 +1,135 @@
-# Integrazione V2C Cloud per Home Assistant
+# V2C Cloud Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Questa integrazione consente di collegare Home Assistant al servizio **V2C Cloud** utilizzando la [nuova documentazione ufficiale](https://api.v2charge.com/). Dopo aver configurato l'API key del proprio account V2C viene creato un dispositivo per ogni wallbox associata, con entità che sfruttano in modo combinato le API cloud e gli endpoint **locali** esposti dalla wallbox per ridurre l’impatto sul rate limit.
+This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while long-lived configuration keeps relying on the official cloud endpoints.
 
-> ℹ️ Il progetto è stato sviluppato da zero per V2C Cloud, prendendo come riferimento la struttura tipica delle integrazioni Home Assistant.
+> ℹ️ The integration is built specifically for V2C Cloud following Home Assistant best practices (config flow, coordinators, translations, services, diagnostics).
 
-## ✨ Funzionalità principali
+## Key Features
 
-- **Autenticazione tramite API key** – la procedura guidata richiede solo la chiave generata dal portale V2C Cloud.
-- **Architettura ibrida cloud/local** – i dati in tempo reale (potenza, intensità, fotovoltaico, Wi-Fi, ecc.) sono letti ogni 30 s dall’endpoint locale `http://<IP>/RealTimeData`, mentre il cloud viene contattato solo per pairing, stato generale e comandi non disponibili in LAN.
-- **Aggiornamento adattivo** – il polling cloud (principalmente `/device/reported`) è raggruppato in un unico coordinator che adatta automaticamente l'intervallo in base al numero di wallbox, mantenendo un budget operativo di ~850 richieste/giorno e lasciando margine per comandi manuali.
-- **Automazioni più veloci** – switch e numerici per dinamica di ricarica, blocco e intensità aggiornano immediatamente la wallbox tramite `/write/KeyWord=Value`, senza attendere il refresh cloud.
-- **Comandi rapidi** – pulsanti per avviare/pausare la ricarica (locale), oltre ai comandi cloud necessari come reboot e aggiornamento firmware.
-- **Servizi Home Assistant completi** – Wi-Fi, timer, tessere RFID, profili fotovoltaici v2, configurazione OCPP/Denka/inverter e raccolta statistiche con pubblicazione su eventi dedicati (`v2c_cloud_wifi_scan`, `v2c_cloud_power_profiles`, `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`).
+- **API key authentication** – the setup flow only requires the API key generated from your V2C Cloud account.
+- **Hybrid architecture** – telemetry is polled every 30 seconds from `http://<device_ip>/RealTimeData`, while the cloud API is used for pairing discovery, status verification and configuration operations that are not exposed locally.
+- **Adaptive cloud polling** – the cloud coordinator (mainly `/device/reported`) adjusts its interval automatically so the account stays below the 1000 requests/day limit. With one device the refresh is 120 s; the minimum allowed interval is 90 s.
+- **Fast local controls** – dynamic mode, charger lock, intensity sliders and start/pause commands write directly to `http://<device_ip>/write/KeyWord=Value`, avoiding round-trips through the cloud.
+- **Comprehensive Home Assistant services** – Wi-Fi management, timers, RFID provisioning, photovoltaic profiles v2, OCPP/inverter configuration and statistics retrieval, each publishing an automation-friendly event.
+- **Diagnostics-friendly** – rate limit headers are stored in coordinator data and every command logs the originating endpoint (cloud or LAN) to help troubleshooting.
 
-## 🛠 Prerequisiti
+## Requirements
 
-- Account V2C Cloud con almeno una wallbox registrata e accesso all'API key da [https://v2c.cloud/home/user](https://v2c.cloud/home/user).
-- La wallbox deve essere raggiungibile sulla LAN (l'endpoint locale risponde su `http://<IP>/RealTimeData` e `http://<IP>/write/...`).
-- Home Assistant 2023.12 o successivo.
-- Connettività Internet verso `https://v2c.cloud/kong/v2c_service`.
+- A V2C Cloud account with at least one wallbox paired and an API key generated from [https://v2c.cloud/home/user](https://v2c.cloud/home/user).
+- The wallbox must be reachable on the local network (open the HTTP port used by `/RealTimeData` and `/write/...`).
+- Home Assistant 2023.12 or newer.
+- Internet access towards `https://v2c.cloud/kong/v2c_service` for cloud calls.
 
-## 📦 Installazione (HACS consigliata)
+## Installation
 
-1. Aggiungi questo repository a HACS in modalità "Custom repository" (categoria *Integration*).
-2. Cerca **V2C Cloud** e installa l'integrazione.
-3. Riavvia Home Assistant quando richiesto.
-4. Vai su **Impostazioni → Dispositivi e servizi → Aggiungi integrazione**, quindi seleziona **V2C Cloud** e inserisci la tua API key.
+### HACS (recommended)
+1. Add this repository to HACS as a *Custom repository* (category **Integration**).
+2. Search for **V2C Cloud** and install the integration.
+3. Restart Home Assistant when prompted.
+4. Go to **Settings → Devices & Services → Add Integration**, choose **V2C Cloud** and enter your API key.
 
-### Installazione manuale
+### Manual installation
+1. Copy the `custom_components/v2c_cloud` folder into the `custom_components` directory of your Home Assistant instance.
+2. Restart Home Assistant.
+3. Add the **V2C Cloud** integration from **Settings → Devices & Services**.
 
-1. Copia la cartella `custom_components/v2c_cloud` nella directory `custom_components` della tua istanza Home Assistant.
-2. Riavvia Home Assistant.
-3. Aggiungi l'integrazione **V2C Cloud** dalle impostazioni.
+## Configuration
 
-## ⚙️ Configurazione iniziale
+- The API key is mandatory; an alternate base URL can be provided for staging environments.
+- Each pairing returned by `/pairings/me` becomes a Home Assistant device with entities grouped by use case.
+- Cloud polling adapts to the number of wallboxes using `ceil(count * 86400 / 850)` seconds (never below 90 s). RFID data is refreshed every 6 hours, firmware version every 12 hours, pairing information every 60 minutes.
+- Entities driven by the local API refresh themselves independently from the cloud cycle, preventing state oscillations after manual actions.
 
-- L'unico dato richiesto è l'API key; opzionalmente è possibile indicare un endpoint alternativo (per ambienti di test).
-- Al termine della procedura verrà creato un dispositivo per ogni pairing restituito dall'endpoint `/pairings/me`.
-- Le entità vengono aggiornate con un intervallo adattivo (≥90 s) calcolato in base al numero di dispositivi collegati, così da rimanere sotto il tetto di 1000 chiamate giornaliere.
+## Entity Overview
 
-## ⏱️ Frequenza aggiornamenti e rate limiting
+### Sensors (polled locally every 30 s)
+- Device identifier, firmware version
+- Charge state, ready state, timer status, lock status, pause state, dynamic mode state
+- Charge power, charge energy, charge time, house power, FV power, battery power, contracted power
+- Intensity, minimum intensity, maximum intensity, pause dynamic, dynamic power mode
+- Installation voltage, Wi-Fi SSID, Wi-Fi IP address, Wi-Fi signal strength
+- Slave error code
 
-- Ogni ciclo di polling utilizza una sola chiamata `/device/reported` per wallbox; i pairing vengono memorizzati per 60 minuti prima di essere richiesti nuovamente.
-- Le informazioni meno dinamiche (tessere RFID e versione firmware) vengono aggiornate all'avvio e poi a intervalli dilatati (6 ore per RFID, 12 ore per la versione) o quando non sono ancora state recuperate.
-- Il coordinatore ridetermina automaticamente l'intervallo di aggiornamento in base al numero di dispositivi, mantenendo un budget operativo di circa 850 richieste/giorno per lasciare margine a comandi manuali (switch, servizi, pulsanti). L'intervallo minimo è 90 s, quello di default 120 s; con N wallbox viene calcolato `ceil(N * 86400 / 850)`.
-- I pulsanti e gli switch che usano le API locali si aggiornano in autonomia senza attendere il ciclo cloud; se disponibile la risposta locale viene preferita per evitare oscillazioni dello stato.
-- L'ultima risposta del cloud include gli header `RateLimit-*`; il loro contenuto è disponibile in `coordinator.data["rate_limit"]` per eventuali diagnostiche avanzate.
+### Binary Sensors
+- Connection status (cloud `/device/reported`)
 
-## 🔌 Entità esposte
+### Switches
+- Dynamic mode (local `/write/Dynamic`)
+- Charger lock (local `/write/Locked`)
+- Charging pause (local `/write/Paused`)
+- Logo LED (cloud `/device/logo_led`)
+- RFID reader (cloud `/device/set_rfid`)
+- OCPP enabled (cloud `/device/ocpp`)
 
-### Sensori (aggiornati via LAN ogni 30 s)
+### Select Entities
+- Installation type (cloud `/device/inst_type`)
+- Slave device (cloud `/device/slave_type`)
+- Language (cloud `/device/language`)
+- Dynamic power mode (local `/write/DynamicPowerMode`)
 
-- **Identificativo dispositivo / Firmware**.
-- **Stato di ricarica** (mappato da 0 a 5), **stato di prontezza**, **timer attivo**, **caricatore bloccato**, **pausa dinamica**.
-- **Potenza di ricarica**, **energia sessione**, **tempo di ricarica**, **potenza casa/FV/batteria**, **potenza contrattuale**.
-- **Intensità corrente, minima e massima**, **modalità dinamica**, **modalità potenza dinamica**.
-- **Tensione di installazione**, **SSID e IP Wi-Fi**, **qualità segnale**.
+### Number Entities
+- Current intensity (local `/write/Intensity`)
+- Minimum intensity (local `/write/MinIntensity`)
+- Maximum intensity (local `/write/MaxIntensity`)
+- Contracted power (local `/write/ContractedPower`)
+- Maximum power (cloud `/device/maxpower`)
 
-### Sensori binari
+### Buttons
+- Reboot charger (cloud `/device/reboot`)
+- Trigger firmware update (cloud `/device/update`)
 
-- **Connessione cloud** – indica se la wallbox risulta online (dati cloud).
+## Available Services
 
-### Switch
-
-- **Modalità dinamica** e **blocco caricatore** – comandi locali (`/write/Dynamic`, `/write/Locked`).
-- **Logo LED**, **lettore RFID**, **OCPP abilitato** – comandi cloud.
-
-### Select
-
-- **Tipo di installazione**, **dispositivo slave**, **lingua**, **modalità fotovoltaica** – comandi cloud.
-
-### Number
-
-- **Intensità corrente / minima / massima** – comandi locali (`/write/Intensity`, `/write/MinIntensity`, `/write/MaxIntensity`).
-- **Potenza massima** – comando cloud (`/device/maxpower`).
-
-### Pulsanti
-
-- **Avvia ricarica** e **metti in pausa** – comandi locali (`/write/Paused=0/1`).
-- **Riavvia dispositivo** e **richiedi aggiornamento firmware** – comandi cloud.
-
-## 🧰 Servizi disponibili
-
-### Configurazione e rete
-
-| Servizio | Endpoint | Descrizione |
+### Configuration & Networking
+| Service | Endpoint | Description |
 | --- | --- | --- |
-| `v2c_cloud.set_wifi_credentials` | `/device/wifi` | Aggiorna SSID e password Wi-Fi. |
-| `v2c_cloud.program_timer` | `/device/timer` | Imposta start/end time e stato attivo di un timer. |
-| `v2c_cloud.set_ocpp_enabled` | `/device/ocpp` | Attiva o disattiva la funzionalità OCPP. |
-| `v2c_cloud.set_ocpp_id` | `/device/ocpp_id` | Configura l'identificatore OCPP del punto di ricarica. |
-| `v2c_cloud.set_ocpp_address` | `/device/ocpp_addr` | Configura l'URL del server OCPP centrale. |
-| `v2c_cloud.set_denka_max_power` | `/device/denka/max_power` | Imposta la potenza massima consentita per dispositivi Denka. |
-| `v2c_cloud.set_inverter_ip` | `/device/inverter_ip` | Configura l'indirizzo IP dell'inverter fotovoltaico collegato. |
-| `v2c_cloud.trigger_update` | `/device/update` | Avvia la ricerca e l'installazione di aggiornamenti firmware. |
+| `v2c_cloud.set_wifi_credentials` | `/device/wifi` | Update SSID and password. |
+| `v2c_cloud.program_timer` | `/device/timer` | Configure start/end time and active flag for a timer slot. |
+| `v2c_cloud.set_ocpp_enabled` | `/device/ocpp` | Enable or disable OCPP connectivity. |
+| `v2c_cloud.set_ocpp_id` | `/device/ocpp_id` | Set the OCPP charge point identifier. |
+| `v2c_cloud.set_ocpp_address` | `/device/ocpp_addr` | Configure the central OCPP server URL. |
+| `v2c_cloud.set_inverter_ip` | `/device/inverter_ip` | Configure the connected inverter IP address. |
+| `v2c_cloud.trigger_update` | `/device/update` | Request a firmware update. |
 
-### Gestione RFID
-
-| Servizio | Endpoint | Descrizione |
+### RFID Management
+| Service | Endpoint | Description |
 | --- | --- | --- |
-| `v2c_cloud.register_rfid` | `/device/rfid` (POST) | Abilita la registrazione di una nuova tessera che verrà letta dal lettore. |
-| `v2c_cloud.add_rfid_card` | `/device/rfid/tag` (POST) | Registra manualmente una tessera specificando UID e nome. |
-| `v2c_cloud.update_rfid_tag` | `/device/rfid/tag` (PUT) | Aggiorna l'etichetta associata a una tessera esistente. |
-| `v2c_cloud.delete_rfid` | `/device/rfid` (DELETE) | Rimuove una tessera RFID tramite codice UID. |
+| `v2c_cloud.register_rfid` | `/device/rfid` (POST) | Put the charger in learning mode to register the next card. |
+| `v2c_cloud.add_rfid_card` | `/device/rfid/tag` (POST) | Register a card providing UID and label. |
+| `v2c_cloud.update_rfid_tag` | `/device/rfid/tag` (PUT) | Rename an existing card. |
+| `v2c_cloud.delete_rfid` | `/device/rfid` (DELETE) | Remove a card by UID. |
 
-### Ricariche programmate
-
-| Servizio | Endpoint | Descrizione |
+### Scheduled Charging
+| Service | Endpoint | Description |
 | --- | --- | --- |
-| `v2c_cloud.set_charge_stop_energy` | `/device/charger_until_energy` | Arresta automaticamente la ricarica al raggiungimento dei kWh indicati. |
-| `v2c_cloud.set_charge_stop_minutes` | `/device/charger_until_minutes` | Arresta automaticamente la ricarica dopo il numero di minuti indicato. |
-| `v2c_cloud.start_charge_for_energy` | `/device/startchargekw` | Avvia una ricarica che termina al raggiungimento dell'energia target. |
-| `v2c_cloud.start_charge_for_minutes` | `/device/startchargeminutes` | Avvia una ricarica che termina dopo la durata indicata. |
+| `v2c_cloud.set_charge_stop_energy` | `/device/charger_until_energy` | Stop automatically after delivering the target kWh. |
+| `v2c_cloud.set_charge_stop_minutes` | `/device/charger_until_minutes` | Stop after the specified duration. |
+| `v2c_cloud.start_charge_for_energy` | `/device/startchargekw` | Start a charge that stops at the energy target. |
+| `v2c_cloud.start_charge_for_minutes` | `/device/startchargeminutes` | Start a charge that stops after the desired time. |
 
-### Profili di potenza FV v2
-
-| Servizio | Endpoint | Descrizione |
+### Photovoltaic Power Profiles v2
+| Service | Endpoint | Description |
 | --- | --- | --- |
-| `v2c_cloud.create_power_profile` | `/device/savepersonalicepower/v2` | Crea un profilo personalizzato (payload JSON). |
-| `v2c_cloud.update_power_profile` | `/device/personalicepower/v2` (POST) | Aggiorna un profilo esistente. |
-| `v2c_cloud.get_power_profile` | `/device/personalicepower/v2` (GET) | Recupera un profilo tramite timestamp `updateAt`. |
-| `v2c_cloud.delete_power_profile` | `/device/personalicepower/v2` (DELETE) | Elimina un profilo indicandone nome e timestamp. |
-| `v2c_cloud.list_power_profiles` | `/device/personalicepower/all` | Elenca tutti i profili associati al dispositivo. |
+| `v2c_cloud.create_power_profile` | `/device/savepersonalicepower/v2` | Create a personalised power profile (JSON payload). |
+| `v2c_cloud.update_power_profile` | `/device/personalicepower/v2` (POST) | Update an existing profile. |
+| `v2c_cloud.get_power_profile` | `/device/personalicepower/v2` (GET) | Retrieve a profile by `updateAt`. |
+| `v2c_cloud.delete_power_profile` | `/device/personalicepower/v2` (DELETE) | Delete a profile by name and timestamp. |
+| `v2c_cloud.list_power_profiles` | `/device/personalicepower/all` | List all personalised profiles. |
 
-### Statistiche e diagnostica
-
-| Servizio | Endpoint | Descrizione |
+### Statistics & Diagnostics
+| Service | Endpoint | Description |
 | --- | --- | --- |
-| `v2c_cloud.get_device_statistics` | `/stadistic/device` | Ottiene le ultime statistiche del dispositivo (con filtri data opzionali). |
-| `v2c_cloud.get_global_statistics` | `/stadistic/global/me` | Ottiene le statistiche aggregate dell'account. |
-| `v2c_cloud.scan_wifi_networks` | `/device/wifilist` | Richiede una scansione Wi-Fi; i risultati sono pubblicati sull'evento `v2c_cloud_wifi_scan`. |
+| `v2c_cloud.get_device_statistics` | `/stadistic/device` | Fetch device statistics (optional date filters). |
+| `v2c_cloud.get_global_statistics` | `/stadistic/global/me` | Fetch aggregated account statistics. |
+| `v2c_cloud.scan_wifi_networks` | `/device/wifilist` | Request a Wi-Fi scan; results are emitted via `v2c_cloud_wifi_scan`. |
 
-Gli endpoint che restituiscono dati (statistiche, profili, reti Wi-Fi) pubblicano l'esito anche sugli eventi Home Assistant `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics` e `v2c_cloud_power_profiles`, facilitando l'integrazione con automazioni e notifiche.
+Each data-oriented service also fires an event (`v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`, `v2c_cloud_power_profiles`) containing the raw payload so automations can store or relay the information.
 
-## 📝 Log e diagnostica
+## Logging & Diagnostics
 
-Abilita il logger per `custom_components.v2c_cloud` per messaggi dettagliati:
+To enable detailed logs:
 
 ```yaml
 logger:
@@ -145,6 +137,6 @@ logger:
     custom_components.v2c_cloud: debug
 ```
 
-## 📄 Licenza
+## License
 
-Il progetto è distribuito con licenza MIT. Consulta il file [LICENSE](LICENSE) per i dettagli.
+Distributed under the MIT License. See the [LICENSE](LICENSE) file for details.

@@ -7,7 +7,7 @@ Unreleased
 2025-11-15 - Version 1.1.0
 
 - Alignment with the November 2025 V2C Third-party API refresh (https://api.v2charge.com/).
-- Added on-demand commands for scheduled charging (energy/minutes) and advanced configuration (third-party mode, OCPP, Denka max power, inverter IP).
+- Added on-demand commands for scheduled charging (energy/minutes) and advanced configuration (third-party mode, OCPP, inverter IP).
 - Exposed full v2 personalised power profile management and published diagnostic results via Home Assistant events.
 - Extended Home Assistant services, translations, and documentation accordingly.
 

@@ -246,22 +246,6 @@ set_ocpp_address:
       required: true
       selector:
         text:
-set_denka_max_power:
-  name: Potenza massima Denka
-  description: Imposta la potenza massima consentita per i dispositivi Denka (in watt).
-  fields:
-    device_id:
-      name: Device ID
-      required: true
-      selector:
-        text:
-    watts:
-      name: Watt
-      required: true
-      selector:
-        number:
-          min: 0
-          step: 1
 set_inverter_ip:
   name: Imposta IP inverter
   description: Configura l'indirizzo IP dell'inverter fotovoltaico collegato.

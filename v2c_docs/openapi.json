@@ -1004,57 +1004,6 @@
         ]
       }
     },
-    "/device/denka/max_power": {
-      "post": {
-        "tags": [
-          "Device Control & Configuration"
-        ],
-        "summary": "Set Denka Maximum Power",
-        "description": "Updates the maximum power setting for Denka devices.",
-        "operationId": "executeChangeMaxPowerCommand",
-        "parameters": [
-          {
-            "name": "deviceId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "YOUR_DEVICE_ID"
-          },
-          {
-            "name": "value",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "5000"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Command executed successfully"
-          },
-          "400": {
-            "description": "Bad Request"
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "500": {
-            "description": "Server Exception"
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "curl",
-            "label": "cURL",
-            "source": "curl -X 'POST' \\\n  'https://v2c.cloud/kong/v2c_service/device/denka/max_power?deviceId=YOUR_DEVICE_ID&value=5000' \\\n  -H 'apikey: {APIKEY}'\n"
-          }
-        ]
-      }
-    },
     "/device/inverter_ip": {
       "post": {
         "tags": [

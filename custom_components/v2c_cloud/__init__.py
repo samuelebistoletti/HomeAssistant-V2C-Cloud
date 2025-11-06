@@ -45,7 +45,6 @@ from .const import (
     ATTR_TIMER_ACTIVE,
     ATTR_TIMER_ID,
     ATTR_UPDATED_AT,
-    ATTR_WATTS,
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
     CONF_API_KEY,
@@ -70,7 +69,6 @@ from .const import (
     SERVICE_PROGRAM_TIMER,
     SERVICE_REGISTER_RFID,
     SERVICE_SCAN_WIFI,
-    SERVICE_SET_DENKA_MAX_POWER,
     SERVICE_SET_INVERTER_IP,
     SERVICE_SET_OCPP_ADDRESS,
     SERVICE_SET_OCPP_ENABLED,
@@ -566,27 +564,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
                 vol.Required(ATTR_OCPP_URL): cv.string,
-            }
-        ),
-    )
-
-    async def async_handle_set_denka_max_power(call: ServiceCall) -> None:
-        device_id = call.data[ATTR_DEVICE_ID]
-        watts = call.data[ATTR_WATTS]
-        entry_data = await _async_get_entry_for_device(device_id)
-        await _execute_and_refresh(
-            entry_data,
-            entry_data.client.async_set_denka_max_power(device_id, int(watts)),
-        )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_DENKA_MAX_POWER,
-        async_handle_set_denka_max_power,
-        schema=vol.Schema(
-            {
-                vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_WATTS): vol.Coerce(int),
             }
         ),
     )

@@ -13,7 +13,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import V2CEntity
-from .local_api import async_write_keyword, get_local_data
+from .local_api import (
+    async_get_or_create_local_coordinator,
+    async_request_local_refresh,
+    async_write_keyword,
+    get_local_data,
+)
 
 
 async def async_setup_entry(
@@ -50,6 +55,7 @@ async def async_setup_entry(
                     local_keys=("Dynamic",),
                     icon_on="mdi:flash-auto",
                     refresh_after_call=False,
+                    trigger_local_refresh=True,
                 ),
                 V2CBooleanSwitch(
                     coordinator,
@@ -70,6 +76,28 @@ async def async_setup_entry(
                     icon_on="mdi:lock",
                     icon_off="mdi:lock-open",
                     refresh_after_call=False,
+                    trigger_local_refresh=True,
+                ),
+                V2CBooleanSwitch(
+                    coordinator,
+                    client,
+                    runtime_data,
+                    device_id,
+                    name_key="charging_pause",
+                    unique_suffix="charging_pause",
+                    setter=lambda state, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "Paused",
+                        1 if state else 0,
+                    ),
+                    reported_keys=("paused",),
+                    local_keys=("Paused",),
+                    icon_on="mdi:pause-circle",
+                    icon_off="mdi:play-circle",
+                    refresh_after_call=False,
+                    trigger_local_refresh=True,
                 ),
                 V2CBooleanSwitch(
                     coordinator,
@@ -105,7 +133,7 @@ async def async_setup_entry(
                     runtime_data,
                     device_id,
                     name_key="ocpp_enabled",
-                    unique_suffix="ocpp",
+                    unique_suffix="ocpp_enabled",
                     setter=lambda state, _device_id=device_id: client.async_set_ocpp_enabled(
                         _device_id, state
                     ),
@@ -161,6 +189,7 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         icon_on: str | None = None,
         icon_off: str | None = None,
         refresh_after_call: bool = True,
+        trigger_local_refresh: bool = False,
     ) -> None:
         super().__init__(coordinator, client, device_id)
         self._setter = setter
@@ -168,13 +197,15 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         self._runtime_data = runtime_data
         self._local_keys = tuple(local_keys) if local_keys else ()
         self._refresh_after_call = refresh_after_call
+        self._trigger_local_refresh = trigger_local_refresh
         self._attr_translation_key = name_key
-        self._attr_unique_id = f"{device_id}_{unique_suffix}"
+        self._attr_unique_id = f"v2c_{device_id}_{unique_suffix}"
         self._attr_icon = icon_on
         self._icon_on = icon_on
         self._icon_off = icon_off
         self._optimistic_state: bool | None = None
         self._last_command_ts: float | None = None
+        self._local_coordinator = None
 
     @property
     def is_on(self) -> bool:
@@ -216,6 +247,19 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
 
         return False
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if not self._local_keys:
+            return
+        coordinator = await async_get_or_create_local_coordinator(
+            self.hass,
+            self._runtime_data,
+            self._device_id,
+        )
+        self._local_coordinator = coordinator
+        remove_listener = coordinator.async_add_listener(self.async_write_ha_state)
+        self.async_on_remove(remove_listener)
+
     async def async_turn_on(self, **kwargs) -> None:
         await self._async_call(True)
 
@@ -230,6 +274,8 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
             self._setter(state),
             refresh=self._refresh_after_call,
         )
+        if self._trigger_local_refresh:
+            await async_request_local_refresh(self._runtime_data, self._device_id)
 
     def _apply_icon(self, state: bool | None) -> None:
         if self._icon_on and self._icon_off and state is not None:

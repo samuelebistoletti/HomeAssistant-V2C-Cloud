@@ -93,12 +93,103 @@ def _as_str(value: Any) -> str | None:
     return str(value)
 
 
-def _charge_state_label(value: Any) -> str | None:
-    """Return the human-friendly charge state label."""
-    index = _as_int(value)
-    if index is None:
+def _as_flag(value: Any) -> int | None:
+    """Return 1/0 integers for boolean-like payloads."""
+    bool_value = _as_bool(value)
+    if bool_value is not None:
+        return 1 if bool_value else 0
+    int_value = _as_int(value)
+    if int_value is None:
         return None
-    return CHARGE_STATE_LABELS.get(index, str(index))
+    return 1 if int_value != 0 else 0
+
+
+STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
+    "ChargeState": {
+        0: {"en": CHARGE_STATE_LABELS[0], "it": "Disconnesso"},
+        1: {"en": CHARGE_STATE_LABELS[1], "it": "Veicolo collegato"},
+        2: {"en": CHARGE_STATE_LABELS[2], "it": "In carica"},
+        3: {"en": CHARGE_STATE_LABELS[3], "it": "Ventilazione richiesta"},
+        4: {"en": CHARGE_STATE_LABELS[4], "it": "Corto del pilot"},
+        5: {"en": CHARGE_STATE_LABELS[5], "it": "Guasto generale"},
+    },
+    "SlaveError": {
+        0: {"en": "No error", "it": "Nessun errore"},
+        1: {"en": "Communication", "it": "Comunicazione"},
+        2: {"en": "Reading", "it": "Lettura"},
+        3: {"en": "Slave", "it": "Slave"},
+        4: {"en": "Waiting Wi-Fi", "it": "In attesa Wi-Fi"},
+        5: {"en": "Waiting communication", "it": "In attesa comunicazione"},
+        6: {"en": "Wrong IP", "it": "IP errato"},
+        7: {"en": "Slave not found", "it": "Slave non trovato"},
+        8: {"en": "Wrong slave", "it": "Slave errato"},
+        9: {"en": "No response", "it": "Nessuna risposta"},
+        10: {"en": "Clamp not connected", "it": "Pinza non collegata"},
+    },
+    "Paused": {
+        0: {"en": "Charging", "it": "In ricarica"},
+        1: {"en": "Paused", "it": "In pausa"},
+    },
+    "ReadyState": {
+        0: {"en": "Not ready", "it": "Non pronto"},
+        1: {"en": "Ready", "it": "Pronto"},
+    },
+    "Locked": {
+        0: {"en": "Unlocked", "it": "Sbloccato"},
+        1: {"en": "Locked", "it": "Bloccato"},
+    },
+    "Timer": {
+        0: {"en": "Timer off", "it": "Timer disattivo"},
+        1: {"en": "Timer on", "it": "Timer attivo"},
+    },
+    "Dynamic": {
+        0: {"en": "Disabled", "it": "Disattivato"},
+        1: {"en": "Enabled", "it": "Attivato"},
+    },
+    "PauseDynamic": {
+        0: {"en": "Modulating", "it": "In modulazione"},
+        1: {"en": "Not modulating", "it": "Non modula"},
+    },
+    "DynamicPowerMode": {
+        0: {"en": "Timed power enabled", "it": "Potenza programmata attiva"},
+        1: {"en": "Timed power disabled", "it": "Potenza programmata disattiva"},
+        2: {"en": "Exclusive PV mode", "it": "Solo PV"},
+        3: {"en": "Minimum power mode", "it": "Modalità potenza minima"},
+        4: {"en": "Grid + PV mode", "it": "Modalità rete + PV"},
+        5: {"en": "Stop mode", "it": "Modalità stop"},
+    },
+    "SignalStatus": {
+        0: {"en": "Unknown", "it": "Sconosciuto"},
+        1: {"en": "Poor", "it": "Scarso"},
+        2: {"en": "Fair", "it": "Discreto"},
+        3: {"en": "Good", "it": "Buono"},
+    },
+}
+
+
+def _localize_state(key: str, value: Any, hass: HomeAssistant) -> str | None:
+    """Return a localized label for a mapped state value."""
+    if value is None:
+        return None
+    mapping = STATE_VALUE_LABELS.get(key)
+    if not mapping:
+        return None
+    normalized: Any = value
+    if isinstance(normalized, bool):
+        normalized = 1 if normalized else 0
+    elif isinstance(normalized, str):
+        candidate = normalized.strip()
+        if candidate.isdigit():
+            normalized = int(candidate)
+        else:
+            candidate_lower = candidate.lower()
+            if candidate_lower in mapping:
+                normalized = candidate_lower
+    label_entry = mapping.get(normalized)
+    if label_entry is None:
+        return None
+    language = (hass.config.language or "en").split("-")[0]
+    return label_entry.get(language, label_entry.get("en"))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,7 +205,7 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         key="ID",
         translation_key="device_identifier",
         icon="mdi:identifier",
-        unique_id_suffix="local_id",
+        unique_id_suffix="device_identifier",
         value_fn=_as_str,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -128,14 +219,14 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         key="ChargeState",
         translation_key="charge_state",
         icon="mdi:ev-station",
-        unique_id_suffix="charging_state",
-        value_fn=_charge_state_label,
+        unique_id_suffix="charge_state",
+        value_fn=_as_int,
     ),
     V2CLocalRealtimeSensorDescription(
         key="ReadyState",
         translation_key="ready_state",
         icon="mdi:check-circle-outline",
-        unique_id_suffix="local_ready_state",
+        unique_id_suffix="ready_state",
         value_fn=_as_int,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -145,7 +236,7 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_charge_power",
+        unique_id_suffix="charge_power",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -155,7 +246,7 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_voltage_installation",
+        unique_id_suffix="voltage_installation",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -164,15 +255,15 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         icon="mdi:lightning-bolt-outline",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_charge_energy",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        unique_id_suffix="charge_energy",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
         key="SlaveError",
         translation_key="slave_error",
         icon="mdi:alert-circle-outline",
-        unique_id_suffix="local_slave_error",
+        unique_id_suffix="slave_error",
         value_fn=_as_int,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -182,7 +273,7 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.SECONDS,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_charge_time",
+        unique_id_suffix="charge_time",
         value_fn=_as_int,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -192,7 +283,7 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_house_power",
+        unique_id_suffix="house_power",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -202,7 +293,7 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_fv_power",
+        unique_id_suffix="fv_power",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -212,29 +303,29 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_battery_power",
+        unique_id_suffix="battery_power",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
         key="Paused",
         translation_key="paused",
         icon="mdi:pause-circle-outline",
-        unique_id_suffix="local_paused",
-        value_fn=_as_bool,
+        unique_id_suffix="paused_state",
+        value_fn=_as_flag,
     ),
     V2CLocalRealtimeSensorDescription(
         key="Locked",
         translation_key="locked_state",
         icon="mdi:lock",
-        unique_id_suffix="local_locked",
-        value_fn=_as_bool,
+        unique_id_suffix="locked_state",
+        value_fn=_as_flag,
     ),
     V2CLocalRealtimeSensorDescription(
         key="Timer",
         translation_key="timer_state",
         icon="mdi:calendar-clock",
-        unique_id_suffix="local_timer",
-        value_fn=_as_bool,
+        unique_id_suffix="timer_state",
+        value_fn=_as_flag,
     ),
     V2CLocalRealtimeSensorDescription(
         key="Intensity",
@@ -243,15 +334,15 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="intensity",
+        unique_id_suffix="intensity_value",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
         key="Dynamic",
         translation_key="dynamic_state",
         icon="mdi:flash-auto",
-        unique_id_suffix="local_dynamic",
-        value_fn=_as_bool,
+        unique_id_suffix="dynamic_state",
+        value_fn=_as_flag,
     ),
     V2CLocalRealtimeSensorDescription(
         key="MinIntensity",
@@ -277,14 +368,14 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         key="PauseDynamic",
         translation_key="pause_dynamic",
         icon="mdi:pause-octagon-outline",
-        unique_id_suffix="local_pause_dynamic",
-        value_fn=_as_bool,
+        unique_id_suffix="pause_dynamic",
+        value_fn=_as_flag,
     ),
     V2CLocalRealtimeSensorDescription(
         key="DynamicPowerMode",
         translation_key="dynamic_power_mode",
         icon="mdi:lightning-bolt-circle",
-        unique_id_suffix="local_dynamic_power_mode",
+        unique_id_suffix="dynamic_power_mode",
         value_fn=_as_int,
     ),
     V2CLocalRealtimeSensorDescription(
@@ -294,28 +385,28 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="local_contracted_power",
+        unique_id_suffix="contracted_power",
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
         key="SSID",
         translation_key="wifi_ssid",
         icon="mdi:wifi",
-        unique_id_suffix="local_wifi_ssid",
+        unique_id_suffix="wifi_ssid",
         value_fn=_as_str,
     ),
     V2CLocalRealtimeSensorDescription(
         key="IP",
         translation_key="wifi_ip",
         icon="mdi:ip-network",
-        unique_id_suffix="local_wifi_ip",
+        unique_id_suffix="wifi_ip",
         value_fn=_as_str,
     ),
     V2CLocalRealtimeSensorDescription(
         key="SignalStatus",
         translation_key="signal_status",
         icon="mdi:wifi-strength-2",
-        unique_id_suffix="local_signal_status",
+        unique_id_suffix="signal_status",
         value_fn=_as_int,
     ),
 )
@@ -365,7 +456,7 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         self._device_id = device_id
         self.entity_description = description
         self._attr_translation_key = description.translation_key
-        self._attr_unique_id = f"{device_id}_{description.unique_id_suffix}"
+        self._attr_unique_id = f"v2c_{device_id}_{description.unique_id_suffix}"
         if description.icon:
             self._attr_icon = description.icon
         if description.device_class:
@@ -387,9 +478,13 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         if not isinstance(data, dict):
             return None
         raw_value = data.get(self.entity_description.key)
+        value = raw_value
         if self.entity_description.value_fn is not None:
-            return self.entity_description.value_fn(raw_value)
-        return raw_value
+            value = self.entity_description.value_fn(raw_value)
+        localized = _localize_state(self.entity_description.key, value, self.hass)
+        if localized is not None:
+            return localized
+        return value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

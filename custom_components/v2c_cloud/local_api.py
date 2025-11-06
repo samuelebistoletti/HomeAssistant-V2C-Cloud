@@ -155,6 +155,19 @@ async def async_get_or_create_local_coordinator(
             raise UpdateFailed("Unexpected payload type from local endpoint")
 
         payload["_static_ip"] = static_ip
+
+        device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
+        if isinstance(device_state, dict):
+            additional = device_state.setdefault("additional", {})
+            for key in (
+                "DynamicPowerMode",
+                "ContractedPower",
+                "Paused",
+                "Locked",
+            ):
+                if key in payload:
+                    additional[key.lower()] = payload[key]
+
         return payload
 
     coordinator = DataUpdateCoordinator(

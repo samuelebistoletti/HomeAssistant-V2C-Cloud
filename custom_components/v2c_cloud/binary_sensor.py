@@ -39,7 +39,7 @@ class V2CConnectedBinarySensor(V2CEntity, BinarySensorEntity):
     def __init__(self, coordinator, client, device_id) -> None:
         super().__init__(coordinator, client, device_id)
         self._attr_translation_key = "connected"
-        self._attr_unique_id = f"{device_id}_connected"
+        self._attr_unique_id = f"v2c_{device_id}_connected_status"
         self._attr_icon = "mdi:lan-connect"
 
     @property

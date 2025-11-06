@@ -3,28 +3,26 @@
 ## 1. Architecture Overview
 
 ### Components
-- **Cloud REST client** (`custom_components/v2c_cloud/v2c_cloud.py`) incapsula tutti gli endpoint documentati su `https://v2c.cloud/kong/v2c_service`. Converte risposte testuali, gestisce retry, rate limit e caching di pairing/RFID/versione.
-- **Local API helper** (`custom_components/v2c_cloud/local_api.py`) fornisce utilità per determinare l'IP statico, interrogare `http://<IP>/RealTimeData`, emettere comandi `http://<IP>/write/KeyWord=Value` e gestire eccezioni dedicate (`V2CLocalApiError`).
-- **Config flow** raccoglie API key e base URL opzionale, valida l'accesso tramite `/pairings/me` e salva una unique-id deterministica.
-- **Coordinatore cloud** (`DataUpdateCoordinator`) esegue polling di pairings/status con un intervallo adattivo (≥90 s) calcolato per mantenere ~850 chiamate/giorno, lasciando margine per comandi manuali (limite V2C: 1000/die).
-- **Coordinatori locali** vengono creati lazy per ciascun device e interrogano `/RealTimeData` ogni 30 s. Sensori, switch e number condividono i dati locali per evitare richieste duplicate.
-- **Piattaforme** (binary_sensor, sensor, switch, number, select, button) ereditano da `V2CEntity`, che espone helper per pairing, reported payload e conversioni. Le entità scelgono automaticamente il dato locale quando presente.
-- **Servizi** Home Assistant sono registrati una sola volta; quelli che mutano configurazioni cloud usano il client REST, quelli che operano sulla LAN sfruttano `async_write_keyword` o i dati del coordinatore locale.
+- **Cloud REST client** (`custom_components/v2c_cloud/v2c_cloud.py`) wraps the documented endpoints at `https://v2c.cloud/kong/v2c_service`, normalises responses, enforces retry/backoff and caches pairings, RFID lists and firmware version.
+- **Local API helper** (`custom_components/v2c_cloud/local_api.py`) resolves the device IP, polls `http://<ip>/RealTimeData`, sends write commands via `http://<ip>/write/KeyWord=Value` and raises `V2CLocalApiError` on LAN issues.
+- **Config flow** collects the API key (and optional base URL), validates it via `/pairings/me`, and stores a deterministic unique ID.
+- **Cloud coordinator** (`DataUpdateCoordinator`) handles pairing/device polling with an adaptive interval (`ceil(devices * 86400 / 850)` seconds, min 90 s) to keep calls under the V2C 1000/day limit while leaving headroom for manual commands.
+- **Local coordinators** are created on demand per device, polling `/RealTimeData` every 30 s. All entities consuming local telemetry share the same coordinator instance to avoid duplicate requests.
+- **Platforms** (binary_sensor, sensor, switch, number, select, button) inherit from `V2CEntity`, which exposes helpers for coordinator data, pairing metadata and case-insensitive lookups. Entities prefer local data whenever available, falling back to the cloud payload.
+- **Services** are registered once. Cloud mutating services use the REST client and refresh the cloud coordinator; LAN operations leverage `async_write_keyword` and refresh the relevant local coordinator if needed.
 
 ### Data Flow
 ```
-Config Flow ──► V2CClient (cloud)
-                      │
-                      └──► Cloud Coordinator ──► Entities / Services / Diagnostics
-                                │
-                                └──► Local Coordinator(s) ──► Sensors & fast controls
+Config Flow ──► V2CClient (cloud) ──► Cloud Coordinator ──► Entities / Services
+                                        │
+                                        └──► Local Coordinators (per device)
 ```
 
 ## 2. Coordinator Data Model
 
 ```python
 coordinator.data = {
-    "pairings": [...],                     # risposta da /pairings/me (cache 60 min)
+    "pairings": [...],
     "devices": {
         device_id: {
             "pairing": {...},
@@ -42,7 +40,7 @@ coordinator.data = {
                 "_rfid_next_refresh": float,
                 "_version_next_refresh": float,
                 "version_info": dict | None,
-                "static_ip": str | None,      # IP usato per la local API
+                "static_ip": str | None,
             },
         },
     },
@@ -50,58 +48,58 @@ coordinator.data = {
 }
 ```
 
-I coordinatori locali memorizzano direttamente l'ultima risposta `RealTimeData` con un campo `_static_ip` di servizio.
+Local coordinators store the raw `RealTimeData` payload along with `_static_ip` so other components can reuse it.
 
 ## 3. API Coverage
 
 ### Cloud
-- **Stato / pairing**: `/pairings/me`, `/device/reported`, `/device/connected`, `/device/wifilist`, `/version`.
-- **Controlli**: `/device/charger_until_*`, `/device/startchargekw`, `/device/startchargeminutes`, `/device/reboot`, `/device/update`.
-- **Configurazione**: `/device/logo_led`, `/device/set_rfid`, `/device/ocpp`, `/device/maxpower`, `/device/chargefvmode`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/denka/max_power`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`.
-- **RFID**: `/device/rfid` (GET/POST/DELETE) e `/device/rfid/tag` (POST/PUT).
-- **Profili FV v2**: `/device/savepersonalicepower/v2`, `/device/personalicepower/v2` (POST/GET/DELETE), `/device/personalicepower/all`.
-- **Statistiche**: `/stadistic/device`, `/stadistic/global/me`.
+- `/pairings/me`, `/device/reported`, `/device/connected`, `/device/wifilist`, `/version`
+- `/device/charger_until_*`, `/device/startchargekw`, `/device/startchargeminutes`, `/device/reboot`, `/device/update`
+- `/device/logo_led`, `/device/set_rfid`, `/device/ocpp`, `/device/maxpower`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`
+- `/device/rfid` (GET/POST/DELETE), `/device/rfid/tag` (POST/PUT)
+- `/device/savepersonalicepower/v2`, `/device/personalicepower/v2` (POST/GET/DELETE), `/device/personalicepower/all`
+- `/stadistic/device`, `/stadistic/global/me`
 
-I parametri numerici vengono inviati come stringhe per allinearsi con la documentazione ufficiale; tutte le risposte vengono normalizzate a bool/float/int/dict quando possibile.
+Numeric query parameters are posted as strings (as per the public documentation). Responses are coerced to native Python types whenever possible.
 
-### Locale
-- **Realtime**: `GET http://<IP>/RealTimeData` (dizionario con potenze, stati, Wi-Fi, intensità, ecc.).
-- **Scritture**: `GET http://<IP>/write/KeyWord=Value` utilizzato per `Dynamic`, `Locked`, `Intensity`, `MinIntensity`, `MaxIntensity`, `Paused`. Ulteriori keyword possono essere aggiunte riutilizzando gli helper.
+### Local
+- `GET /RealTimeData` for telemetry (telemetry keys: ChargeState, ChargePower, VoltageInstallation, etc.)
+- `GET /write/KeyWord=Value` for supported commands (`Dynamic`, `Locked`, `Intensity`, `MinIntensity`, `MaxIntensity`, `Paused`, `DynamicPowerMode`, `ContractedPower`, ...). Unsupported commands remain on the cloud client.
 
-Se la local API fallisce viene sollevato `V2CLocalApiError` e l'entità mantiene il valore precedente.
+`V2CLocalApiError` is raised on timeouts/HTTP errors and converted into `HomeAssistantError` at the entity/service layer.
 
-## 4. Entity Design Guidelines
+## 4. Entity Guidelines
 
-- Il mixin `V2CEntity` fornisce `device_state`, `pairing`, `reported`, `reported_lower` e `get_reported_value`. Accetta un flag `refresh` opzionale in `_async_call_and_refresh` per evitare refresh cloud dopo comandi locali.
-- **Sensori** usano i coordinatori locali; quelli cloud (es. connettività) leggono dal dizionario principale. Le conversioni `_as_*` garantiscono tipi numerici coerenti.
-- **Switch/Number locali** applicano un lock ottimistico di 20 s dopo il comando e leggono immediatamente dalla risposta LAN, riducendo l'oscillazione tra `on`/`off`.
-- **Switch/Select cloud** si appoggiano al client REST e attendono il refresh per confermare lo stato.
-- **Buttons** locali (start/pause) non triggerano il refresh del coordinatore cloud; i pulsanti cloud (reboot/update) invece sì.
+- `V2CEntity.get_reported_value(*keys)` performs case-insensitive lookup on the cloud payload; helpers in `local_api.py` retrieve cached LAN data.
+- Local switches/numbers keep a 20-second optimistic lock after issuing a command to mask discrepancies until the next LAN refresh completes.
+- Cloud commands always go through `_async_call_and_refresh(..., refresh=True)`; LAN commands skip the cloud refresh to avoid extra API calls.
+- Entity unique IDs follow the pattern `f"{device_id}_{keyword}"` using the keyword exposed by the API whenever possible (e.g. `charge_power`, `locked_state`, `intensity`).
 
-## 5. Services
+## 5. Services & Events
 
-I servizi sono registrati una sola volta al bootstrap (`_async_register_services`). Mutazioni cloud vengono avvolte da `_execute_and_refresh` che esegue il comando REST e, in caso di successo, chiede il refresh del coordinator principale. I servizi dati pubblicano sempre un evento con il payload originale (`wifi_scan`, `device_statistics`, `global_statistics`, `power_profiles`).
+- Mutating cloud services call `_execute_and_refresh`, which wraps the coroutine in error handling (`V2CAuthError`, `V2CRequestError`) and triggers a coordinator refresh on success.
+- Data retrieval services publish the raw response via Home Assistant events: `v2c_cloud_wifi_scan`, `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`, `v2c_cloud_power_profiles`.
 
 ## 6. Error Handling
 
-- `V2CAuthError` ⇒ avvia i flussi di re-autenticazione Home Assistant.
-- `V2CRequestError` e `V2CRateLimitError` circoscrivono problemi HTTP/timeout e mantengono i dati precedenti quando possibile.
-- `V2CLocalApiError` incapsula errori LAN e viene propagato come `HomeAssistantError` così da notificare l'utente senza interrompere il loop.
-- Il coordinatore cloud applica un backoff esponenziale (max 3 tentativi) su timeout / 429; se fallisce, conserva la cache precedente.
+- `V2CAuthError` causes re-auth flows when raised during coordinator refresh or service execution.
+- `V2CRequestError`/`V2CRateLimitError` keep previous data when refresh fails; the coordinator logs warnings but does not break the update loop.
+- `V2CLocalApiError` is mapped to `HomeAssistantError` so the UI reports issues without killing the event loop.
+- Rate limiting applies exponential backoff (up to 3 retries). When capacity is exceeded the coordinator retains the cached payload and updates resume on the next scheduled interval.
 
 ## 7. Development Checklist
 
-- Aggiornare `strings.json` e le traduzioni per ogni nuova entità/servizio.
-- Documentare le modifiche in `README.md`, `TECHNICAL_NOTES.md` e `CHANGELOG.md`.
-- Rivalutare l'intervallo del coordinatore se vengono introdotte nuove chiamate cloud ricorrenti.
-- Validare le keyword locali aggiuntive confrontandosi con la documentazione V2C.
-- Mantenere i log chiari (livello `debug`) per richieste cloud e locali.
+1. Update `strings.json`, translations (`translations/en.json`, `translations/it.json`) and documentation (`README.md`, `TECHNICAL_NOTES.md`, `CHANGELOG.md`).
+2. Review coordinator intervals when adding new cloud polling to keep the daily budget intact.
+3. Validate new local keywords against the official spreadsheet before exposing them in the UI.
+4. Ensure logging remains at `debug` level for HTTP details; avoid excessive logging in the happy path.
+5. Run `python -m compileall custom_components/v2c_cloud` before committing to catch syntax errors.
 
 ## 8. Testing Recommendations
 
-1. **Validazione API key** – verificare workflow di onboarding e re-auth.
-2. **Rilevamento dispositivi** – testare più wallbox e valutare l'intervallo calcolato (`coordinator.update_interval`).
-3. **Comandi locali** – start/pause charge, switch dinamica/blocco, intenzità min/max.
-4. **Comandi cloud** – logo LED, OCPP, reboot/update, timer, RFID servizi.
-5. **Fallback** – simulare indisponibilità locale e assicurarsi che l'entità ripieghi sul valore cloud senza errori non gestiti.
-6. **Statistiche** – invocare `get_device_statistics` / `get_global_statistics` e verificare gli eventi generati.
+1. **API key flow** – invalid key should raise `ConfigEntryAuthFailed` and prompt the re-auth UI.
+2. **Multiple devices** – verify the adaptive interval (check `coordinator.update_interval`).
+3. **Local commands** – test start/pause charge, dynamic mode toggle, and intensity changes with the wallbox reachable on LAN.
+4. **Cloud commands** – test logo LED, RFID enable/disable, OCPP configuration, firmware update, timers, RFID services.
+5. **Failure scenarios** – simulate LAN unavailability and cloud 429/timeout responses to ensure fallbacks behave correctly.
+6. **Statistics & events** – call `get_device_statistics` and confirm the `v2c_cloud_device_statistics` event carries the raw payload.

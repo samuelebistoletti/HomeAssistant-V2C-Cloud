@@ -537,14 +537,6 @@ class V2CClient:
             extra_params={"value": value},
         )
 
-    async def async_set_fv_mode(self, device_id: str, mode: int) -> Any:
-        """Set the FV mode of the charger."""
-        return await self._device_command(
-            "/device/chargefvmode",
-            device_id,
-            extra_params={"value": str(mode)},
-        )
-
     async def async_set_installation_type(self, device_id: str, value: int) -> Any:
         """Set the installation type."""
         return await self._device_command(
@@ -643,14 +635,6 @@ class V2CClient:
         """Set maximum power delivery."""
         return await self._device_command(
             "/device/maxpower",
-            device_id,
-            extra_params={"value": str(int(watts))},
-        )
-
-    async def async_set_denka_max_power(self, device_id: str, watts: int) -> Any:
-        """Set maximum power for Denka devices."""
-        return await self._device_command(
-            "/device/denka/max_power",
             device_id,
             extra_params={"value": str(int(watts))},
         )

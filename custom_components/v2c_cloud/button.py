@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import V2CEntity
-from .local_api import async_write_keyword, V2CLocalApiError
+from .local_api import V2CLocalApiError
 
 
 async def async_setup_entry(
@@ -34,38 +34,6 @@ async def async_setup_entry(
                     coordinator,
                     client,
                     device_id,
-                    name_key="start_charge",
-                    unique_suffix="start_charge",
-                    coroutine_factory=lambda _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Paused",
-                        0,
-                    ),
-                    icon="mdi:play-circle",
-                    refresh_after_call=False,
-                ),
-                V2CButton(
-                    coordinator,
-                    client,
-                    device_id,
-                    name_key="pause_charge",
-                    unique_suffix="pause_charge",
-                    coroutine_factory=lambda _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Paused",
-                        1,
-                    ),
-                    icon="mdi:pause-circle",
-                    refresh_after_call=False,
-                ),
-                V2CButton(
-                    coordinator,
-                    client,
-                    device_id,
                     name_key="reboot",
                     unique_suffix="reboot",
                     coroutine_factory=lambda _device_id=device_id: client.async_reboot(
@@ -84,7 +52,7 @@ async def async_setup_entry(
                         _device_id
                     ),
                     icon="mdi:update",
-                    entity_category=EntityCategory.CONFIG,
+                    entity_category=EntityCategory.DIAGNOSTIC,
                 ),
             )
         )
@@ -112,7 +80,7 @@ class V2CButton(V2CEntity, ButtonEntity):
         self._coroutine_factory = coroutine_factory
         self._refresh_after_call = refresh_after_call
         self._attr_translation_key = name_key
-        self._attr_unique_id = f"{device_id}_{unique_suffix}"
+        self._attr_unique_id = f"v2c_{device_id}_{unique_suffix}"
         self._attr_icon = icon
         if entity_category:
             self._attr_entity_category = entity_category

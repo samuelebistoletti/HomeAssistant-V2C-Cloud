@@ -30,7 +30,7 @@
   "entity": {
     "binary_sensor": {
       "connected": {
-        "name": "Connected"
+        "name": "Connection status"
       }
     },
     "sensor": {
@@ -74,16 +74,16 @@
         "name": "Charging paused"
       },
       "locked_state": {
-        "name": "Charger locked"
+        "name": "Lock status"
       },
       "timer_state": {
-        "name": "Timer enabled"
+        "name": "Timer status"
       },
       "current_intensity": {
         "name": "Current intensity"
       },
       "dynamic_state": {
-        "name": "Dynamic mode enabled"
+        "name": "Dynamic mode state"
       },
       "min_intensity": {
         "name": "Minimum intensity"
@@ -115,7 +115,10 @@
         "name": "Dynamic mode"
       },
       "locked": {
-        "name": "Charger locked"
+        "name": "Charger lock"
+      },
+      "charging_pause": {
+        "name": "Charging pause"
       },
       "logo_led": {
         "name": "Logo LED"
@@ -137,8 +140,8 @@
       "language": {
         "name": "Language"
       },
-      "fv_mode": {
-        "name": "Photovoltaic mode"
+      "dynamic_power_mode": {
+        "name": "Dynamic power mode"
       }
     },
     "number": {
@@ -151,17 +154,14 @@
       "max_intensity": {
         "name": "Maximum intensity"
       },
+      "contracted_power": {
+        "name": "Contracted power"
+      },
       "max_power": {
         "name": "Maximum power"
       }
     },
     "button": {
-      "start_charge": {
-        "name": "Start charge"
-      },
-      "pause_charge": {
-        "name": "Pause charge"
-      },
       "reboot": {
         "name": "Reboot charger"
       },
@@ -226,10 +226,6 @@
     "set_ocpp_address": {
       "name": "Set OCPP server address",
       "description": "Configure the remote OCPP server URL."
-    },
-    "set_denka_max_power": {
-      "name": "Set Denka max power",
-      "description": "Update the maximum power limit enforced on Denka devices."
     },
     "set_inverter_ip": {
       "name": "Set inverter IP",

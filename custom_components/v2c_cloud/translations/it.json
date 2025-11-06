@@ -30,7 +30,7 @@
   "entity": {
     "binary_sensor": {
       "connected": {
-        "name": "Connesso"
+        "name": "Stato connessione"
       }
     },
     "sensor": {
@@ -74,16 +74,16 @@
         "name": "Ricarica in pausa"
       },
       "locked_state": {
-        "name": "Caricatore bloccato"
+        "name": "Stato blocco"
       },
       "timer_state": {
-        "name": "Timer attivo"
+        "name": "Stato timer"
       },
       "current_intensity": {
         "name": "Intensità corrente"
       },
       "dynamic_state": {
-        "name": "Modalità dinamica"
+        "name": "Stato modalità dinamica"
       },
       "min_intensity": {
         "name": "Intensità minima"
@@ -95,7 +95,7 @@
         "name": "Pausa controllo dinamico"
       },
       "dynamic_power_mode": {
-        "name": "Modo potenza dinamica"
+        "name": "Modalità potenza dinamica"
       },
       "contracted_power": {
         "name": "Potenza contrattuale"
@@ -115,10 +115,13 @@
         "name": "Modalità dinamica"
       },
       "locked": {
-        "name": "Caricatore bloccato"
+        "name": "Blocco caricatore"
+      },
+      "charging_pause": {
+        "name": "Ricarica in pausa"
       },
       "logo_led": {
-        "name": "Logo LED"
+        "name": "LED logo"
       },
       "rfid_reader": {
         "name": "Lettore RFID"
@@ -137,8 +140,8 @@
       "language": {
         "name": "Lingua"
       },
-      "fv_mode": {
-        "name": "Modalità fotovoltaica"
+      "dynamic_power_mode": {
+        "name": "Modalità potenza dinamica"
       }
     },
     "number": {
@@ -151,22 +154,19 @@
       "max_intensity": {
         "name": "Intensità massima"
       },
+      "contracted_power": {
+        "name": "Potenza contrattuale"
+      },
       "max_power": {
         "name": "Potenza massima"
       }
     },
     "button": {
-      "start_charge": {
-        "name": "Avvia ricarica"
-      },
-      "pause_charge": {
-        "name": "Metti in pausa"
-      },
       "reboot": {
         "name": "Riavvia caricatore"
       },
       "trigger_update": {
-        "name": "Avvia aggiornamento firmware"
+        "name": "Aggiorna firmware"
       }
     }
   },
@@ -226,10 +226,6 @@
     "set_ocpp_address": {
       "name": "Imposta server OCPP",
       "description": "Configura l'URL del server centrale OCPP."
-    },
-    "set_denka_max_power": {
-      "name": "Potenza massima Denka",
-      "description": "Aggiorna il limite di potenza per i dispositivi Denka."
     },
     "set_inverter_ip": {
       "name": "Imposta IP inverter",

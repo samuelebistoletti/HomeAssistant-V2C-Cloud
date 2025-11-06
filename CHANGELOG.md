@@ -16,7 +16,7 @@
 ## [1.1.0] - 2025-11-15
 
 ### Added
-- Supporto completo alla nuova documentazione V2C (https://api.v2charge.com/) con metodi dedicati per arresto/carica programmata, modalità terze parti, configurazioni OCPP, potenza Denka e indirizzo inverter.
+- Supporto completo alla nuova documentazione V2C (https://api.v2charge.com/) con metodi dedicati per arresto/carica programmata, modalità terze parti, configurazioni OCPP e indirizzo inverter.
 - Nuovi switch Home Assistant per modalità API di terze parti e attivazione OCPP.
 - Servizi aggiuntivi per inserimento manuale tessere RFID, gestione profili di potenza v2, richieste statistiche ed eventi diagnostici (`v2c_cloud_wifi_scan`, `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`, `v2c_cloud_power_profiles`).
 

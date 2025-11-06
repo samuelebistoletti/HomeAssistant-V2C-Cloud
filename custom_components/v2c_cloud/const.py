@@ -21,35 +21,38 @@ MAX_POWER_MAX_KW = 50.0
 
 # Select options exposed by the API
 INSTALLATION_TYPES = {
-    0: "Monophase",
-    1: "Three-phase",
-    2: "Photovoltaic",
+    0: {"en": "Single-phase", "it": "Monofase"},
+    1: {"en": "Three-phase", "it": "Trifase"},
+    2: {"en": "Photovoltaic", "it": "Fotovoltaico"},
 }
 
 SLAVE_TYPES = {
-    0: "Shelly",
-    1: "V2C v2",
-    2: "V2C legacy",
-    3: "Huawei",
-    4: "Solax",
-    5: "Carlo Gavazzi",
-    6: "Growatt",
+    0: {"en": "Shelly", "it": "Shelly"},
+    1: {"en": "V2C v2", "it": "V2C v2"},
+    2: {"en": "V2C legacy", "it": "V2C legacy"},
+    3: {"en": "Huawei", "it": "Huawei"},
+    4: {"en": "Solax", "it": "Solax"},
+    5: {"en": "Carlo Gavazzi", "it": "Carlo Gavazzi"},
+    6: {"en": "Growatt", "it": "Growatt"},
 }
 
 LANGUAGES = {
-    0: "English",
-    1: "Spanish",
-    2: "Portuguese",
-    3: "French",
-    4: "Italian",
-    5: "German",
-    6: "Dutch",
+    0: {"en": "English", "it": "Inglese"},
+    1: {"en": "Spanish", "it": "Spagnolo"},
+    2: {"en": "Portuguese", "it": "Portoghese"},
+    3: {"en": "French", "it": "Francese"},
+    4: {"en": "Italian", "it": "Italiano"},
+    5: {"en": "German", "it": "Tedesco"},
+    6: {"en": "Dutch", "it": "Olandese"},
 }
 
-FV_MODES = {
-    0: "PV + Minimum Power",
-    1: "Exclusive PV",
-    2: "Maximum Power",
+DYNAMIC_POWER_MODES = {
+    0: {"en": "Timed power enabled", "it": "Potenza programmata attiva"},
+    1: {"en": "Timed power disabled", "it": "Potenza programmata disattiva"},
+    2: {"en": "Exclusive PV mode", "it": "Modalità PV esclusiva"},
+    3: {"en": "Minimum power mode", "it": "Modalità potenza minima"},
+    4: {"en": "Grid + PV mode", "it": "Modalità rete + PV"},
+    5: {"en": "Stop mode", "it": "Modalità stop"},
 }
 
 CHARGE_STATE_LABELS = {
@@ -76,7 +79,6 @@ SERVICE_START_CHARGE_MINUTES = "start_charge_for_minutes"
 SERVICE_SET_OCPP_ENABLED = "set_ocpp_enabled"
 SERVICE_SET_OCPP_ID = "set_ocpp_id"
 SERVICE_SET_OCPP_ADDRESS = "set_ocpp_address"
-SERVICE_SET_DENKA_MAX_POWER = "set_denka_max_power"
 SERVICE_SET_INVERTER_IP = "set_inverter_ip"
 SERVICE_SCAN_WIFI = "scan_wifi_networks"
 SERVICE_CREATE_POWER_PROFILE = "create_power_profile"
@@ -112,7 +114,6 @@ ATTR_PROFILE_TIMESTAMP = "timestamp"
 ATTR_UPDATED_AT = "updated_at"
 ATTR_DATE_START = "date_start"
 ATTR_DATE_END = "date_end"
-ATTR_WATTS = "watts"
 
 # Event names fired after data retrieval services
 EVENT_WIFI_SCAN = f"{DOMAIN}_wifi_scan"

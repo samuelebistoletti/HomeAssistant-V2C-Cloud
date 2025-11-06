@@ -19,11 +19,16 @@ from .const import (
     MAX_POWER_MIN_KW,
 )
 from .entity import V2CEntity
-from .local_api import async_write_keyword, get_local_data, V2CLocalApiError
+from .local_api import (
+    async_get_or_create_local_coordinator,
+    async_write_keyword,
+    get_local_data,
+    V2CLocalApiError,
+)
 from .v2c_cloud import V2CError
 
 CURRENT_MIN = 6.0
-CURRENT_MAX = 80.0
+CURRENT_MAX = 32.0
 CURRENT_STEP = 1.0
 POWER_MIN = MAX_POWER_MIN_KW
 POWER_MAX = MAX_POWER_MAX_KW
@@ -90,6 +95,30 @@ async def async_setup_entry(
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
+                    refresh_after_call=False,
+                ),
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    runtime_data,
+                    device_id,
+                    name_key="contracted_power",
+                    unique_suffix="contracted_power",
+                    reported_keys=("contractedpower", "contracted_power"),
+                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "ContractedPower",
+                        api_value,
+                    ),
+                    local_key="ContractedPower",
+                    native_unit=UnitOfPower.KILO_WATT,
+                    minimum=POWER_MIN,
+                    maximum=POWER_MAX,
+                    step=POWER_STEP,
+                    value_to_api=lambda value: int(round(value * 1000)),
+                    source_to_native=lambda raw: raw / 1000 if raw else raw,
                     refresh_after_call=False,
                 ),
                 V2CNumberEntity(
@@ -179,7 +208,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self._local_key = local_key
         self._refresh_after_call = refresh_after_call
         self._attr_translation_key = name_key
-        self._attr_unique_id = f"{device_id}_{unique_suffix}_number"
+        self._attr_unique_id = f"v2c_{device_id}_{unique_suffix}_number"
         self._attr_native_unit_of_measurement = native_unit
         self._attr_native_min_value = minimum
         self._attr_native_max_value = maximum
@@ -189,6 +218,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self._dynamic_max_keys = dynamic_max_keys
         self._dynamic_max_transform = dynamic_max_transform
         self._optimistic_value: float | None = None
+        self._local_coordinator = None
 
     @property
     def native_value(self) -> float | None:
@@ -230,6 +260,19 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
                         numeric = self._dynamic_max_transform(numeric)
                     return numeric
         return super().native_max_value
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if not self._local_key:
+            return
+        coordinator = await async_get_or_create_local_coordinator(
+            self.hass,
+            self._runtime_data,
+            self._device_id,
+        )
+        self._local_coordinator = coordinator
+        remove_listener = coordinator.async_add_listener(self.async_write_ha_state)
+        self.async_on_remove(remove_listener)
 
     async def async_set_native_value(self, value: float) -> None:
         previous_value = self._optimistic_value

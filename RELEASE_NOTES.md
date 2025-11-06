@@ -1,17 +1,19 @@
-Unreleased
+2024-06-01 — Version 1.0.0
 
-- Adaptive polling strategy tuned to the 1000 calls/day quota (pairing cache 60 minutes, RFID refresh every 6 h, firmware version every 12 h) with rate limit metadata exposed in diagnostics.
-- Simplified state gathering around `/device/reported`, deriving charging state and connectivity without extra calls.
-- Removed the legacy MAC address sensor because `/device/mac` is not part of the published OpenAPI specification.
-- Entities that rely on the LAN API (switches, selects, numbers) now listen to the realtime coordinator, removing the short-lived UI "flap" and ensuring they populate immediately after a restart; the connection status binary sensor now shows `Connected`/`Disconnected` instead of generic on/off labels.
+First public release of the V2C Cloud Home Assistant integration.
 
-2025-11-15 - Version 1.1.0
+### Highlights
+- Guided config flow that validates the API key against `/pairings/me` and caches discovered chargers for the first refresh.
+- Hybrid data model that merges the cloud API with the LAN realtime endpoint (`/RealTimeData`) so entities react to local changes within 30 seconds while advanced settings still go through the official cloud endpoints.
+- Adaptive polling strategy that keeps daily usage under the 1000 calls/day quota (minimum interval 90 s) and preserves the most recent data when the service rate-limits requests.
+- Rich Home Assistant service surface for Wi-Fi, timers, RFID lifecycle, scheduled charging helpers, OCPP and inverter settings, photovoltaic profiles v2, firmware update requests and statistics exports.
 
-- Alignment with the November 2025 V2C Third-party API refresh (https://api.v2charge.com/).
-- Added on-demand commands for scheduled charging (energy/minutes) and advanced configuration (third-party mode, OCPP, inverter IP).
-- Exposed full v2 personalised power profile management and published diagnostic results via Home Assistant events.
-- Extended Home Assistant services, translations, and documentation accordingly.
+### Entities
+- Local sensors for identifier, firmware version, charge state, timer status, power/energy metrics, grid voltage and Wi-Fi diagnostics, each exposing the raw payload alongside processed values.
+- Binary sensor that reflects the charger connectivity derived from the cloud payload.
+- Switches, numbers and selects wired to the LAN keywords where possible (Dynamic, PauseDynamic, Locked, Paused, Intensity, ContractedPower, DynamicPowerMode, etc.) with optimistic state smoothing.
+- Buttons for charger reboot and firmware update triggers.
 
-2025-10-27 - Initial release
-
-Launch version of the V2C Cloud Home Assistant integration with API-key onboarding, coordinator-based polling, entities for status/configuration, and services for Wi-Fi, timers, RFID, and firmware commands.
+### Automations & Diagnostics
+- Data-retrieval services emit Home Assistant events (`v2c_cloud_wifi_scan`, `v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`, `v2c_cloud_power_profiles`) containing the raw payload for custom automations.
+- Latest `RateLimit-*` headers are stored in coordinator data for troubleshooting, and extra state attributes surface the unprocessed values received from the device.

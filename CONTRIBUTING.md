@@ -1,61 +1,54 @@
-# Contribution guidelines
+# Contribution Guidelines
 
-Contributing to this project should be as easy and transparent as possible, whether it's:
+Thank you for helping improve the V2C Cloud Home Assistant integration! This document explains how to report issues and submit changes effectively.
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
+## Ways to Contribute
 
-## Github is used for everything
+- Report bugs or regressions
+- Suggest or discuss new features
+- Improve documentation or translations
+- Submit code changes
 
-Github is used to host code, to track issues and feature requests, as well as accept pull requests.
+All contributions are managed through GitHub. Issues and pull requests are preferred for everything except security reports (see `SECURITY.md`).
 
-Pull requests are the best way to propose changes to the codebase.
+## Getting Started
 
-1. Fork the repo and create your branch from `main`.
-2. If you've changed something, update the documentation.
-3. Make sure your code lints (using `scripts/lint`).
-4. Test you contribution.
-5. Issue that pull request!
+1. Fork the repository and branch from `main`.
+2. If you use VS Code, the provided dev container spins up a standalone Home Assistant instance with the sample configuration (`config/configuration.yaml`).
+3. Install development tools inside the container or your local environment:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Any contributions you make will be under the MIT Software License
+## Pull Request Checklist
 
-In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
+Before opening a PR, please ensure you have:
 
-## Report bugs using Github's [issues](../../issues)
+1. **Updated documentation** for any user-facing change. Keep the root `README.md` and `custom_components/v2c_cloud/README.md` identical.
+2. **Reviewed translations** (`strings.json`, `translations/en.json`, `translations/it.json`) and added new keys if the UI changes.
+3. **Updated version metadata** (e.g. `manifest.json`, changelog, release notes) when releasing or adding notable features.
+4. **Formatted and linted** the code:
+   ```bash
+   ./scripts/lint
+   python -m compileall custom_components/v2c_cloud
+   ```
+5. **Tested the behaviour**. Prefer exercising changes in the dev container or against a real charger when possible. If tests cannot be automated, mention the manual steps taken in the PR.
 
-GitHub issues are used to track public bugs.
-Report a bug by [opening a new issue](../../issues/new/choose); it's that easy!
+## Filing Issues
 
-## Write bug reports with detail, background, and sample code
+Use [GitHub issues](../../issues) to report bugs or request features. Helpful reports typically include:
 
-**Great Bug Reports** tend to have:
+- Context (core version, integration version, deployment type)
+- Clear reproduction steps and expected vs. actual behaviour
+- Relevant logs (mask API keys and personal data)
+- Screenshots or diagnostics when available
 
-- A quick summary and/or background
-- Steps to reproduce
-  - Be specific!
-  - Give sample code if you can.
-- What you expected would happen
-- What actually happens
-- Notes (possibly including why you think this might be happening, or stuff you tried that didn't work)
+## Coding Style
 
-People *love* thorough bug reports. I'm not even kidding.
-
-## Use a Consistent Coding Style
-
-Use [black](https://github.com/ambv/black) to make sure the code follows the style.
-
-## Test your code modification
-
-This custom component is based on [integration_blueprint template](https://github.com/ludeeus/integration_blueprint).
-
-It comes with development environment in a container, easy to launch
-if you use Visual Studio Code. With this container you will have a stand alone
-Home Assistant instance running and already configured with the included
-[`configuration.yaml`](./config/configuration.yaml)
-file.
+- Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/). The `scripts/lint` helper runs both format and lint passes.
+- Keep functions small and prefer explicit typing (`from __future__ import annotations` is already enabled).
+- Add concise comments only when the behaviour is not obvious from the code.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under its MIT License.
+By submitting a contribution you agree that it will be licensed under the project’s [MIT License](LICENSE).

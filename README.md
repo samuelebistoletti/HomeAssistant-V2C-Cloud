@@ -2,25 +2,25 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while long-lived configuration keeps relying on the official cloud endpoints.
+This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while configuration tasks still rely on the official cloud endpoints.
 
 > ℹ️ The integration is built specifically for V2C Cloud following Home Assistant best practices (config flow, coordinators, translations, services, diagnostics).
 
 ## Key Features
 
-- **API key authentication** – the setup flow only requires the API key generated from your V2C Cloud account.
-- **Hybrid architecture** – telemetry is polled every 30 seconds from `http://<device_ip>/RealTimeData`, while the cloud API is used for pairing discovery, status verification and configuration operations that are not exposed locally.
-- **Real-time LAN listeners** – switches, selects and numbers using local keywords subscribe to the same coordinator that poll `/RealTimeData`, so their UI state updates immediately after each LAN refresh without waiting for the slower cloud poll.
-- **Optimistic UI smoothing** – cloud-backed selects and numbers keep their requested value visible for a few seconds, preventing temporary rollbacks before the slower cloud refresh confirms the change.
-- **Adaptive cloud polling** – the cloud coordinator (mainly `/device/reported`) adjusts its interval automatically so the account stays below the 1000 requests/day limit. With one device the refresh is 120 s; the minimum allowed interval is 90 s.
-- **Fast local controls** – dynamic mode, charger lock, intensity sliders and start/pause commands write directly to `http://<device_ip>/write/KeyWord=Value`, avoiding round-trips through the cloud.
-- **Comprehensive Home Assistant services** – Wi-Fi management, timers, RFID provisioning, photovoltaic profiles v2, OCPP/inverter configuration and statistics retrieval, each publishing an automation-friendly event.
-- **Diagnostics-friendly** – rate limit headers are stored in coordinator data and every command logs the originating endpoint (cloud or LAN) to help troubleshooting.
+- **Guided onboarding** – the config flow only asks for your API key, validates it against `/pairings/me` and stores a deterministic unique ID for re-auth flows.
+- **Cloud + LAN hybrid** – the integration polls `http://<device_ip>/RealTimeData` every 30 seconds for telemetry and rapid feedback, while the cloud API handles pairing discovery, advanced settings and statistics.
+- **Local-first entities** – switches, selects and numbers that have a LAN keyword reuse the per-device realtime coordinator, so the UI reflects changes right after each LAN poll without waiting for the slower cloud refresh.
+- **Optimistic smoothing** – cloud-only selects and numbers hold their requested value for ~20 s, eliminating UI “flapping” between command execution and the next poll.
+- **Adaptive cloud budget** – the cloud coordinator automatically scales its interval with `ceil(devices * 86400 / 850)` seconds (never below 90 s) to respect the 1000 calls/day quota while leaving headroom for manual services.
+- **Comprehensive services** – Wi-Fi provisioning, timers, RFID lifecycle, photovoltaic profiles v2, scheduled charging helpers, OCPP/inverter settings and statistics exports, all implemented as Home Assistant services.
+- **Automation-ready events** – data retrieval services (`scan_wifi_networks`, statistics, power profiles) emit events that contain the raw payload so automations can capture and store results.
+- **Diagnostics aware** – the latest `RateLimit-*` headers are persisted in coordinator data, logs specify whether the LAN or cloud path was used, and every entity exposes the raw value in its extra state attributes for troubleshooting.
 
 ## Requirements
 
 - A V2C Cloud account with at least one wallbox paired and an API key generated from [https://v2c.cloud/home/user](https://v2c.cloud/home/user).
-- The wallbox must be reachable on the local network (open the HTTP port used by `/RealTimeData` and `/write/...`).
+- The wallbox must be reachable on the local network (open the HTTP port used by `/RealTimeData` and `/write/...`). Ideally reserve a static IP or DHCP lease so the integration can keep using LAN features; the integration will fall back to the last reported IP or the pairing metadata when static data is missing.
 - Home Assistant 2023.12 or newer.
 - Internet access towards `https://v2c.cloud/kong/v2c_service` for cloud calls.
 
@@ -39,21 +39,22 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 
 ## Configuration
 
-- The API key is mandatory; an alternate base URL can be provided for staging environments.
+- The API key is mandatory; an alternate base URL can be provided when advanced options are enabled.
 - Each pairing returned by `/pairings/me` becomes a Home Assistant device with entities grouped by use case.
-- Cloud polling adapts to the number of wallboxes using `ceil(count * 86400 / 850)` seconds (never below 90 s). RFID data is refreshed every 6 hours, firmware version every 12 hours, pairing information every 60 minutes.
-- Entities driven by the local API subscribe to the local realtime coordinator, so they initialise with the latest LAN payload right after startup and only stay optimistic until the next refresh confirms the change.
-- Cloud-only selects and numbers keep a short (≈20 s) optimistic hold so the UI does not revert to the previous value while waiting for the next `/device/reported` poll.
+- Cloud polling adapts to the active device count using `ceil(devices * 86400 / 850)` seconds (never below 90 s). RFID cards refresh every 6 hours, firmware version every 12 hours and the pairing cache lives for 60 minutes.
+- Entities that rely on the LAN API subscribe to their per-device realtime coordinator, so they initialise with the latest LAN payload after startup and remain optimistic only until the next LAN refresh.
+- The integration automatically re-uses stored pairing data if the cloud API temporarily rate-limits requests and supports Home Assistant’s re-auth flow when the API key expires.
 
 ## Entity Overview
 
 ### Sensors (polled locally every 30 s)
-- Device identifier, firmware version
-- Charge state, ready state, timer status
-- Charge power, charge energy, charge time
-- House power, FV power, battery power, contracted power
-- Wi-Fi SSID, Wi-Fi IP address, Wi-Fi signal strength
-- Slave error code
+- Device identifier and firmware version
+- Charge state (localized), ready state and timer flag
+- Charge power (W), energy delivered (kWh) and elapsed charge time (s)
+- House, photovoltaic and battery power (W), contracted power (W)
+- Grid voltage (`VoltageInstallation`, V)
+- Wi-Fi SSID, IP address and signal quality indicator
+- Slave error code (localized)
 
 ### Binary Sensors
 - Connection status (cloud `/device/reported`, exposes "Connected" / "Disconnected")
@@ -79,7 +80,6 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - Maximum intensity (local `/write/MaxIntensity`)
 - Installation voltage (local `/write/VoltageInstallation`)
 - Contracted power (local `/write/ContractedPower`, auto-converted between watts and kW)
-- Maximum power (cloud `/device/maxpower`)
 
 ### Buttons
 - Reboot charger (cloud `/device/reboot`)
@@ -131,6 +131,13 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 | `v2c_cloud.scan_wifi_networks` | `/device/wifilist` | Request a Wi-Fi scan; results are emitted via `v2c_cloud_wifi_scan`. |
 
 Each data-oriented service also fires an event (`v2c_cloud_device_statistics`, `v2c_cloud_global_statistics`, `v2c_cloud_power_profiles`) containing the raw payload so automations can store or relay the information.
+
+## Home Assistant Events
+
+- `v2c_cloud_wifi_scan` – triggered by `scan_wifi_networks`; payload contains `device_id` and the list of `networks`.
+- `v2c_cloud_power_profiles` – used by `list_power_profiles` and `get_power_profile`; payload carries the `device_id` plus either a `profiles` list or a single `profile` and its `timestamp`.
+- `v2c_cloud_device_statistics` – emitted by `get_device_statistics`; includes `device_id`, optional `date_start` / `date_end` and the `statistics` list.
+- `v2c_cloud_global_statistics` – emitted by `get_global_statistics`; includes the global `statistics` list plus the requested date range.
 
 ## Logging & Diagnostics
 

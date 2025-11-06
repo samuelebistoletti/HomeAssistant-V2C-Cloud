@@ -77,6 +77,9 @@
       "contracted_power": {
         "name": "Potenza contrattuale"
       },
+      "grid_voltage": {
+        "name": "Tensione di rete"
+      },
       "wifi_ssid": {
         "name": "SSID Wi-Fi"
       },
@@ -136,9 +139,6 @@
       },
       "contracted_power": {
         "name": "Potenza contrattuale"
-      },
-      "max_power": {
-        "name": "Potenza massima"
       },
       "voltage_installation": {
         "name": "Tensione di installazione"

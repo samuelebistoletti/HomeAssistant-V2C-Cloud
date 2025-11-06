@@ -312,6 +312,16 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         value_fn=_as_float,
     ),
     V2CLocalRealtimeSensorDescription(
+        key="VoltageInstallation",
+        translation_key="grid_voltage",
+        icon="mdi:flash",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="grid_voltage",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
         key="SSID",
         translation_key="wifi_ssid",
         icon="mdi:wifi",

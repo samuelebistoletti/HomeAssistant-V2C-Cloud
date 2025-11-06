@@ -384,27 +384,12 @@ class V2CClient:
             params={"deviceId": device_id},
         )
 
-    async def async_get_connected(self, device_id: str) -> Any:
-        """Return whether the device is connected."""
-        return await self._request(
-            "GET",
-            "/device/connected",
-            params={"deviceId": device_id},
-        )
-
     async def async_get_reported(self, device_id: str) -> Any:
         """Return the reported state of the device."""
         return await self._request(
             "GET",
             "/device/reported",
             params={"deviceId": device_id},
-        )
-
-    async def async_get_current_state_charge(self, device_id: str) -> Any:
-        """Return the current charging state of the device."""
-        return await self._device_command(
-            "/device/currentstatecharge",
-            device_id,
         )
 
     async def async_get_rfid_cards(self, device_id: str) -> Any:
@@ -478,14 +463,6 @@ class V2CClient:
             params={"deviceId": device_id, **params},
         )
 
-    async def async_start_charge(self, device_id: str) -> Any:
-        """Start charging."""
-        return await self._device_command("/device/startcharge", device_id)
-
-    async def async_pause_charge(self, device_id: str) -> Any:
-        """Pause charging."""
-        return await self._device_command("/device/pausecharge", device_id)
-
     async def async_set_charge_stop_energy(self, device_id: str, kwh: float) -> Any:
         """Configure automatic stop once a given energy (kWh) has been delivered."""
         value = format(float(kwh), "g")
@@ -528,15 +505,6 @@ class V2CClient:
         """Trigger firmware update."""
         return await self._device_command("/device/update", device_id)
 
-    async def async_set_dynamic(self, device_id: str, enabled: bool) -> Any:
-        """Enable or disable dynamic mode."""
-        value = "1" if enabled else "0"
-        return await self._device_command(
-            "/device/dynamic",
-            device_id,
-            extra_params={"value": value},
-        )
-
     async def async_set_installation_type(self, device_id: str, value: int) -> Any:
         """Set the installation type."""
         return await self._device_command(
@@ -559,15 +527,6 @@ class V2CClient:
             "/device/language",
             device_id,
             extra_params={"value": str(value)},
-        )
-
-    async def async_lock(self, device_id: str, locked: bool) -> Any:
-        """Lock or unlock the charge point."""
-        value = "1" if locked else "0"
-        return await self._device_command(
-            "/device/locked",
-            device_id,
-            extra_params={"value": value},
         )
 
     async def async_set_logo_led(self, device_id: str, enabled: bool) -> Any:
@@ -605,38 +564,6 @@ class V2CClient:
             device_id,
             extra_params={"value": url},
             device_param="id",
-        )
-
-    async def async_set_min_car_intensity(self, device_id: str, amps: int) -> Any:
-        """Set minimum car intensity."""
-        return await self._device_command(
-            "/device/min_car_int",
-            device_id,
-            extra_params={"value": str(amps)},
-        )
-
-    async def async_set_max_car_intensity(self, device_id: str, amps: int) -> Any:
-        """Set maximum car intensity."""
-        return await self._device_command(
-            "/device/max_car_int",
-            device_id,
-            extra_params={"value": str(amps)},
-        )
-
-    async def async_set_intensity(self, device_id: str, amps: int) -> Any:
-        """Set current charging intensity."""
-        return await self._device_command(
-            "/device/intensity",
-            device_id,
-            extra_params={"value": str(amps)},
-        )
-
-    async def async_set_max_power(self, device_id: str, watts: int) -> Any:
-        """Set maximum power delivery."""
-        return await self._device_command(
-            "/device/maxpower",
-            device_id,
-            extra_params={"value": str(int(watts))},
         )
 
     async def async_set_inverter_ip(self, device_id: str, address: str) -> Any:

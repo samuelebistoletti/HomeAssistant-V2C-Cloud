@@ -53,9 +53,9 @@ Local coordinators store the raw `RealTimeData` payload along with `_static_ip` 
 ## 3. API Coverage
 
 ### Cloud
-- `/pairings/me`, `/device/reported`, `/device/connected`, `/device/wifilist`, `/version`
+- `/pairings/me`, `/device/reported`, `/device/wifilist`, `/version`
 - `/device/charger_until_*`, `/device/startchargekw`, `/device/startchargeminutes`, `/device/reboot`, `/device/update`
-- `/device/logo_led`, `/device/set_rfid`, `/device/ocpp`, `/device/maxpower`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`
+- `/device/logo_led`, `/device/set_rfid`, `/device/ocpp`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`
 - `/device/rfid` (GET/POST/DELETE), `/device/rfid/tag` (POST/PUT)
 - `/device/savepersonalicepower/v2`, `/device/personalicepower/v2` (POST/GET/DELETE), `/device/personalicepower/all`
 - `/stadistic/device`, `/stadistic/global/me`

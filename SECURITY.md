@@ -2,54 +2,42 @@
 
 ## Supported Versions
 
-The following table shows which versions of the integration are currently supported with security updates:
-
-| Version | Supported          |
-|----------|--------------------|
-| Latest (main branch) | ✅ |
-| Previous releases     | ❌ |
-
-Security fixes are applied only to the latest version available on the `main` branch.  
-Users are encouraged to always update to the most recent release via HACS or by pulling the latest commit from this repository.
+Security fixes target the latest code on the `main` branch and the most recent published release. Historical tags are not maintained, so always update through HACS or pull the latest commit before reporting vulnerabilities.
 
 ---
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in this integration, **please do not open a public GitHub issue**.  
-Instead, report it privately using the **GitHub Security Advisory** feature:
+If you identify a potential vulnerability, **do not create a public issue or discussion**. Use the private **GitHub Security Advisory** workflow instead:
 
-> Go to **“Security → Advisories → Report a vulnerability”** in this repository.
+1. Navigate to **Security → Advisories → Report a vulnerability**.
+2. Provide as much detail as possible:
+   - Description and impact
+   - Reproduction steps or proof-of-concept
+   - Expected vs. actual behaviour
+   - Relevant logs (mask sensitive data)
 
-Please include the following details in your report (if applicable):
-- Description of the vulnerability  
-- Steps to reproduce  
-- Expected vs. actual behavior  
-- Any relevant logs, screenshots, or proof-of-concept code
-
-Reports will be acknowledged within **72 hours**, and a remediation or mitigation plan will be provided within **7 business days**, depending on severity.
+Reports are acknowledged within **72 hours**. A remediation plan or mitigation guidance is shared within **7 business days**, depending on severity and reproduction effort. All fixes are published in the next patch release and summarised in the changelog.
 
 ---
 
 ## Scope
 
-This security policy applies only to:
-- The **HomeAssistant-V2C-Cloud** custom integration code in this repository  
-- Configuration or data handled directly by the integration itself
+This policy covers:
+- Code in this repository under `custom_components/v2c_cloud`
+- Configuration handled directly by the integration
 
-Issues related to:
-- **V2C Cloud APIs**
-- **Home Assistant Core**
-- **Third-party dependencies**
+Out of scope:
+- Issues in the official **V2C Cloud** backend or APIs
+- **Home Assistant Core** defects
+- Vulnerabilities in third-party dependencies bundled with Home Assistant
 
-should be reported to their respective maintainers or vendors.
+Please report out-of-scope issues to the appropriate vendor or project.
 
 ---
 
 ## Responsible Disclosure
 
-Please follow a **responsible disclosure process**.  
-Do not publicly share or exploit vulnerabilities before they have been confirmed and fixed.  
-All contributors are expected to comply with GitHub’s [Security Policy](https://docs.github.com/en/code-security/getting-started/github-security-features).
+Follow responsible disclosure practices: avoid sharing details publicly until a fix is available, and do not exploit issues beyond the minimum steps required for validation. See GitHub’s [Coordinated Disclosure guidelines](https://docs.github.com/en/code-security/getting-started/github-security-features#coordinated-disclosure) for best practices.
 
-Thank you for helping make Home Assistant integrations more secure! 🙏
+Thank you for helping keep the V2C Cloud integration secure!

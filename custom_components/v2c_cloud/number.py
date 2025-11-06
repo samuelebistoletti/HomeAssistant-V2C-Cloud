@@ -176,30 +176,6 @@ async def async_setup_entry(
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
                 ),
-                V2CNumberEntity(
-                    coordinator,
-                    client,
-                    runtime_data,
-                    device_id,
-                    name_key="max_power",
-                    unique_suffix="max_power",
-                    reported_keys=("maxpower", "max_power"),
-                    setter=lambda api_value, _device_id=device_id: client.async_set_max_power(
-                        _device_id, api_value
-                    ),
-                    native_unit=UnitOfPower.KILO_WATT,
-                    minimum=POWER_MIN,
-                    maximum=POWER_MAX,
-                    step=POWER_STEP,
-                    value_to_api=lambda value: int(round(value * 1000)),
-                    source_to_native=lambda raw: (raw / 1000)
-                    if raw and raw > MAX_POWER_MAX_KW + 1
-                    else raw,
-                    dynamic_max_keys=("maxpowerinstallation", "max_power_installation"),
-                    dynamic_max_transform=lambda raw: (raw / 1000)
-                    if raw and raw > MAX_POWER_MAX_KW + 1
-                    else raw,
-                ),
             )
         )
 

@@ -77,6 +77,9 @@
       "contracted_power": {
         "name": "Contracted power"
       },
+      "grid_voltage": {
+        "name": "Grid voltage"
+      },
       "wifi_ssid": {
         "name": "Wi-Fi SSID"
       },
@@ -136,9 +139,6 @@
       },
       "contracted_power": {
         "name": "Contracted power"
-      },
-      "max_power": {
-        "name": "Maximum power"
       },
       "voltage_installation": {
         "name": "Installation voltage"

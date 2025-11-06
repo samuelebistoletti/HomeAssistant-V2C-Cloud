@@ -10,6 +10,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 
 - **API key authentication** – the setup flow only requires the API key generated from your V2C Cloud account.
 - **Hybrid architecture** – telemetry is polled every 30 seconds from `http://<device_ip>/RealTimeData`, while the cloud API is used for pairing discovery, status verification and configuration operations that are not exposed locally.
+- **Real-time LAN listeners** – switches, selects and numbers using local keywords subscribe to the same coordinator that poll `/RealTimeData`, so their UI state updates immediately after each LAN refresh without waiting for the slower cloud poll.
 - **Adaptive cloud polling** – the cloud coordinator (mainly `/device/reported`) adjusts its interval automatically so the account stays below the 1000 requests/day limit. With one device the refresh is 120 s; the minimum allowed interval is 90 s.
 - **Fast local controls** – dynamic mode, charger lock, intensity sliders and start/pause commands write directly to `http://<device_ip>/write/KeyWord=Value`, avoiding round-trips through the cloud.
 - **Comprehensive Home Assistant services** – Wi-Fi management, timers, RFID provisioning, photovoltaic profiles v2, OCPP/inverter configuration and statistics retrieval, each publishing an automation-friendly event.
@@ -40,7 +41,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - The API key is mandatory; an alternate base URL can be provided for staging environments.
 - Each pairing returned by `/pairings/me` becomes a Home Assistant device with entities grouped by use case.
 - Cloud polling adapts to the number of wallboxes using `ceil(count * 86400 / 850)` seconds (never below 90 s). RFID data is refreshed every 6 hours, firmware version every 12 hours, pairing information every 60 minutes.
-- Entities driven by the local API refresh themselves independently from the cloud cycle, preventing state oscillations after manual actions.
+- Entities driven by the local API subscribe to the local realtime coordinator, so they initialise with the latest LAN payload right after startup and only stay optimistic until the next refresh confirms the change.
 
 ## Entity Overview
 
@@ -53,7 +54,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - Slave error code
 
 ### Binary Sensors
-- Connection status (cloud `/device/reported`)
+- Connection status (cloud `/device/reported`, exposes "Connected" / "Disconnected")
 
 ### Switches
 - Dynamic mode (local `/write/Dynamic`)
@@ -67,13 +68,13 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - Installation type (cloud `/device/inst_type`)
 - Slave device (cloud `/device/slave_type`)
 - Language (cloud `/device/language`)
-- Dynamic power mode (local `/write/DynamicPowerMode`)
+- Dynamic power mode (local `/write/DynamicPowerMode`, instant sync from realtime telemetry)
 
 ### Number Entities
 - Current intensity (local `/write/Intensity`)
 - Minimum intensity (local `/write/MinIntensity`)
 - Maximum intensity (local `/write/MaxIntensity`)
-- Contracted power (local `/write/ContractedPower`)
+- Contracted power (local `/write/ContractedPower`, auto-converted between watts and kW)
 - Maximum power (cloud `/device/maxpower`)
 
 ### Buttons

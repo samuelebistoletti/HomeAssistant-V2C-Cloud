@@ -6,6 +6,8 @@
 - Polling interval rescaled automatically to honour the 1000 calls/day limit, with pairing cache raised to 60 minutes and low-frequency refresh for RFID cards (6 h) and firmware version (12 h).
 - Coordinated state gathering now relies on `/device/reported` to minimise traffic; charging state and connectivity are derived from the reported payload.
 - README, technical notes and localisation files updated to describe adaptive refresh, rate-limit metadata and the removal of deprecated entities.
+- Local switches, selects and numbers now subscribe to the realtime coordinator so their UI state updates right after each LAN poll, fixing the temporary "flap" that used to happen while waiting for cloud confirmation.
+- The connection status binary sensor exposes human friendly `Connected` / `Disconnected` labels in every locale.
 
 ### Added
 - Exposure of the latest `RateLimit-*` headers in coordinator data for diagnostics.

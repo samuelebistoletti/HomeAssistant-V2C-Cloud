@@ -3,6 +3,7 @@ Unreleased
 - Adaptive polling strategy tuned to the 1000 calls/day quota (pairing cache 60 minutes, RFID refresh every 6 h, firmware version every 12 h) with rate limit metadata exposed in diagnostics.
 - Simplified state gathering around `/device/reported`, deriving charging state and connectivity without extra calls.
 - Removed the legacy MAC address sensor because `/device/mac` is not part of the published OpenAPI specification.
+- Entities that rely on the LAN API (switches, selects, numbers) now listen to the realtime coordinator, removing the short-lived UI "flap" and ensuring they populate immediately after a restart; the connection status binary sensor now shows `Connected`/`Disconnected` instead of generic on/off labels.
 
 2025-11-15 - Version 1.1.0
 

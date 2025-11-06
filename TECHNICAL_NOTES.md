@@ -8,7 +8,7 @@
 - **Config flow** collects the API key (and optional base URL), validates it via `/pairings/me`, and stores a deterministic unique ID.
 - **Cloud coordinator** (`DataUpdateCoordinator`) handles pairing/device polling with an adaptive interval (`ceil(devices * 86400 / 850)` seconds, min 90 s) to keep calls under the V2C 1000/day limit while leaving headroom for manual commands.
 - **Local coordinators** are created on demand per device, polling `/RealTimeData` every 30 s. All entities consuming local telemetry share the same coordinator instance to avoid duplicate requests.
-- **Platforms** (binary_sensor, sensor, switch, number, select, button) inherit from `V2CEntity`, which exposes helpers for coordinator data, pairing metadata and case-insensitive lookups. Entities prefer local data whenever available, falling back to the cloud payload.
+- **Platforms** (binary_sensor, sensor, switch, number, select, button) inherit from `V2CEntity`, which exposes helpers for coordinator data, pairing metadata and case-insensitive lookups. Entities prefer local data whenever available, falling back to the cloud payload, and local-only entities register as listeners on their per-device local coordinator so the UI gets refreshed immediately after each LAN poll.
 - **Services** are registered once. Cloud mutating services use the REST client and refresh the cloud coordinator; LAN operations leverage `async_write_keyword` and refresh the relevant local coordinator if needed.
 
 ### Data Flow
@@ -72,6 +72,7 @@ Numeric query parameters are posted as strings (as per the public documentation)
 
 - `V2CEntity.get_reported_value(*keys)` performs case-insensitive lookup on the cloud payload; helpers in `local_api.py` retrieve cached LAN data.
 - Local switches/numbers keep a 20-second optimistic lock after issuing a command to mask discrepancies until the next LAN refresh completes.
+- Local selects/numbers/switches register listeners on the per-device local coordinator, so they repopulate instantly after reloads instead of waiting for the next cloud poll.
 - Cloud commands always go through `_async_call_and_refresh(..., refresh=True)`; LAN commands skip the cloud refresh to avoid extra API calls.
 - Entity unique IDs follow the pattern `f"{device_id}_{keyword}"` using the keyword exposed by the API whenever possible (e.g. `charge_power`, `locked_state`, `intensity`).
 

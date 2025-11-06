@@ -6,7 +6,7 @@
   ],
   "config_flow": true,
   "documentation": "https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud",
-  "integration_type": "service",
+  "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/issues",
   "requirements": [],

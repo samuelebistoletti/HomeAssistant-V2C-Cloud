@@ -68,7 +68,8 @@ jobs:
       - name: Build release ZIP
         if: env.EXISTS == 'false'
         run: |
-          zip -r v2c_cloud.zip custom_components/v2c_cloud -x "*.pyc" "__pycache__/*"
+          cd "${{ github.workspace }}/custom_components/v2c_cloud"
+          zip v2c_cloud.zip -r ./
 
       - name: Create GitHub Release
         if: env.EXISTS == 'false'
@@ -77,4 +78,4 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
           body_path: release_body.md
-          files: v2c_cloud.zip
+          files: ${{ github.workspace }}/custom_components/v2c_cloud/v2c_cloud.zip

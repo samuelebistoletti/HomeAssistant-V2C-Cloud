@@ -74,9 +74,6 @@
       "timer_state": {
         "name": "Stato timer"
       },
-      "contracted_power": {
-        "name": "Potenza contrattuale"
-      },
       "grid_voltage": {
         "name": "Tensione di rete"
       },

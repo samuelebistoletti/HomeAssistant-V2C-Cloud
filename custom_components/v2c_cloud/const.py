@@ -17,7 +17,7 @@ TARGET_DAILY_BUDGET = 850
 
 # Power limits (kW)
 MAX_POWER_MIN_KW = 1.0
-MAX_POWER_MAX_KW = 50.0
+MAX_POWER_MAX_KW = 22.0
 
 # Select options exposed by the API
 INSTALLATION_TYPES = {

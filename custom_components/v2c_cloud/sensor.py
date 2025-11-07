@@ -302,16 +302,6 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         value_fn=_as_flag,
     ),
     V2CLocalRealtimeSensorDescription(
-        key="ContractedPower",
-        translation_key="contracted_power",
-        icon="mdi:transmission-tower",
-        device_class=SensorDeviceClass.POWER,
-        native_unit_of_measurement=UnitOfPower.WATT,
-        state_class=SensorStateClass.MEASUREMENT,
-        unique_id_suffix="contracted_power",
-        value_fn=_as_float,
-    ),
-    V2CLocalRealtimeSensorDescription(
         key="VoltageInstallation",
         translation_key="grid_voltage",
         icon="mdi:flash",

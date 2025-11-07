@@ -74,9 +74,6 @@
       "timer_state": {
         "name": "Timer status"
       },
-      "contracted_power": {
-        "name": "Contracted power"
-      },
       "grid_voltage": {
         "name": "Grid voltage"
       },

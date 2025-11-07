@@ -52,7 +52,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - Device identifier and firmware version
 - Charge state (localized), ready state and timer flag
 - Charge power (W), energy delivered (kWh) and elapsed charge time (s)
-- House, photovoltaic and battery power (W), contracted power (W)
+- House, photovoltaic and battery power (W)
 - Grid voltage (`VoltageInstallation`, V)
 - Wi-Fi SSID, IP address and signal quality indicator
 - Slave error code (localized)

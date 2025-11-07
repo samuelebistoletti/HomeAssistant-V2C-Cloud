@@ -102,6 +102,8 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
 ]
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 
 @dataclass(slots=True)
 class V2CEntryRuntimeData:

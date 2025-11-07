@@ -82,6 +82,7 @@ async def async_setup_entry(
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
+                    icon="mdi:sine-wave",
                 ),
                 V2CNumberEntity(
                     coordinator,
@@ -105,6 +106,7 @@ async def async_setup_entry(
                     step=VOLTAGE_STEP,
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
+                    icon="mdi:flash-triangle-outline",
                 ),
                 V2CNumberEntity(
                     coordinator,
@@ -128,6 +130,7 @@ async def async_setup_entry(
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
+                    icon="mdi:sine-wave",
                 ),
                 V2CNumberEntity(
                     coordinator,
@@ -152,6 +155,7 @@ async def async_setup_entry(
                     value_to_api=lambda value: int(round(value * 1000)),
                     source_to_native=lambda raw: raw / 1000 if raw else raw,
                     refresh_after_call=False,
+                    icon="mdi:transmission-tower",
                 ),
                 V2CNumberEntity(
                     coordinator,
@@ -175,6 +179,7 @@ async def async_setup_entry(
                     step=CURRENT_STEP,
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
+                    icon="mdi:sine-wave",
                 ),
             )
         )
@@ -209,6 +214,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         dynamic_max_transform: Callable[[float], float] | None = None,
         local_key: str | None = None,
         refresh_after_call: bool = True,
+        icon: str | None = None,
     ) -> None:
         super().__init__(coordinator, client, device_id)
         self._reported_keys = reported_keys
@@ -229,6 +235,8 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self._optimistic_value: float | None = None
         self._last_command_ts: float | None = None
         self._local_coordinator = None
+        if icon:
+            self._attr_icon = icon
 
     @property
     def native_value(self) -> float | None:

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2025-11-07
+
+### Added
+- Dedicated Material Design icons for all config numbers, select entities and the V2C Cloud connection sensor to improve clarity in the Home Assistant UI.
+
 ## [1.0.0] - 2025-11-06
 
 First public release of the V2C Cloud integration for Home Assistant.

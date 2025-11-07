@@ -69,6 +69,7 @@ async def async_setup_entry(
                     _device_id, value
                 ),
                 reported_keys=("inst_type", "installation_type"),
+                icon="mdi:home-lightning-bolt",
             ),
             V2CEnumSelect(
                 hass,
@@ -83,6 +84,7 @@ async def async_setup_entry(
                     _device_id, value
                 ),
                 reported_keys=("slave_type",),
+                icon="mdi:robot-industrial",
             ),
             V2CEnumSelect(
                 hass,
@@ -97,6 +99,7 @@ async def async_setup_entry(
                     _device_id, value
                 ),
                 reported_keys=("language",),
+                icon="mdi:translate",
             ),
         ]
         await async_get_or_create_local_coordinator(hass, runtime_data, device_id)
@@ -120,6 +123,7 @@ async def async_setup_entry(
                 reported_keys=("dynamicpowermode", "dynamic_power_mode"),
                 local_key="DynamicPowerMode",
                 refresh_after_call=False,
+                icon="mdi:lightning-bolt-circle",
             )
         )
         entities.extend(device_selects)
@@ -148,6 +152,7 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         reported_keys: tuple[str, ...],
         local_key: str | None = None,
         refresh_after_call: bool = True,
+        icon: str | None = None,
     ) -> None:
         super().__init__(coordinator, client, device_id)
         self._runtime_data = runtime_data
@@ -164,6 +169,8 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         self._attr_translation_key = name_key
         self._attr_unique_id = f"v2c_{device_id}_{unique_suffix}"
         self._attr_options = self._options
+        if icon:
+            self._attr_icon = icon
 
         self._optimistic_value: int | None = None
         self._last_command_ts: float | None = None

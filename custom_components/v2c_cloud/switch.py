@@ -10,6 +10,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN
 from .entity import V2CEntity
@@ -133,6 +134,9 @@ async def async_setup_entry(
                     reported_keys=("logo_led", "logoled"),
                     icon_on="mdi:led-on",
                     icon_off="mdi:led-off",
+                    refresh_after_call=False,
+                    delayed_refresh_seconds=90.0,
+                    update_cached_state=True,
                 ),
                 V2CBooleanSwitch(
                     coordinator,
@@ -147,6 +151,9 @@ async def async_setup_entry(
                     reported_keys=("set_rfid", "rfid_enabled", "rfid"),
                     icon_on="mdi:card-account-details",
                     icon_off="mdi:card-off",
+                    refresh_after_call=False,
+                    delayed_refresh_seconds=90.0,
+                    update_cached_state=True,
                 ),
                 V2CBooleanSwitch(
                     coordinator,
@@ -166,6 +173,9 @@ async def async_setup_entry(
                     ),
                     icon_on="mdi:protocol",
                     icon_off="mdi:protocol",
+                    refresh_after_call=False,
+                    delayed_refresh_seconds=90.0,
+                    update_cached_state=True,
                 ),
             )
         )
@@ -193,8 +203,6 @@ def _to_bool(value: Any) -> bool | None:
 class V2CBooleanSwitch(V2CEntity, SwitchEntity):
     """Switch entity wrapping a boolean V2C command."""
 
-    _OPTIMISTIC_HOLD_SECONDS = 20.0
-
     def __init__(
         self,
         coordinator,
@@ -211,6 +219,9 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         icon_off: str | None = None,
         refresh_after_call: bool = True,
         trigger_local_refresh: bool = False,
+        optimistic_hold_seconds: float = 20.0,
+        delayed_refresh_seconds: float | None = None,
+        update_cached_state: bool = False,
     ) -> None:
         super().__init__(coordinator, client, device_id)
         self._setter = setter
@@ -227,6 +238,10 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         self._optimistic_state: bool | None = None
         self._last_command_ts: float | None = None
         self._local_coordinator = None
+        self._optimistic_hold_seconds = optimistic_hold_seconds
+        self._delayed_refresh_seconds = delayed_refresh_seconds
+        self._update_cached_state = update_cached_state
+        self._cancel_delayed_refresh: Callable[[], None] | None = None
 
     @property
     def is_on(self) -> bool:
@@ -235,7 +250,7 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         recent_command = (
             self._optimistic_state is not None
             and self._last_command_ts is not None
-            and now - self._last_command_ts < self._OPTIMISTIC_HOLD_SECONDS
+            and now - self._last_command_ts < self._optimistic_hold_seconds
         )
         local_value = self._get_local_bool()
         if local_value is not None:
@@ -252,7 +267,7 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
             if (
                 self._optimistic_state is not None
                 and self._last_command_ts is not None
-                and now - self._last_command_ts < self._OPTIMISTIC_HOLD_SECONDS
+                and now - self._last_command_ts < self._optimistic_hold_seconds
                 and bool_value != self._optimistic_state
             ):
                 self._apply_icon(self._optimistic_state)
@@ -266,7 +281,7 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         if self._optimistic_state is not None:
             if (
                 self._last_command_ts is not None
-                and now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
+                and now - self._last_command_ts >= self._optimistic_hold_seconds
             ):
                 self._last_command_ts = None
             self._apply_icon(self._optimistic_state)
@@ -303,8 +318,11 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
             self._setter(state),
             refresh=self._refresh_after_call,
         )
+        if self._update_cached_state:
+            self._set_cached_state(state)
         if self._trigger_local_refresh:
             await async_request_local_refresh(self._runtime_data, self._device_id)
+        self._schedule_delayed_refresh()
 
     def _apply_icon(self, state: bool | None) -> None:
         if self._icon_on and self._icon_off and state is not None:
@@ -323,3 +341,55 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
             if key in local_data:
                 return _to_bool(local_data.get(key))
         return None
+
+    def _set_cached_state(self, state: bool) -> None:
+        """Update coordinator cached data with the new state."""
+        if not self._reported_keys:
+            return
+        data = self.coordinator.data
+        if not isinstance(data, dict):
+            return
+        devices = data.get("devices")
+        if not isinstance(devices, dict):
+            return
+        device_state = devices.get(self._device_id)
+        if not isinstance(device_state, dict):
+            return
+        reported = device_state.setdefault("reported", {})
+        if isinstance(reported, dict):
+            for key in self._reported_keys:
+                reported[str(key)] = 1 if state else 0
+        additional = device_state.setdefault("additional", {})
+        if isinstance(additional, dict):
+            lowered = additional.setdefault("reported_lower", {})
+            if isinstance(lowered, dict):
+                for key in self._reported_keys:
+                    lowered[str(key).lower()] = 1 if state else 0
+
+    def _schedule_delayed_refresh(self) -> None:
+        """Schedule a delayed coordinator refresh for slow cloud updates."""
+        if (
+            self._delayed_refresh_seconds is None
+            or self.hass is None
+            or self._delayed_refresh_seconds <= 0
+        ):
+            return
+        if self._cancel_delayed_refresh:
+            self._cancel_delayed_refresh()
+            self._cancel_delayed_refresh = None
+
+        async def _refresh(_now: Any) -> None:
+            self._cancel_delayed_refresh = None
+            await self.coordinator.async_request_refresh()
+
+        self._cancel_delayed_refresh = async_call_later(
+            self.hass,
+            self._delayed_refresh_seconds,
+            _refresh,
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._cancel_delayed_refresh:
+            self._cancel_delayed_refresh()
+            self._cancel_delayed_refresh = None
+        await super().async_will_remove_from_hass()

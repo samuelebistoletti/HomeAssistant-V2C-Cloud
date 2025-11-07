@@ -57,7 +57,7 @@
         "name": "Energia erogata"
       },
       "slave_error": {
-        "name": "Errore slave"
+        "name": "Errore dispositivo"
       },
       "charge_time": {
         "name": "Tempo di ricarica"
@@ -107,7 +107,7 @@
         "name": "Lettore RFID"
       },
       "ocpp_enabled": {
-        "name": "OCPP abilitato"
+        "name": "OCPP"
       }
     },
     "select": {

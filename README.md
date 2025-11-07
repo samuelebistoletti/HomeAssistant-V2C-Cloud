@@ -16,7 +16,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - **Adaptive cloud budget** – the cloud coordinator automatically scales its interval with `ceil(devices * 86400 / 850)` seconds (never below 90 s) to respect the 1000 calls/day quota while leaving headroom for manual services.
 - **Comprehensive services** – Wi-Fi provisioning, timers, RFID lifecycle, photovoltaic profiles v2, scheduled charging helpers, OCPP/inverter settings and statistics exports, all implemented as Home Assistant services.
 - **Automation-ready events** – data retrieval services (`scan_wifi_networks`, statistics, power profiles) emit events that contain the raw payload so automations can capture and store results.
-- **Diagnostics aware** – the latest `RateLimit-*` headers are persisted in coordinator data, logs specify whether the LAN or cloud path was used, and every entity exposes the raw value in its extra state attributes for troubleshooting.
+- **Diagnostics aware** – the latest `RateLimit-*` headers are persisted in coordinator data and logs specify whether the LAN or cloud path was used, simplifying troubleshooting.
 
 ## Requirements
 
@@ -67,7 +67,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - Charging pause (local `/write/Paused`)
 - Logo LED (cloud `/device/logo_led`)
 - RFID reader (cloud `/device/set_rfid`)
-- OCPP enabled (cloud `/device/ocpp`)
+- OCPP (cloud `/device/ocpp`)
 
 ### Select Entities
 - Installation type (cloud `/device/inst_type`)

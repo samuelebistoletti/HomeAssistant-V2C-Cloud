@@ -54,13 +54,3 @@ class V2CConnectedBinarySensor(V2CEntity, BinarySensorEntity):
         if isinstance(connected, str):
             return connected.lower() in {"1", "true", "yes", "online"}
         return False
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        attrs: dict[str, Any] = {}
-        if self.device_state.get("connected") is not None:
-            attrs["coordinator_value"] = self.device_state["connected"]
-        reported = self.get_reported_value("connected")
-        if reported is not None:
-            attrs["reported_value"] = reported
-        return attrs

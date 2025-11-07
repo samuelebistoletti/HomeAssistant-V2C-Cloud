@@ -414,19 +414,3 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         if localized is not None:
             return localized
         return value
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose the raw value alongside processed values for troubleshooting."""
-        data = self.coordinator.data
-        if not isinstance(data, dict):
-            return {}
-        attributes: dict[str, Any] = {
-            "raw_value": data.get(self.entity_description.key)
-        }
-        static_ip = data.get("_static_ip") or resolve_static_ip(
-            self._runtime_data, self._device_id
-        )
-        if isinstance(static_ip, str):
-            attributes["static_ip"] = static_ip
-        return attributes

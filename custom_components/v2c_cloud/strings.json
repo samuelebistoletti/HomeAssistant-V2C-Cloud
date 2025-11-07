@@ -57,7 +57,7 @@
         "name": "Charging energy"
       },
       "slave_error": {
-        "name": "Slave error code"
+        "name": "Device error code"
       },
       "charge_time": {
         "name": "Charging time"
@@ -107,7 +107,7 @@
         "name": "RFID reader"
       },
       "ocpp_enabled": {
-        "name": "OCPP enabled"
+        "name": "OCPP"
       }
     },
     "select": {

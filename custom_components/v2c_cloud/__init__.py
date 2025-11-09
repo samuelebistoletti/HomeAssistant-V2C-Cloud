@@ -161,6 +161,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def _async_update_data() -> dict[str, object]:
         """Fetch the latest data from the API."""
+
+        def _restore_default_interval(reason: str) -> None:
+            """Switch back to the default polling cadence after long outages."""
+            if coordinator.update_interval == DEFAULT_UPDATE_INTERVAL:
+                return
+            _LOGGER.debug(
+                "Restoring polling interval to %s after %s", DEFAULT_UPDATE_INTERVAL, reason
+            )
+            coordinator.update_interval = DEFAULT_UPDATE_INTERVAL
+
         try:
             latest_pairings = await client.async_get_pairings()
             previous_devices = None
@@ -172,6 +182,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 previous_devices=previous_devices if isinstance(previous_devices, dict) else None,
             )
         except V2CAuthError as err:
+            _restore_default_interval("authentication failure")
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
         except V2CRateLimitError as err:
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
@@ -179,6 +190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return coordinator.data
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
+            _restore_default_interval("communication failure")
             raise UpdateFailed(f"Failed to update V2C data: {err}") from err
 
         device_count = len(devices)

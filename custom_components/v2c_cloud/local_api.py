@@ -14,6 +14,7 @@ from aiohttp import ClientError
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .entity import get_device_state_from_coordinator
@@ -21,6 +22,10 @@ from .entity import get_device_state_from_coordinator
 _LOGGER = logging.getLogger(__name__)
 
 LOCAL_TIMEOUT = 10
+LOCAL_MAX_RETRIES = 3
+LOCAL_RETRY_BACKOFF = 1.5
+LOCAL_UPDATE_INTERVAL = timedelta(seconds=30)
+LOCAL_WRITE_RETRY_DELAY = 5
 
 
 class V2CLocalApiError(Exception):
@@ -105,8 +110,10 @@ async def async_write_keyword(
                         f"Local API returned HTTP {response.status} for {keyword_clean}: {body}"
                     )
     except asyncio.TimeoutError as err:
+        _schedule_followup_refresh(hass, runtime_data, device_id)
         raise V2CLocalApiError(f"Timeout while calling local API for {keyword_clean}") from err
     except ClientError as err:
+        _schedule_followup_refresh(hass, runtime_data, device_id)
         raise V2CLocalApiError(f"Error while calling local API for {keyword_clean}: {err}") from err
 
     if refresh_local:
@@ -126,21 +133,49 @@ async def async_get_or_create_local_coordinator(
         return coordinator
 
     session = async_get_clientsession(hass)
+    failure_count = 0
 
     async def _async_fetch_local_data() -> dict[str, Any]:
+        nonlocal failure_count
         static_ip = resolve_static_ip(runtime_data, device_id)
         if not static_ip:
             raise UpdateFailed("Static IP for device is unavailable")
 
         url = f"http://{static_ip}/RealTimeData"
-        try:
-            async with async_timeout.timeout(LOCAL_TIMEOUT):
-                async with session.get(url) as response:
-                    text = await response.text()
-        except asyncio.TimeoutError as err:
-            raise UpdateFailed("Timeout while fetching local real-time data") from err
-        except ClientError as err:
-            raise UpdateFailed(f"Error while fetching local real-time data: {err}") from err
+        attempt = 1
+        last_error: Exception | None = None
+        while True:
+            try:
+                async with async_timeout.timeout(LOCAL_TIMEOUT):
+                    async with session.get(url) as response:
+                        text = await response.text()
+                break
+            except asyncio.TimeoutError as err:
+                last_error = err
+                error_message = "Timeout while fetching local real-time data"
+            except ClientError as err:
+                last_error = err
+                error_message = f"Error while fetching local real-time data: {err}"
+            else:
+                break
+
+            if attempt >= LOCAL_MAX_RETRIES:
+                failure_count += 1
+                raise UpdateFailed(
+                    f"{error_message} after {LOCAL_MAX_RETRIES} attempt(s)"
+                ) from last_error
+
+            delay = LOCAL_RETRY_BACKOFF * attempt
+            _LOGGER.debug(
+                "Local realtime fetch failed for %s (attempt %s/%s): %s. Retrying in %.1f s",
+                device_id,
+                attempt,
+                LOCAL_MAX_RETRIES,
+                last_error,
+                delay,
+            )
+            attempt += 1
+            await asyncio.sleep(delay)
 
         payload_text = text.strip().rstrip("%").strip()
         if not payload_text:
@@ -168,6 +203,10 @@ async def async_get_or_create_local_coordinator(
                 if key in payload:
                     additional[key.lower()] = payload[key]
 
+        if failure_count:
+            _LOGGER.debug("Local API for %s recovered after %s failure(s)", device_id, failure_count)
+        failure_count = 0
+
         return payload
 
     coordinator = DataUpdateCoordinator(
@@ -175,7 +214,7 @@ async def async_get_or_create_local_coordinator(
         _LOGGER,
         name=f"V2C local realtime {device_id}",
         update_method=_async_fetch_local_data,
-        update_interval=timedelta(seconds=30),
+        update_interval=LOCAL_UPDATE_INTERVAL,
     )
 
     runtime_data.local_coordinators[device_id] = coordinator
@@ -186,3 +225,15 @@ async def async_get_or_create_local_coordinator(
         _LOGGER.debug("Initial local fetch failed for %s: %s", device_id, err)
 
     return coordinator
+
+
+def _schedule_followup_refresh(hass: HomeAssistant, runtime_data, device_id: str) -> None:
+    """Schedule a follow-up refresh shortly after a failed write."""
+    coordinator = runtime_data.local_coordinators.get(device_id)
+    if not coordinator:
+        return
+
+    def _refresh_callback(_now):
+        hass.async_create_task(coordinator.async_request_refresh())
+
+    async_call_later(hass, LOCAL_WRITE_RETRY_DELAY, _refresh_callback)

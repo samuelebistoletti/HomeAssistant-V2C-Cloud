@@ -14,6 +14,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - **Local-first entities** – switches, selects and numbers that have a LAN keyword reuse the per-device realtime coordinator, so the UI reflects changes right after each LAN poll without waiting for the slower cloud refresh.
 - **Optimistic smoothing** – cloud-only selects and numbers hold their requested value for ~20 s, eliminating UI “flapping” between command execution and the next poll.
 - **Adaptive cloud budget** – the cloud coordinator automatically scales its interval with `ceil(devices * 86400 / 850)` seconds (never below 90 s) to respect the 1000 calls/day quota while leaving headroom for manual services.
+- **Resilient polling** – cloud fetches revert to the default cadence immediately after connectivity issues, while LAN realtime requests retry with backoff and schedule follow-up refreshes after failed writes so entities recover automatically when Wi-Fi returns.
 - **Comprehensive services** – Wi-Fi provisioning, timers, RFID lifecycle, photovoltaic profiles v2, scheduled charging helpers, OCPP/inverter settings and statistics exports, all implemented as Home Assistant services.
 - **Automation-ready events** – data retrieval services (`scan_wifi_networks`, statistics, power profiles) emit events that contain the raw payload so automations can capture and store results.
 - **Diagnostics aware** – the latest `RateLimit-*` headers are persisted in coordinator data and logs specify whether the LAN or cloud path was used, simplifying troubleshooting.

@@ -5,7 +5,7 @@
 
 This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while configuration tasks still rely on the official cloud endpoints. It is purpose-built for the official V2C Cloud APIs and the local APIs exposed by **V2C Trydan** chargers.
 
-> **🎁 Hot Tip:** Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store (https://v2charge.com/store/it/) with the promo code `INTEGRATIONTRYDAN10`.
+> Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store (https://v2charge.com/store/it/) with the promo code `INTEGRATIONTRYDAN10` 🎁
 
 ## Key Features
 

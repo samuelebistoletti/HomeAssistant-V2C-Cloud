@@ -49,8 +49,6 @@ from .const import (
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
     CONF_API_KEY,
-    CONF_BASE_URL,
-    DEFAULT_BASE_URL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     MIN_UPDATE_INTERVAL,
@@ -130,10 +128,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     api_key: str = entry.data[CONF_API_KEY]
-    base_url: str = entry.data.get(CONF_BASE_URL, DEFAULT_BASE_URL)
 
     session = async_get_clientsession(hass)
-    client = V2CClient(session, api_key, base_url=base_url)
+    client = V2CClient(session, api_key)
 
     initial_pairings = entry.data.get("initial_pairings")
     if initial_pairings:

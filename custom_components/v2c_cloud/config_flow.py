@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import aiohttp_client
 
-from .const import CONF_API_KEY, CONF_BASE_URL, DEFAULT_BASE_URL, DOMAIN
+from .const import CONF_API_KEY, DOMAIN
 from .v2c_cloud import V2CAuthError, V2CClient, V2CRequestError
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,11 +21,10 @@ _LOGGER = logging.getLogger(__name__)
 async def _validate_api_key(
     hass: HomeAssistant,
     api_key: str,
-    base_url: str,
 ) -> list[dict[str, Any]]:
     """Ensure the provided API key works and return pairings."""
     session = aiohttp_client.async_get_clientsession(hass)
-    client = V2CClient(session, api_key, base_url=base_url)
+    client = V2CClient(session, api_key)
     return await client.async_get_pairings()
 
 
@@ -46,10 +45,8 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             api_key = user_input[CONF_API_KEY].strip()
-            base_url = user_input.get(CONF_BASE_URL) or DEFAULT_BASE_URL
-
             try:
-                pairings = await _validate_api_key(self.hass, api_key, base_url)
+                pairings = await _validate_api_key(self.hass, api_key)
             except V2CAuthError:
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
@@ -71,9 +68,6 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_API_KEY: api_key,
                     "initial_pairings": pairings,
                 }
-                if base_url != DEFAULT_BASE_URL:
-                    data[CONF_BASE_URL] = base_url
-
                 return self.async_create_entry(title="V2C Cloud", data=data)
 
         schema = vol.Schema(
@@ -81,13 +75,6 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_API_KEY): str,
             }
         )
-
-        if self.show_advanced_options:
-            schema = schema.extend(
-                {
-                    vol.Optional(CONF_BASE_URL, default=DEFAULT_BASE_URL): str,
-                }
-            )
 
         return self.async_show_form(
             step_id="user",
@@ -111,14 +98,8 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None and self._reauth_entry:
             api_key = user_input[CONF_API_KEY].strip()
-            base_url = (
-                self._reauth_entry.data.get(CONF_BASE_URL, DEFAULT_BASE_URL)
-                if CONF_BASE_URL not in user_input
-                else user_input[CONF_BASE_URL]
-            )
-
             try:
-                pairings = await _validate_api_key(self.hass, api_key, base_url)
+                pairings = await _validate_api_key(self.hass, api_key)
             except V2CAuthError:
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
@@ -130,10 +111,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 new_data = dict(self._reauth_entry.data)
                 new_data[CONF_API_KEY] = api_key
                 new_data["initial_pairings"] = pairings
-                if base_url != DEFAULT_BASE_URL:
-                    new_data[CONF_BASE_URL] = base_url
-                else:
-                    new_data.pop(CONF_BASE_URL, None)
+                new_data.pop("base_url", None)
 
                 self.hass.config_entries.async_update_entry(
                     self._reauth_entry,

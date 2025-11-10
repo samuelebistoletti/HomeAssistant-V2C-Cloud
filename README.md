@@ -41,11 +41,16 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 
 ## Configuration
 
-- The API key is mandatory; an alternate base URL can be provided when advanced options are enabled.
-- Each pairing returned by `/pairings/me` becomes a Home Assistant device with entities grouped by use case.
-- Cloud polling adapts to the active device count using `ceil(devices * 86400 / 850)` seconds (never below 90 s). RFID cards refresh every 6 hours, firmware version every 12 hours and the pairing cache lives for 60 minutes.
-- Entities that rely on the LAN API subscribe to their per-device realtime coordinator, so they initialise with the latest LAN payload after startup and remain optimistic only until the next LAN refresh.
-- The integration automatically re-uses stored pairing data if the cloud API temporarily rate-limits requests and supports Home Assistant’s re-auth flow when the API key expires.
+### Get your API key
+1. Sign in to [https://v2c.cloud/home/user](https://v2c.cloud/home/user) with the account that owns the chargers.
+2. Open the **User → API** panel (left navigation shown in the screenshot above).
+3. Click **Get token** to generate the developer token, then copy the value shown in the field.
+4. Store the token somewhere safe: it is the only secret you need for Home Assistant and it grants full access to your account.
+
+### Complete the setup
+1. In Home Assistant go to **Settings → Devices & Services → Add Integration** and pick **V2C Cloud**.
+2. Paste the API token when prompted; the integration always talks to the official V2C endpoint (`https://v2c.cloud/kong/v2c_service`), so no other options are required.
+3. Every pairing returned by `/pairings/me` is turned into a Home Assistant device with sensors, numbers, switches and services ready to use. Polling intervals, LAN/Cloud fallbacks and cached data are handled automatically after onboarding.
 
 ## Entity Overview
 

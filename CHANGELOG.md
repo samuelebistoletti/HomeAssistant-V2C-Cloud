@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2025-11-10
+
+### Changed
+- Locked the integration to the official V2C Cloud endpoint: the config flow, re-auth flow and stored entries no longer accept a custom base URL, so the onboarding form now only asks for the API key.
+- Updated translations/strings to remove the unused Base URL field across the UI.
+
+### Documentation
+- Clarified the configuration instructions in both READMEs with step-by-step guidance (English UI labels included) on how to obtain the API token from the V2C Cloud portal.
+
 ## [1.0.5] - 2025-11-10
 
 ### Added

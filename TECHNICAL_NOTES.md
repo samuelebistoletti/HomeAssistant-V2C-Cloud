@@ -5,7 +5,7 @@
 ### Components
 - **Cloud REST client** (`custom_components/v2c_cloud/v2c_cloud.py`) wraps the documented endpoints at `https://v2c.cloud/kong/v2c_service`, normalises responses, enforces retry/backoff and caches pairings, RFID lists and firmware version.
 - **Local API helper** (`custom_components/v2c_cloud/local_api.py`) resolves the device IP, polls `http://<ip>/RealTimeData`, sends write commands via `http://<ip>/write/KeyWord=Value` and raises `V2CLocalApiError` on LAN issues.
-- **Config flow** collects the API key (and optional base URL), validates it via `/pairings/me`, and stores a deterministic unique ID.
+- **Config flow** collects the API key, validates it via `/pairings/me`, and stores a deterministic unique ID while always targeting the fixed V2C Cloud endpoint.
 - **Cloud coordinator** (`DataUpdateCoordinator`) handles pairing/device polling with an adaptive interval (`ceil(devices * 86400 / 850)` seconds, min 90 s) to keep calls under the V2C 1000/day limit while leaving headroom for manual commands.
 - **Local coordinators** are created on demand per device, polling `/RealTimeData` every 30 s. All entities consuming local telemetry share the same coordinator instance to avoid duplicate requests.
 - **Platforms** (binary_sensor, sensor, switch, number, select, button) inherit from `V2CEntity`, which exposes helpers for coordinator data, pairing metadata and case-insensitive lookups. Entities prefer local data whenever available, falling back to the cloud payload, and local-only entities register as listeners on their per-device local coordinator so the UI gets refreshed immediately after each LAN poll.

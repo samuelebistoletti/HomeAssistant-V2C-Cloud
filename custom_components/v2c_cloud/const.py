@@ -7,7 +7,6 @@ from datetime import timedelta
 DOMAIN = "v2c_cloud"
 
 CONF_API_KEY = "api_key"
-CONF_BASE_URL = "base_url"
 
 DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=120)

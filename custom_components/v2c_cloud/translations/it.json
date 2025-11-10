@@ -14,8 +14,7 @@
         "title": "V2C Cloud",
         "description": "Inserisci la tua API key V2C Cloud. Puoi generarla da https://v2c.cloud/home/user.",
         "data": {
-          "api_key": "API key",
-          "base_url": "URL di base"
+          "api_key": "API key"
         }
       },
       "reauth_confirm": {

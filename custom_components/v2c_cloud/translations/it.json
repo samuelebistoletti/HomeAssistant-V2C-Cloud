@@ -136,9 +136,6 @@
       },
       "contracted_power": {
         "name": "Potenza contrattuale"
-      },
-      "voltage_installation": {
-        "name": "Tensione di installazione"
       }
     },
     "button": {
@@ -210,6 +207,10 @@
     "set_inverter_ip": {
       "name": "Imposta IP inverter",
       "description": "Configura l'indirizzo IP dell'inverter collegato."
+    },
+    "set_installation_voltage": {
+      "name": "Imposta tensione di installazione",
+      "description": "Aggiorna il valore della tensione di installazione tramite l'API locale."
     },
     "scan_wifi_networks": {
       "name": "Scansiona reti Wi-Fi",

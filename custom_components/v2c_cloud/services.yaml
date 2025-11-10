@@ -260,6 +260,25 @@ set_inverter_ip:
       required: true
       selector:
         text:
+set_installation_voltage:
+  name: Imposta tensione di installazione
+  description: Aggiorna il valore della tensione di installazione tramite l'API locale del caricatore.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    voltage:
+      name: Tensione (V)
+      description: Valore supportato dal caricatore (100–450 V).
+      required: true
+      selector:
+        number:
+          min: 100
+          max: 450
+          step: 1
+          mode: box
 scan_wifi_networks:
   name: Scansione reti Wi-Fi
   description: Avvia una scansione delle reti Wi-Fi visibili e pubblica i risultati su un evento.

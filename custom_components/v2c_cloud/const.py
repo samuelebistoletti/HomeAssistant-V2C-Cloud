@@ -18,6 +18,8 @@ TARGET_DAILY_BUDGET = 850
 # Power limits (kW)
 MAX_POWER_MIN_KW = 1.0
 MAX_POWER_MAX_KW = 22.0
+INSTALLATION_VOLTAGE_MIN = 100.0
+INSTALLATION_VOLTAGE_MAX = 450.0
 
 # Select options exposed by the API
 INSTALLATION_TYPES = {
@@ -72,6 +74,7 @@ SERVICE_SET_WIFI = "set_wifi_credentials"
 SERVICE_PROGRAM_TIMER = "program_timer"
 SERVICE_REGISTER_RFID = "register_rfid"
 SERVICE_ADD_RFID_CARD = "add_rfid_card"
+SERVICE_SET_INSTALLATION_VOLTAGE = "set_installation_voltage"
 SERVICE_UPDATE_RFID_TAG = "update_rfid_tag"
 SERVICE_DELETE_RFID = "delete_rfid"
 SERVICE_TRIGGER_UPDATE = "trigger_update"
@@ -106,6 +109,7 @@ ATTR_KWH = "kwh"
 ATTR_MINUTES = "minutes"
 ATTR_KW = "kw"
 ATTR_VALUE = "value"
+ATTR_VOLTAGE = "voltage"
 ATTR_ENABLED = "enabled"
 ATTR_OCPP_ID = "ocpp_id"
 ATTR_OCPP_URL = "ocpp_url"

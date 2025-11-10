@@ -9,11 +9,6 @@ from typing import Any
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfElectricCurrent, UnitOfPower
-
-try:  # Home Assistant >= 2024.3
-    from homeassistant.const import UnitOfVoltage
-except ImportError:  # pragma: no cover - fallback for older cores
-    UnitOfVoltage = None
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
@@ -39,9 +34,6 @@ CURRENT_STEP = 1.0
 POWER_MIN = MAX_POWER_MIN_KW
 POWER_MAX = MAX_POWER_MAX_KW
 POWER_STEP = 0.5
-VOLTAGE_MIN = 100.0
-VOLTAGE_MAX = 300.0
-VOLTAGE_STEP = 1.0
 
 
 async def async_setup_entry(
@@ -83,30 +75,6 @@ async def async_setup_entry(
                     value_to_api=lambda value: int(round(value)),
                     refresh_after_call=False,
                     icon="mdi:sine-wave",
-                ),
-                V2CNumberEntity(
-                    coordinator,
-                    client,
-                    runtime_data,
-                    device_id,
-                    name_key="voltage_installation",
-                    unique_suffix="voltage_installation",
-                    reported_keys=("voltageinstallation", "voltage_installation"),
-                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "VoltageInstallation",
-                        api_value,
-                    ),
-                    local_key="VoltageInstallation",
-                    native_unit=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
-                    minimum=VOLTAGE_MIN,
-                    maximum=VOLTAGE_MAX,
-                    step=VOLTAGE_STEP,
-                    value_to_api=lambda value: int(round(value)),
-                    refresh_after_call=False,
-                    icon="mdi:flash-triangle-outline",
                 ),
                 V2CNumberEntity(
                     coordinator,

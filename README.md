@@ -80,7 +80,6 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 - Current intensity (local `/write/Intensity`)
 - Minimum intensity (local `/write/MinIntensity`)
 - Maximum intensity (local `/write/MaxIntensity`)
-- Installation voltage (local `/write/VoltageInstallation`)
 - Contracted power (local `/write/ContractedPower`, auto-converted between watts and kW)
 
 ### Buttons
@@ -98,6 +97,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 | `v2c_cloud.set_ocpp_id` | `/device/ocpp_id` | Set the OCPP charge point identifier. |
 | `v2c_cloud.set_ocpp_address` | `/device/ocpp_addr` | Configure the central OCPP server URL. |
 | `v2c_cloud.set_inverter_ip` | `/device/inverter_ip` | Configure the connected inverter IP address. |
+| `v2c_cloud.set_installation_voltage` | Local `/write/VoltageInstallation` | Set the installation voltage through the local API. |
 | `v2c_cloud.trigger_update` | `/device/update` | Request a firmware update. |
 
 ### RFID Management

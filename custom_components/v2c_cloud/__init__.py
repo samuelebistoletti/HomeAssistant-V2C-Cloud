@@ -44,6 +44,7 @@ from .const import (
     ATTR_TIME_START,
     ATTR_TIMER_ACTIVE,
     ATTR_TIMER_ID,
+    ATTR_VOLTAGE,
     ATTR_UPDATED_AT,
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
@@ -58,6 +59,8 @@ from .const import (
     EVENT_GLOBAL_STATISTICS,
     EVENT_POWER_PROFILES,
     EVENT_WIFI_SCAN,
+    INSTALLATION_VOLTAGE_MAX,
+    INSTALLATION_VOLTAGE_MIN,
     SERVICE_ADD_RFID_CARD,
     SERVICE_CREATE_POWER_PROFILE,
     SERVICE_DELETE_POWER_PROFILE,
@@ -69,6 +72,7 @@ from .const import (
     SERVICE_PROGRAM_TIMER,
     SERVICE_REGISTER_RFID,
     SERVICE_SCAN_WIFI,
+    SERVICE_SET_INSTALLATION_VOLTAGE,
     SERVICE_SET_INVERTER_IP,
     SERVICE_SET_OCPP_ADDRESS,
     SERVICE_SET_OCPP_ENABLED,
@@ -82,6 +86,7 @@ from .const import (
     SERVICE_UPDATE_POWER_PROFILE,
     SERVICE_UPDATE_RFID_TAG,
 )
+from .local_api import V2CLocalApiError, async_write_keyword
 from .v2c_cloud import (
     V2CAuthError,
     V2CClient,
@@ -599,6 +604,39 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
                 vol.Required(ATTR_IP_ADDRESS): cv.string,
+            }
+        ),
+    )
+
+    async def async_handle_set_installation_voltage(call: ServiceCall) -> None:
+        device_id = call.data[ATTR_DEVICE_ID]
+        voltage = call.data[ATTR_VOLTAGE]
+        entry_data = await _async_get_entry_for_device(device_id)
+        try:
+            await async_write_keyword(
+                hass,
+                entry_data,
+                device_id,
+                "VoltageInstallation",
+                int(round(float(voltage))),
+            )
+        except V2CLocalApiError as err:
+            raise HomeAssistantError(str(err)) from err
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_INSTALLATION_VOLTAGE,
+        async_handle_set_installation_voltage,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_DEVICE_ID): cv.string,
+                vol.Required(ATTR_VOLTAGE): vol.All(
+                    vol.Coerce(float),
+                    vol.Range(
+                        min=INSTALLATION_VOLTAGE_MIN,
+                        max=INSTALLATION_VOLTAGE_MAX,
+                    ),
+                ),
             }
         ),
     )

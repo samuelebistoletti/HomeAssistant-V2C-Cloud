@@ -132,9 +132,6 @@
       },
       "contracted_power": {
         "name": "Contracted power"
-      },
-      "voltage_installation": {
-        "name": "Installation voltage"
       }
     },
     "button": {
@@ -206,6 +203,10 @@
     "set_inverter_ip": {
       "name": "Set inverter IP",
       "description": "Configure the IP address of the linked inverter."
+    },
+    "set_installation_voltage": {
+      "name": "Set installation voltage",
+      "description": "Update the installation voltage value via the local API."
     },
     "scan_wifi_networks": {
       "name": "Scan Wi-Fi networks",

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2025-11-10
+
+### Added
+- `v2c_cloud.set_installation_voltage` service that writes to the local `/write/VoltageInstallation` endpoint so automations can adjust the parameter explicitly, now validated between 100 V and 450 V.
+
+### Removed
+- The "Installation voltage" number entity; use the new service action instead, consistent with other write-only operations such as RFID management.
+
 ## [1.0.4] - 2025-11-08
 
 ### Fixed

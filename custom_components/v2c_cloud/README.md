@@ -3,7 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=utenti&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=%24.v2c_cloud.total)
 
-> Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store (https://v2charge.com/store/it/) with the promo code `INTEGRATIONTRYDAN10` 🎁
+>  🎁 Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store (https://v2charge.com/store/it/) with the promo code `INTEGRATIONTRYDAN10`
 
 This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while configuration tasks still rely on the official cloud endpoints. It is purpose-built for the official V2C Cloud APIs and the local APIs exposed by **V2C Trydan** chargers.
 

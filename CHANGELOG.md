@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2025-11-10
+
+### Documentation
+- Minor follow-up to the setup instructions to match the English wording now used by the V2C Cloud portal (menu and button labels).
+
 ## [1.0.6] - 2025-11-10
 
 ### Changed

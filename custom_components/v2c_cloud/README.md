@@ -7,6 +7,10 @@
 
 This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while configuration tasks still rely on the official cloud endpoints. It is purpose-built for the official V2C Cloud APIs and the local APIs exposed by **V2C Trydan** chargers.
 
+### Companion Octopus Energy integration
+
+If you manage smart-charging slots through Intelligent Octopus, pair this project with my [Octopus Energy Italy integration](https://github.com/samuelebistoletti/HomeAssistant-OctopusEnergyIT). It exposes the Octopus APIs inside Home Assistant so that Intelligent Octopus can coordinate with V2C for advanced charging automations.
+
 ## Key Features
 
 - **Guided onboarding** – the config flow only asks for your API key, validates it against `/pairings/me` and stores a deterministic unique ID for re-auth flows.
@@ -43,14 +47,14 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 
 ### Get your API key
 1. Sign in to [https://v2c.cloud/home/user](https://v2c.cloud/home/user) with the account that owns the chargers.
-2. In the **User** page select **API** from the left navigation (same layout as the screenshot shared above).
-3. Press **Get token** and copy the generated value; this token uniquely identifies your account.
-4. Keep the token secret and reuse it in Home Assistant—no other parameters are needed.
+2. Open the **User → API** panel (left navigation shown in the screenshot above).
+3. Click **Get token** to generate the developer token, then copy the value shown in the field.
+4. Store the token somewhere safe: it is the only secret you need for Home Assistant and it grants full access to your account.
 
 ### Complete the setup
-1. Open **Settings → Devices & Services → Add Integration** inside Home Assistant and select **V2C Cloud**.
-2. Paste the token when requested. The integration always connects to the official `https://v2c.cloud/kong/v2c_service` endpoint, so the form only asks for the key.
-3. Once the token is validated, all pairings discovered via `/pairings/me` become Home Assistant devices with their entities and services; polling cadence, caching and LAN/Cloud fallbacks are managed automatically.
+1. In Home Assistant go to **Settings → Devices & Services → Add Integration** and pick **V2C Cloud**.
+2. Paste the API token when prompted; the integration always talks to the official V2C endpoint (`https://v2c.cloud/kong/v2c_service`), so no other options are required.
+3. Every pairing returned by `/pairings/me` is turned into a Home Assistant device with sensors, numbers, switches and services ready to use. Polling intervals, LAN/Cloud fallbacks and cached data are handled automatically after onboarding.
 
 ## Entity Overview
 

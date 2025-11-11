@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2025-11-11
+
+### Documentation
+- Highlighted the companion Octopus Energy Italy integration so users can pair Intelligent Octopus with V2C for smart-charging workflows.
+
 ## [1.0.7] - 2025-11-10
 
 ### Documentation

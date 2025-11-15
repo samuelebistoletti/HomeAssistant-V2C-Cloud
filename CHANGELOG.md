@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] - 2025-11-15
+
+### Fixed
+- Trap `ConfigEntryNotReady` errors raised during the local RealTimeData coordinator bootstrap so forwarded platforms no longer log setup failures when a charger IP is temporarily unavailable; entities now stay loaded while the LAN poller retries in the background.
+
 ## [1.0.8] - 2025-11-11
 
 ### Documentation

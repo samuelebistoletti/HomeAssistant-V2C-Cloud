@@ -13,6 +13,7 @@ import async_timeout
 from aiohttp import ClientError
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -221,8 +222,8 @@ async def async_get_or_create_local_coordinator(
 
     try:
         await coordinator.async_config_entry_first_refresh()
-    except UpdateFailed as err:
-        _LOGGER.debug("Initial local fetch failed for %s: %s", device_id, err)
+    except (ConfigEntryNotReady, UpdateFailed) as err:
+        _LOGGER.debug("Initial local fetch pending for %s: %s", device_id, err)
 
     return coordinator
 

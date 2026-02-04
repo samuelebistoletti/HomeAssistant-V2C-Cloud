@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.10] - 2026-02-04
+
+### Fixed
+- Moved the V2C Cloud portal URL in the config flow copy into translation placeholders to comply with hassfest validation.
+
+### Documentation
+- Added a link to the main projects site in both README files.
+
 ## [1.0.9] - 2025-11-15
 
 ### Fixed

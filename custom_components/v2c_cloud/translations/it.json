@@ -12,7 +12,7 @@
     "step": {
       "user": {
         "title": "V2C Cloud",
-        "description": "Inserisci la tua API key V2C Cloud. Puoi generarla da https://v2c.cloud/home/user.",
+        "description": "Inserisci la tua API key V2C Cloud. Puoi generarla dal portale V2C Cloud.",
         "data": {
           "api_key": "API key"
         }

@@ -7,7 +7,9 @@
     "error": {
       "cannot_connect": "Failed to connect to the V2C Cloud service.",
       "invalid_api_key": "The provided API key is not valid.",
-      "unknown": "Unexpected error occurred"
+      "unknown": "Unexpected error occurred",
+      "cannot_connect_local": "Could not reach the charger at that IP address. Check the address and try again.",
+      "no_device_id": "Connected to the charger but could not read its device ID."
     },
     "step": {
       "user": {
@@ -23,7 +25,36 @@
         "data": {
           "api_key": "API key"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure V2C Cloud",
+        "description": "Update the V2C Cloud API key. The integration will reload automatically.",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "fallback_ip": {
+        "title": "V2C Cloud — cloud offline",
+        "description": "The V2C Cloud API is currently unreachable. Enter the local IP address of your charger so the integration can still operate locally. When the cloud becomes available again its device list will be used automatically.",
+        "data": {
+          "fallback_ip": "Charger local IP address"
+        }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "V2C Cloud options",
+        "description": "Set or update the local fallback IP address. The integration uses this IP when the V2C Cloud is unreachable. Leave empty to disable local fallback.",
+        "data": {
+          "fallback_ip": "Local fallback IP address (leave empty to disable)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect_local": "Could not reach the charger at that IP address. Check the address and try again.",
+      "no_device_id": "Connected to the charger but could not read its device ID."
     }
   },
   "entity": {
@@ -103,6 +134,9 @@
       },
       "ocpp_enabled": {
         "name": "OCPP"
+      },
+      "timer": {
+        "name": "Timer"
       }
     },
     "select": {

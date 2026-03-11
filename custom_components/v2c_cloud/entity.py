@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -95,16 +94,6 @@ def build_device_info(
         sw_version=str(version) if version is not None else None,
         entry_type=DeviceEntryType.SERVICE,
     )
-
-
-@dataclass(slots=True)
-class DeviceMetadata:
-    """Container for device metadata extracted from pairing data."""
-
-    device_id: str
-    name: str
-    model: str | None = None
-    manufacturer: str = "V2C"
 
 
 class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):

@@ -321,6 +321,14 @@ class V2CClient:
                 _LOGGER.warning("V2C rate limit reached when fetching pairings; using cached data")
                 return self._pairings_cache
             raise err
+        except V2CRequestError as err:
+            if self._pairings_cache is not None:
+                _LOGGER.warning(
+                    "Pairings request failed (%s); using cached data",
+                    err,
+                )
+                return self._pairings_cache
+            raise err
 
         if isinstance(data, list):
             self._pairings_cache = data
@@ -527,15 +535,6 @@ class V2CClient:
             "/device/language",
             device_id,
             extra_params={"value": str(value)},
-        )
-
-    async def async_set_logo_led(self, device_id: str, enabled: bool) -> Any:
-        """Turn the logo LED on or off."""
-        value = "1" if enabled else "0"
-        return await self._device_command(
-            "/device/logo_led",
-            device_id,
-            extra_params={"value": value},
         )
 
     async def async_set_ocpp_enabled(self, device_id: str, enabled: bool) -> Any:

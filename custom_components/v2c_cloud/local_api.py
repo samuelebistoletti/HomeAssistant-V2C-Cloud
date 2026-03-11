@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 import async_timeout
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientSession
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -28,9 +28,34 @@ LOCAL_RETRY_BACKOFF = 1.5
 LOCAL_UPDATE_INTERVAL = timedelta(seconds=30)
 LOCAL_WRITE_RETRY_DELAY = 5
 
+# Keywords writable via /write/ but absent from /RealTimeData.
+# Must be read individually via GET /read/<KeyWord>.
+_READ_ONLY_KEYWORDS: tuple[str, ...] = ("LogoLED",)
+
 
 class V2CLocalApiError(Exception):
     """Error raised when interacting with the local API."""
+
+
+async def _async_read_keyword(
+    session: ClientSession, ip: str, keyword: str
+) -> tuple[str, float | None]:
+    """
+    Read a single keyword via GET /read/<keyword>.
+
+    The endpoint returns a plain numeric value (e.g. ``1`` or ``50``).
+    Returns ``(keyword, value)`` on success or ``(keyword, None)`` on any error
+    so that failures never block the main coordinator update.
+    """
+    url = f"http://{ip}/read/{quote(keyword, safe='')}"
+    try:
+        async with async_timeout.timeout(LOCAL_TIMEOUT), session.get(url) as response:
+            if response.status >= 400:  # noqa: PLR2004
+                return keyword, None
+            text = (await response.text()).strip()
+            return keyword, float(text)
+    except (TimeoutError, ClientError, ValueError):
+        return keyword, None
 
 
 def resolve_static_ip(runtime_data, device_id: str) -> str | None:
@@ -71,6 +96,23 @@ def get_local_data(runtime_data, device_id: str) -> dict[str, Any] | None:
     if coordinator and isinstance(coordinator.data, dict):
         return coordinator.data
     return None
+
+
+def get_local_value(local_data: dict[str, Any], key: str) -> tuple[bool, Any]:
+    """
+    Case-insensitive key lookup in a local RealTimeData payload.
+
+    Returns (found, value). Tries exact match first, then falls back to a
+    case-insensitive scan so that keys like ``LogoLED`` / ``Logoled`` are
+    treated as equivalent regardless of what casing the device firmware uses.
+    """
+    if key in local_data:
+        return True, local_data[key]
+    lower = key.lower()
+    for k, v in local_data.items():
+        if k.lower() == lower:
+            return True, v
+    return False, None
 
 
 async def async_request_local_refresh(runtime_data, device_id: str) -> None:
@@ -157,8 +199,6 @@ async def async_get_or_create_local_coordinator(
             except ClientError as err:
                 last_error = err
                 error_message = f"Error while fetching local real-time data: {err}"
-            else:
-                break
 
             if attempt >= LOCAL_MAX_RETRIES:
                 failure_count += 1
@@ -191,6 +231,17 @@ async def async_get_or_create_local_coordinator(
             raise UpdateFailed("Unexpected payload type from local endpoint")
 
         payload["_static_ip"] = static_ip
+
+        # Fetch writable keys absent from /RealTimeData (e.g. LogoLED)
+        extra = await asyncio.gather(
+            *(_async_read_keyword(session, static_ip, kw) for kw in _READ_ONLY_KEYWORDS),
+            return_exceptions=True,
+        )
+        for result in extra:
+            if isinstance(result, tuple):
+                kw, val = result
+                if val is not None:
+                    payload[kw] = val
 
         device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
         if isinstance(device_state, dict):

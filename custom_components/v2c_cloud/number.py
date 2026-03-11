@@ -24,6 +24,7 @@ from .local_api import (
     async_get_or_create_local_coordinator,
     async_write_keyword,
     get_local_data,
+    get_local_value,
     V2CLocalApiError,
 )
 from .v2c_cloud import V2CError
@@ -207,16 +208,26 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
             self._attr_icon = icon
 
     @property
+    def available(self) -> bool:
+        """Return True if the entity can be controlled."""
+        if self._local_coordinator is not None:
+            return self._local_coordinator.last_update_success
+        return self.coordinator.last_update_success
+
+    @property
     def native_value(self) -> float | None:
         value = None
         if self._local_key:
             local_data = get_local_data(self._runtime_data, self._device_id)
-            if isinstance(local_data, dict) and self._local_key in local_data:
-                value = local_data.get(self._local_key)
-        if value is None:
+            if isinstance(local_data, dict):
+                found, raw = get_local_value(local_data, self._local_key)
+                if found:
+                    value = raw
+            # Local entities do not fall back to cloud reported data
+        else:
             value = self.get_reported_value(*self._reported_keys)
-        if value is None:
-            value = self.device_state.get(self._reported_keys[0])
+            if value is None and self._reported_keys:
+                value = self.device_state.get(self._reported_keys[0])
 
         if value is None:
             return self._optimistic_value

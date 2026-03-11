@@ -4,8 +4,8 @@
 
 ### Components
 - **Cloud REST client** (`custom_components/v2c_cloud/v2c_cloud.py`) wraps the documented endpoints at `https://v2c.cloud/kong/v2c_service`, normalises responses, enforces retry/backoff and caches pairings, RFID lists and firmware version.
-- **Local API helper** (`custom_components/v2c_cloud/local_api.py`) resolves the device IP, polls `http://<ip>/RealTimeData`, sends write commands via `http://<ip>/write/KeyWord=Value` and raises `V2CLocalApiError` on LAN issues.
-- **Config flow** collects the API key, validates it via `/pairings/me`, and stores a deterministic unique ID while always targeting the fixed V2C Cloud endpoint.
+- **Local API helper** (`custom_components/v2c_cloud/local_api.py`) resolves the device IP, polls `http://<ip>/RealTimeData`, fetches keywords absent from that payload (e.g. `LogoLED`) via `GET /read/<keyword>`, sends write commands via `http://<ip>/write/KeyWord=Value` and raises `V2CLocalApiError` on LAN issues.
+- **Config flow** collects the API key, validates it and stores a deterministic unique ID while always targeting the fixed V2C Cloud endpoint.
 - **Cloud coordinator** (`DataUpdateCoordinator`) handles pairing/device polling with an adaptive interval (`ceil(devices * 86400 / 850)` seconds, min 90 s) to keep calls under the V2C 1000/day limit while leaving headroom for manual commands.
 - **Local coordinators** are created on demand per device, polling `/RealTimeData` every 30 s. All entities consuming local telemetry share the same coordinator instance to avoid duplicate requests.
 - **Platforms** (binary_sensor, sensor, switch, number, select, button) inherit from `V2CEntity`, which exposes helpers for coordinator data, pairing metadata and case-insensitive lookups. Entities prefer local data whenever available, falling back to the cloud payload, and local-only entities register as listeners on their per-device local coordinator so the UI gets refreshed immediately after each LAN poll.
@@ -55,7 +55,7 @@ Local coordinators store the raw `RealTimeData` payload along with `_static_ip` 
 ### Cloud
 - `/pairings/me`, `/device/reported`, `/device/wifilist`, `/version`
 - `/device/charger_until_*`, `/device/startchargekw`, `/device/startchargeminutes`, `/device/reboot`, `/device/update`
-- `/device/logo_led`, `/device/set_rfid`, `/device/ocpp`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`
+- `/device/set_rfid`, `/device/ocpp`, `/device/inst_type`, `/device/slave_type`, `/device/language`, `/device/ocpp_id`, `/device/ocpp_addr`, `/device/wifi`, `/device/inverter_ip`
 - `/device/rfid` (GET/POST/DELETE), `/device/rfid/tag` (POST/PUT)
 - `/device/savepersonalicepower/v2`, `/device/personalicepower/v2` (POST/GET/DELETE), `/device/personalicepower/all`
 - `/stadistic/device`, `/stadistic/global/me`
@@ -64,13 +64,18 @@ Numeric query parameters are posted as strings (as per the public documentation)
 
 ### Local
 - `GET /RealTimeData` for telemetry (telemetry keys: ChargeState, ChargePower, VoltageInstallation, etc.)
-- `GET /write/KeyWord=Value` for supported commands (`Dynamic`, `Locked`, `Intensity`, `MinIntensity`, `MaxIntensity`, `Paused`, `DynamicPowerMode`, `ContractedPower`, ...). Unsupported commands remain on the cloud client.
+- `GET /read/<keyword>` for values absent from `/RealTimeData` (e.g. `LogoLED`). These are listed in `_READ_ONLY_KEYWORDS` and fetched concurrently after each `/RealTimeData` poll.
+- `GET /write/KeyWord=Value` for supported commands (`Dynamic`, `Locked`, `Intensity`, `MinIntensity`, `MaxIntensity`, `Paused`, `DynamicPowerMode`, `ContractedPower`, `LogoLED`, ...). Unsupported commands remain on the cloud client.
 
 `V2CLocalApiError` is raised on timeouts/HTTP errors and converted into `HomeAssistantError` at the entity/service layer.
+
+**Notes on specific keywords:**
+- `LogoLED` – binary (`1` = on, `0` = off). Not present in `/RealTimeData`; read via `GET /read/LogoLED` and written via `/write/LogoLED=1` or `/write/LogoLED=0`.
 
 ## 4. Entity Guidelines
 
 - `V2CEntity.get_reported_value(*keys)` performs case-insensitive lookup on the cloud payload; helpers in `local_api.py` retrieve cached LAN data.
+- `get_local_value(local_data, key)` in `local_api.py` performs a case-insensitive lookup on the local `RealTimeData` payload (exact match first, then `.lower()` scan). Use this whenever reading a key from local data instead of direct dict access.
 - Switches, selects and numbers keep a ~20-second optimistic lock after issuing a command to mask discrepancies until the next LAN or cloud refresh completes.
 - Local selects/numbers/switches register listeners on the per-device local coordinator, so they repopulate instantly after reloads instead of waiting for the next cloud poll.
 - Cloud commands always go through `_async_call_and_refresh(..., refresh=True)`; LAN commands skip the cloud refresh to avoid extra API calls.
@@ -85,6 +90,7 @@ Numeric query parameters are posted as strings (as per the public documentation)
 
 - `V2CAuthError` causes re-auth flows when raised during coordinator refresh or service execution.
 - `V2CRequestError`/`V2CRateLimitError` keep previous data when refresh fails; the coordinator logs warnings but does not break the update loop.
+- **Pairings failure resilience** – `_async_update_data` fetches pairings and device state in two independent steps. If `/pairings/me` fails (e.g. 403) and a `fallback_device_id` is configured, a synthetic pairing `{"deviceId": fallback_device_id, "ip": fallback_ip}` is used so `async_gather_devices_state` can still retrieve the device state via `/device/reported`.
 - `V2CLocalApiError` is mapped to `HomeAssistantError` so the UI reports issues without killing the event loop.
 - Rate limiting applies exponential backoff (up to 3 retries). When capacity is exceeded the coordinator retains the cached payload and updates resume on the next scheduled interval.
 
@@ -101,6 +107,7 @@ Numeric query parameters are posted as strings (as per the public documentation)
 1. **API key flow** – invalid key should raise `ConfigEntryAuthFailed` and prompt the re-auth UI.
 2. **Multiple devices** – verify the adaptive interval (check `coordinator.update_interval`).
 3. **Local commands** – test start/pause charge, dynamic mode toggle, and intensity changes with the wallbox reachable on LAN.
-4. **Cloud commands** – test logo LED, RFID enable/disable, OCPP configuration, firmware update, timers, RFID services.
+4. **Cloud commands** – test RFID enable/disable, OCPP configuration, firmware update, timers, RFID services.
+   **Local LED commands** – test Logo LED on/off with the charger reachable on LAN and with cloud offline; confirm `/read/LogoLED` returns `1`/`0` and the switch state updates accordingly.
 5. **Failure scenarios** – simulate LAN unavailability and cloud 429/timeout responses to ensure fallbacks behave correctly.
 6. **Statistics & events** – call `get_device_statistics` and confirm the `v2c_cloud_device_statistics` event carries the raw payload.

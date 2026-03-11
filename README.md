@@ -16,6 +16,7 @@ More of my Home Assistant projects live at https://samuele.bistoletti.me/.
 ## Key Features
 
 - **Guided onboarding** – the config flow only asks for your API key, validates it against `/pairings/me` and stores a deterministic unique ID for re-auth flows.
+- **API key management** – the API key can be updated at any time via the **Reconfigure** button in the integration panel, without removing and re-adding the integration.
 - **Cloud + LAN hybrid** – the integration polls `http://<device_ip>/RealTimeData` every 30 seconds for telemetry and rapid feedback, while the cloud API handles pairing discovery, advanced settings and statistics.
 - **Local-first entities** – switches, selects and numbers that have a LAN keyword reuse the per-device realtime coordinator, so the UI reflects changes right after each LAN poll without waiting for the slower cloud refresh.
 - **Optimistic smoothing** – cloud-only selects and numbers hold their requested value for ~20 s, eliminating UI “flapping” between command execution and the next poll.
@@ -58,6 +59,9 @@ More of my Home Assistant projects live at https://samuele.bistoletti.me/.
 2. Paste the API token when prompted; the integration always talks to the official V2C endpoint (`https://v2c.cloud/kong/v2c_service`), so no other options are required.
 3. Every pairing returned by `/pairings/me` is turned into a Home Assistant device with sensors, numbers, switches and services ready to use. Polling intervals, LAN/Cloud fallbacks and cached data are handled automatically after onboarding.
 
+### Change your API key
+If you need to rotate or replace the API key after the initial setup, go to **Settings → Devices & Services → V2C Cloud** and click **Reconfigure**. Enter the new key, and the integration will validate it and reload automatically. No entities or device history are lost.
+
 ## Entity Overview
 
 ### Sensors (polled locally every 30 s)
@@ -77,7 +81,8 @@ More of my Home Assistant projects live at https://samuele.bistoletti.me/.
 - Pause dynamic control (local `/write/PauseDynamic`)
 - Charger lock (local `/write/Locked`)
 - Charging pause (local `/write/Paused`)
-- Logo LED (cloud `/device/logo_led`)
+- Timer (local `/write/Timer`)
+- Logo LED on/off (local `/write/LogoLED`)
 - RFID reader (cloud `/device/set_rfid`)
 - OCPP (cloud `/device/ocpp`)
 

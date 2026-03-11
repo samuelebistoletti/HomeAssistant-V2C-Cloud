@@ -19,6 +19,7 @@ from .local_api import (
     async_request_local_refresh,
     async_write_keyword,
     get_local_data,
+    get_local_value,
 )
 
 
@@ -126,17 +127,42 @@ async def async_setup_entry(
                     client,
                     runtime_data,
                     device_id,
+                    name_key="timer",
+                    unique_suffix="timer",
+                    setter=lambda state, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "Timer",
+                        1 if state else 0,
+                    ),
+                    reported_keys=("timer",),
+                    local_keys=("Timer",),
+                    icon_on="mdi:timer",
+                    icon_off="mdi:timer-off",
+                    refresh_after_call=False,
+                    trigger_local_refresh=True,
+                ),
+                V2CBooleanSwitch(
+                    coordinator,
+                    client,
+                    runtime_data,
+                    device_id,
                     name_key="logo_led",
                     unique_suffix="logo_led",
-                    setter=lambda state, _device_id=device_id: client.async_set_logo_led(
-                        _device_id, state
+                    setter=lambda state, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "LogoLED",
+                        1 if state else 0,
                     ),
                     reported_keys=("logo_led", "logoled"),
+                    local_keys=("LogoLED",),
                     icon_on="mdi:led-on",
                     icon_off="mdi:led-off",
                     refresh_after_call=False,
-                    delayed_refresh_seconds=90.0,
-                    update_cached_state=True,
+                    trigger_local_refresh=True,
                 ),
                 V2CBooleanSwitch(
                     coordinator,
@@ -244,6 +270,13 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         self._cancel_delayed_refresh: Callable[[], None] | None = None
 
     @property
+    def available(self) -> bool:
+        """Return True if the entity can be controlled."""
+        if self._local_coordinator is not None:
+            return self._local_coordinator.last_update_success
+        return self.coordinator.last_update_success
+
+    @property
     def is_on(self) -> bool:
         """Return the current state of the switch."""
         now = time.monotonic()
@@ -261,22 +294,24 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
             self._last_command_ts = None
             self._apply_icon(local_value)
             return local_value
-        reported_value = self.get_reported_value(*self._reported_keys)
-        bool_value = _to_bool(reported_value)
-        if bool_value is not None:
-            if (
-                self._optimistic_state is not None
-                and self._last_command_ts is not None
-                and now - self._last_command_ts < self._optimistic_hold_seconds
-                and bool_value != self._optimistic_state
-            ):
-                self._apply_icon(self._optimistic_state)
-                return self._optimistic_state
+        if not self._local_keys:
+            # Cloud-only entities fall back to reported payload
+            reported_value = self.get_reported_value(*self._reported_keys)
+            bool_value = _to_bool(reported_value)
+            if bool_value is not None:
+                if (
+                    self._optimistic_state is not None
+                    and self._last_command_ts is not None
+                    and now - self._last_command_ts < self._optimistic_hold_seconds
+                    and bool_value != self._optimistic_state
+                ):
+                    self._apply_icon(self._optimistic_state)
+                    return self._optimistic_state
 
-            self._optimistic_state = bool_value
-            self._last_command_ts = None
-            self._apply_icon(bool_value)
-            return bool_value
+                self._optimistic_state = bool_value
+                self._last_command_ts = None
+                self._apply_icon(bool_value)
+                return bool_value
 
         if self._optimistic_state is not None:
             if (
@@ -338,8 +373,9 @@ class V2CBooleanSwitch(V2CEntity, SwitchEntity):
         if not isinstance(local_data, dict):
             return None
         for key in self._local_keys:
-            if key in local_data:
-                return _to_bool(local_data.get(key))
+            found, value = get_local_value(local_data, key)
+            if found:
+                return _to_bool(value)
         return None
 
     def _set_cached_state(self, state: bool) -> None:

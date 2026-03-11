@@ -136,15 +136,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if initial_pairings:
         client.preload_pairings(initial_pairings)
 
+    fallback_ip: str | None = entry.data.get("fallback_ip")
+    fallback_device_id: str | None = entry.data.get("fallback_device_id")
+    has_fallback = bool(fallback_ip and fallback_device_id)
+
     # Validate credentials and initial connectivity by requesting pairings.
     try:
         pairings = await client.async_get_pairings()
     except V2CAuthError as err:
         raise ConfigEntryAuthFailed("Invalid V2C Cloud API key") from err
     except V2CRequestError as err:
-        raise ConfigEntryNotReady(f"Unable to contact V2C Cloud: {err}") from err
+        if not has_fallback:
+            raise ConfigEntryNotReady(f"Unable to contact V2C Cloud: {err}") from err
+        _LOGGER.warning(
+            "V2C Cloud unreachable at startup; proceeding with local fallback for %s: %s",
+            fallback_device_id,
+            err,
+        )
+        pairings = []
 
-    if not pairings:
+    if not pairings and not has_fallback:
         _LOGGER.warning("No V2C devices associated with this API key")
 
     def _calculate_update_interval(device_count: int) -> timedelta:
@@ -173,11 +184,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             coordinator.update_interval = DEFAULT_UPDATE_INTERVAL
 
+        # --- Step 1: fetch pairings ---
+        latest_pairings: list[dict[str, object]] | None = None
         try:
             latest_pairings = await client.async_get_pairings()
-            previous_devices = None
-            if coordinator.data and isinstance(coordinator.data, dict):
-                previous_devices = coordinator.data.get("devices")
+        except V2CAuthError as err:
+            _restore_default_interval("authentication failure")
+            raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
+        except V2CRateLimitError as err:
+            _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
+            if coordinator.data is not None:
+                return coordinator.data
+            raise UpdateFailed("Rate limited by V2C Cloud API") from err
+        except V2CError as err:
+            if has_fallback:
+                # Pairings inaccessible (e.g. 403) but other cloud endpoints may still
+                # work. Build a synthetic pairing from the fallback device ID so that
+                # async_gather_devices_state can still query /device/reported etc.
+                _LOGGER.warning(
+                    "Pairings unavailable (%s); falling back to device %s",
+                    err,
+                    fallback_device_id,
+                )
+                latest_pairings = [{"deviceId": fallback_device_id, "ip": fallback_ip}]
+            else:
+                raise UpdateFailed(f"Failed to update V2C data: {err}") from err
+
+        # --- Step 2: fetch per-device state ---
+        previous_devices = None
+        if coordinator.data and isinstance(coordinator.data, dict):
+            previous_devices = coordinator.data.get("devices")
+        try:
             devices = await async_gather_devices_state(
                 client,
                 latest_pairings,
@@ -193,6 +230,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
             _restore_default_interval("communication failure")
+            if coordinator.data is not None:
+                _LOGGER.warning("V2C Cloud device fetch failed; keeping previous data: %s", err)
+                return coordinator.data
+            if has_fallback:
+                _LOGGER.warning(
+                    "V2C Cloud unavailable at first refresh; using local fallback for %s: %s",
+                    fallback_device_id,
+                    err,
+                )
+                synthetic_pairing: dict[str, object] = {
+                    "deviceId": fallback_device_id,
+                    "ip": fallback_ip,
+                }
+                return {
+                    "pairings": [synthetic_pairing],
+                    "devices": {
+                        fallback_device_id: {
+                            "device_id": fallback_device_id,
+                            "pairing": synthetic_pairing,
+                            "connected": None,
+                            "current_state": None,
+                            "reported_raw": None,
+                            "reported": {},
+                            "rfid_cards": None,
+                            "version": None,
+                            "additional": {"static_ip": fallback_ip},
+                        }
+                    },
+                }
             raise UpdateFailed(f"Failed to update V2C data: {err}") from err
 
         device_count = len(devices)

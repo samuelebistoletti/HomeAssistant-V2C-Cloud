@@ -7,7 +7,9 @@
     "error": {
       "cannot_connect": "Impossibile contattare il servizio V2C Cloud.",
       "invalid_api_key": "La API key fornita non è valida.",
-      "unknown": "Si è verificato un errore imprevisto"
+      "unknown": "Si è verificato un errore imprevisto",
+      "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",
+      "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo."
     },
     "step": {
       "user": {
@@ -23,7 +25,36 @@
         "data": {
           "api_key": "API key"
         }
+      },
+      "reconfigure": {
+        "title": "Riconfigura V2C Cloud",
+        "description": "Aggiorna la API key di V2C Cloud. L'integrazione verrà ricaricata automaticamente.",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "fallback_ip": {
+        "title": "V2C Cloud — cloud non raggiungibile",
+        "description": "Le API V2C Cloud non sono al momento disponibili. Inserisci l'indirizzo IP locale del tuo caricatore in modo che l'integrazione possa comunque operare in locale. Quando il cloud tornerà disponibile verrà usata automaticamente la lista dei dispositivi cloud.",
+        "data": {
+          "fallback_ip": "Indirizzo IP locale del caricatore"
+        }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni V2C Cloud",
+        "description": "Imposta o aggiorna l'indirizzo IP locale di fallback. L'integrazione usa questo IP quando V2C Cloud non è raggiungibile. Lascia vuoto per disabilitare il fallback locale.",
+        "data": {
+          "fallback_ip": "Indirizzo IP locale di fallback (lascia vuoto per disabilitare)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",
+      "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo."
     }
   },
   "entity": {
@@ -107,6 +138,9 @@
       },
       "ocpp_enabled": {
         "name": "OCPP"
+      },
+      "timer": {
+        "name": "Timer"
       }
     },
     "select": {

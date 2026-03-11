@@ -8,10 +8,8 @@ DOMAIN = "v2c_cloud"
 
 CONF_API_KEY = "api_key"
 
-DEFAULT_BASE_URL = "https://v2c.cloud/kong/v2c_service"
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=120)
 MIN_UPDATE_INTERVAL = timedelta(seconds=90)
-RATE_LIMIT_DAILY = 1000
 TARGET_DAILY_BUDGET = 850
 
 # Power limits (kW)
@@ -106,8 +104,6 @@ ATTR_RFID_CODE = "code"
 ATTR_RFID_TAG = "tag"
 ATTR_KWH = "kwh"
 ATTR_MINUTES = "minutes"
-ATTR_KW = "kw"
-ATTR_VALUE = "value"
 ATTR_VOLTAGE = "voltage"
 ATTR_ENABLED = "enabled"
 ATTR_OCPP_ID = "ocpp_id"
@@ -115,7 +111,6 @@ ATTR_OCPP_URL = "ocpp_url"
 ATTR_IP_ADDRESS = "ip_address"
 ATTR_PROFILE_NAME = "name"
 ATTR_PROFILE_PAYLOAD = "profile"
-ATTR_PROFILE_MODE = "profile_mode"
 ATTR_PROFILE_TIMESTAMP = "timestamp"
 ATTR_UPDATED_AT = "updated_at"
 ATTR_DATE_START = "date_start"

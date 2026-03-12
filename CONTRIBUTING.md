@@ -15,9 +15,14 @@ All contributions are managed through GitHub. Issues and pull requests are prefe
 
 1. Fork the repository and branch from `main`.
 2. If you use VS Code, the provided dev container spins up a standalone Home Assistant instance with the sample configuration (`config/configuration.yaml`).
-3. Install development tools inside the container or your local environment:
+3. Install all development tools inside the container or your local environment:
    ```bash
    pip install -r requirements.txt
+   pip install -r requirements_test.txt
+   ```
+4. Run the test suite to verify everything works:
+   ```bash
+   python -m pytest tests/ -v
    ```
 
 ## Pull Request Checklist
@@ -32,7 +37,11 @@ Before opening a PR, please ensure you have:
    ./scripts/lint
    python -m compileall custom_components/v2c_cloud
    ```
-5. **Tested the behaviour**. Prefer exercising changes in the dev container or against a real charger when possible. If tests cannot be automated, mention the manual steps taken in the PR.
+5. **Run the automated tests** and confirmed they all pass:
+   ```bash
+   python -m pytest tests/ -v
+   ```
+6. **Tested the behaviour**. Prefer exercising changes in the dev container or against a real charger when possible. If tests cannot be automated, mention the manual steps taken in the PR.
 
 ## Filing Issues
 

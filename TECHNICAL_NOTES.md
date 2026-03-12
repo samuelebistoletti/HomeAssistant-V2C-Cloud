@@ -102,8 +102,30 @@ Numeric query parameters are posted as strings (as per the public documentation)
 3. Validate new local keywords against the official spreadsheet before exposing them in the UI.
 4. Ensure logging remains at `debug` level for HTTP details; avoid excessive logging in the happy path.
 5. Run `python -m compileall custom_components/v2c_cloud` before committing to catch syntax errors.
+6. Run the automated test suite and confirm all tests pass:
+   ```bash
+   pip install -r requirements_test.txt
+   python -m pytest tests/ -v
+   ```
 
-## 8. Testing Recommendations
+## 8. Testing
+
+### Automated tests
+
+The repository includes a `pytest` suite under `tests/` that runs in CI on every push and pull request. It does **not** require a running Home Assistant instance or a physical charger.
+
+| Module | What is tested |
+| --- | --- |
+| `test_helpers.py` | `_normalize_bool`, `_coerce_scalar`, `_extract_static_ip`, `V2CDeviceState` |
+| `test_v2c_client.py` | `V2CClient` HTTP handling: 401/429/5xx errors, retry logic, rate-limit fallback, pairings cache, device commands |
+| `test_local_api.py` | `get_local_value` case-insensitive lookup, `get_local_data` coordinator delegation |
+
+Run locally with:
+```bash
+python -m pytest tests/ -v
+```
+
+### Manual integration testing
 
 1. **API key flow** – invalid key should raise `ConfigEntryAuthFailed` and prompt the re-auth UI.
 2. **Multiple devices** – verify the adaptive interval (check `coordinator.update_interval`).

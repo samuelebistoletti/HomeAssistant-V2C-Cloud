@@ -9,64 +9,68 @@ body:
 
         > [!IMPORTANT]
         > **Before submitting an issue:**
-        > 
+        >
         > ✅ Make sure you are using the latest version of the integration.
         > ✅ Check your logs for error messages and attach them.
         > ✅ Search existing [issues][issue] to see if your problem has already been reported.
         > ✅ Search existing [discussions][df] to see if your problem has already been discussed, or to ask a question.
         >
-        > Thank you for your report! 🚀
+        > Thank you for your report!
         >
         > [!NOTE]
-        > Due to the high number of issues, incomplete reports (unclear description, missing log files, unsupported platform) will be closed without further comment.
+        > Incomplete reports (unclear description, missing log output, unsupported platform) will be closed without further comment.
         >
         > [df]: https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/discussions
         > [issue]: https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/issues?q=is%3Aissue
 
   - type: input
-    id: tariff_name
+    id: integration_version
     attributes:
-      label: What is your current tariff?
-      description: Please provide the name of your current tariff.
+      label: Integration version
+      description: Version of the V2C Cloud integration (visible in Settings → Devices & Services → V2C Cloud).
+      placeholder: "e.g. 1.1.1"
     validations:
       required: true
 
   - type: input
-    id: tariff_since
+    id: ha_version
     attributes:
-      label: Since when is this tariff active?
-      description: Please enter the start date of your tariff (e.g., 2024-01-01).
+      label: Home Assistant version
+      description: Version of your Home Assistant instance (visible in Settings → About).
+      placeholder: "e.g. 2024.12.0"
     validations:
       required: true
 
   - type: dropdown
-    id: tariff_transition
+    id: install_method
     attributes:
-      label: Is your tariff still in a transition phase?
+      label: Installation method
       options:
-        - "Yes"
-        - "No"
+        - HACS
+        - Manual
     validations:
       required: true
 
   - type: dropdown
-    id: ims_installed
+    id: charger_model
     attributes:
-      label: Is an IMS (Intelligent Metering System) already installed?
+      label: Charger model
       options:
-        - "Yes"
-        - "No"
+        - Trydan
+        - Trydan Pro
+        - Other / Unknown
     validations:
       required: true
 
   - type: dropdown
-    id: ims_readable
+    id: connection_type
     attributes:
-      label: Can the IMS already be read in the app for consumption data?
+      label: Connection mode
+      description: Is the charger reachable on the local network (LAN), or does it rely only on the cloud?
       options:
-        - "Yes"
-        - "No"
-        - "Not applicable / No IMS installed"
+        - Cloud + LAN (static IP / DHCP reservation)
+        - Cloud only (no local IP available)
+        - Unknown
     validations:
       required: true
 
@@ -76,20 +80,20 @@ body:
     attributes:
       label: Describe the bug
       description: >-
-        Provide a clear and concise description of the issue.
+        Provide a clear and concise description of the issue. Include what you expected to happen and what actually happened.
 
   - type: textarea
     validations:
       required: true
     attributes:
+      label: Steps to reproduce
       value: |
         1.
         2.
         3.
         ...
-      label: Steps to reproduce
       description: >-
-        List the steps to reproduce the behavior.
+        List the steps to reproduce the behaviour.
 
   - type: textarea
     validations:
@@ -98,10 +102,7 @@ body:
       label: Log details
       render: text
       description: >
-        Attach relevant log output. See https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/blob/main/README.md#debugging for instructions.
-
-  - type: input
-    attributes:
-      label: Version
-      description: >
-        State the installed version of the V2C Cloud Integration.
+        Attach relevant log output. Enable debug logging first — see the
+        README section "Logging & Diagnostics" for instructions (add
+        `custom_components.v2c_cloud: debug` under `logger.logs` in your
+        `configuration.yaml`). Mask any API keys or personal data before pasting.

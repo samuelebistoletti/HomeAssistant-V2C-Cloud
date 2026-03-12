@@ -36,6 +36,21 @@ Please report out-of-scope issues to the appropriate vendor or project.
 
 ---
 
+## Automated Security Scanning
+
+The repository runs the following security checks automatically on every push and pull request to `main`, and on a weekly schedule:
+
+| Tool | Purpose |
+| --- | --- |
+| **Bandit** | SAST — static analysis of the Python source for common security issues (medium severity and confidence, or higher) |
+| **pip-audit** | Dependency audit — scans `requirements.txt` and `requirements_test.txt` for known CVEs |
+| **gitleaks** | Secret scanning — detects accidentally committed credentials or tokens across the full git history |
+| **GitHub CodeQL** | Deep static analysis for Python and Actions workflows (security-extended query suite) |
+
+Results are available under the **Security** and **Actions** tabs of the repository. The Tag and Release workflow will not create a release if any of these checks fail.
+
+---
+
 ## Responsible Disclosure
 
 Follow responsible disclosure practices: avoid sharing details publicly until a fix is available, and do not exploit issues beyond the minimum steps required for validation. See GitHub’s [Coordinated Disclosure guidelines](https://docs.github.com/en/code-security/getting-started/github-security-features#coordinated-disclosure) for best practices.

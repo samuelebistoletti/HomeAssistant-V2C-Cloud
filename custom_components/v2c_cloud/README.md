@@ -2,6 +2,9 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=utenti&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=%24.v2c_cloud.total)
+[![Tests](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/tests.yaml/badge.svg)](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/tests.yaml)
+[![Security](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/security.yaml/badge.svg)](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/security.yaml)
+[![CodeQL](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/codeql.yaml/badge.svg)](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/codeql.yaml)
 
 >  🎁 Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store (https://v2charge.com/store/it/) with the promo code `INTEGRATIONTRYDAN10`
 
@@ -97,7 +100,6 @@ If you need to rotate or replace the API key after the initial setup, go to **Se
 - Minimum intensity (local `/write/MinIntensity`)
 - Maximum intensity (local `/write/MaxIntensity`)
 - Contracted power (local `/write/ContractedPower`, auto-converted between watts and kW)
-- Logo LED brightness 0–100 % (local `/write/LogoLED`)
 
 ### Buttons
 - Reboot charger (cloud `/device/reboot`)
@@ -157,6 +159,31 @@ Each data-oriented service also fires an event (`v2c_cloud_device_statistics`, `
 - `v2c_cloud_power_profiles` – used by `list_power_profiles` and `get_power_profile`; payload carries the `device_id` plus either a `profiles` list or a single `profile` and its `timestamp`.
 - `v2c_cloud_device_statistics` – emitted by `get_device_statistics`; includes `device_id`, optional `date_start` / `date_end` and the `statistics` list.
 - `v2c_cloud_global_statistics` – emitted by `get_global_statistics`; includes the global `statistics` list plus the requested date range.
+
+## Development & Testing
+
+### Running the test suite
+
+```bash
+pip install -r requirements_test.txt
+python -m pytest tests/ -v
+```
+
+The suite covers the HTTP client, pairings cache, retry/rate-limit logic, and local API helpers without requiring a running Home Assistant instance or a real charger.
+
+### CI / CD
+
+Every push and pull request to `main` runs:
+
+| Workflow | What it checks |
+| --- | --- |
+| **Tests** | `pytest` suite |
+| **Security** | Bandit SAST · pip-audit dependency audit · gitleaks secret scan |
+| **CodeQL** | GitHub CodeQL static analysis for Python and Actions |
+| **HACS** | HACS integration validation |
+| **hassfest** | Home Assistant manifest validation |
+
+The **Tag and Release** workflow only creates a tag and GitHub release after both the Tests and Security jobs pass.
 
 ## Logging & Diagnostics
 

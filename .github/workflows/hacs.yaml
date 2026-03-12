@@ -13,8 +13,8 @@ jobs:
       contents: read
     runs-on: "ubuntu-latest"
     steps:
-    - uses: "actions/checkout@v2"
+    - uses: "actions/checkout@v6"
     - name: HACS Action
-      uses: "hacs/action@main"
+      uses: "hacs/action@d556e736723344f83838d08488c983a15381059a"  # v22.5.0
       with:
         category: "integration"

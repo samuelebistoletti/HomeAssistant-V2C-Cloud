@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2026-03-12
+
+### CI
+
+- **`actions/checkout` upgraded to v6** – bumped from v2 (in `hacs.yaml`, `hassfest.yaml`) and v4 (in `tests.yaml`, `security.yaml`, `codeql.yaml`, `tag-and-release.yaml`) to v6, resolving the Node.js 20 deprecation warning ahead of the June 2026 enforcement deadline.
+- **`hacs/action` pinned to v22.5.0** – replaced the mutable `@main` floating tag with a commit-pinned reference (`d556e736...`) for supply-chain security.
+
 ## [1.1.1] - 2026-03-12
 
 ### Fixed

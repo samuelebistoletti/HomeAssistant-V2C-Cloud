@@ -176,7 +176,15 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except V2CAuthError:
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
-                errors["base"] = "cannot_connect"
+                # Cloud unreachable or pairings endpoint restricted — save the key
+                # anyway; the coordinator will validate connectivity on the next refresh.
+                _LOGGER.warning(
+                    "V2C Cloud unavailable during reconfigure; saving new API key without cloud validation"
+                )
+                return self.async_update_reload_and_abort(
+                    reconfigure_entry,
+                    data_updates={CONF_API_KEY: api_key},
+                )
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
@@ -214,16 +222,22 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             api_key = user_input[CONF_API_KEY].strip()
+            pairings: list[dict[str, Any]] = []
             try:
                 pairings = await _validate_api_key(self.hass, api_key)
             except V2CAuthError:
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
-                errors["base"] = "cannot_connect"
+                # Cloud unreachable or pairings endpoint restricted — save the key
+                # anyway; the coordinator will validate connectivity on the next refresh.
+                _LOGGER.warning(
+                    "V2C Cloud unavailable during reauth; saving new API key without cloud validation"
+                )
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
-            else:
+
+            if not errors:
                 reauth_entry = self._get_reauth_entry()
                 return self.async_update_reload_and_abort(
                     reauth_entry,

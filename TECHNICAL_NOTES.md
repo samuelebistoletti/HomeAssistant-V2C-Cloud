@@ -91,6 +91,7 @@ Numeric query parameters are posted as strings (as per the public documentation)
 - `V2CAuthError` causes re-auth flows when raised during coordinator refresh or service execution.
 - `V2CRequestError`/`V2CRateLimitError` keep previous data when refresh fails; the coordinator logs warnings but does not break the update loop.
 - **Pairings failure resilience** – `_async_update_data` fetches pairings and device state in two independent steps. If `/pairings/me` fails (e.g. 403) and a `fallback_device_id` is configured, a synthetic pairing `{"deviceId": fallback_device_id, "ip": fallback_ip}` is used so `async_gather_devices_state` can still retrieve the device state via `/device/reported`.
+- **Reauth / Reconfigure resilience** – the config flow only rejects a new API key on HTTP 401 (definitively invalid credentials). Any other cloud error (403, timeout, network down) causes the key to be saved immediately with a warning; the coordinator reconciles on the next refresh. This allows users to update an expired key even when the V2C Cloud is experiencing issues.
 - `V2CLocalApiError` is mapped to `HomeAssistantError` so the UI reports issues without killing the event loop.
 - Rate limiting applies exponential backoff (up to 3 retries). When capacity is exceeded the coordinator retains the cached payload and updates resume on the next scheduled interval.
 

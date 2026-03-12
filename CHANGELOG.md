@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-03-12
+
+### Fixed
+- **Re-auth / Reconfigure no longer blocked when cloud is unavailable** – if `/pairings/me` returns 403 or the V2C Cloud is unreachable during the reauth or reconfigure flow, the new API key is now accepted and saved immediately. The coordinator will validate connectivity on the next refresh cycle. Only a definitive HTTP 401 (invalid credentials) still blocks the flow.
+- **Slave device select shows "MQTT" for type 11** – devices configured with MQTT-based energy monitoring (`slave_type = 11`) were previously stuck in unknown state because the value was missing from the options map.
+
 ## [1.1.0] - 2026-03-11
 
 ### Added

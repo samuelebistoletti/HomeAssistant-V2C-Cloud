@@ -33,6 +33,7 @@ SLAVE_TYPES = {
     4: {"en": "Solax", "it": "Solax"},
     5: {"en": "Carlo Gavazzi", "it": "Carlo Gavazzi"},
     6: {"en": "Growatt", "it": "Growatt"},
+    11: {"en": "MQTT", "it": "MQTT"},
 }
 
 LANGUAGES = {

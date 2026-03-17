@@ -108,6 +108,27 @@ PLATFORMS: list[Platform] = [
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
+def _build_synthetic_fallback(device_id: str, ip: str) -> dict[str, object]:
+    """Return minimal coordinator data for LAN-only startup when cloud is unavailable."""
+    pairing: dict[str, object] = {"deviceId": device_id, "ip": ip}
+    return {
+        "pairings": [pairing],
+        "devices": {
+            device_id: {
+                "device_id": device_id,
+                "pairing": pairing,
+                "connected": None,
+                "current_state": None,
+                "reported_raw": None,
+                "reported": {},
+                "rfid_cards": None,
+                "version": None,
+                "additional": {"static_ip": ip},
+            }
+        },
+    }
+
+
 @dataclass(slots=True)
 class V2CEntryRuntimeData:
     """Runtime data stored per ConfigEntry."""
@@ -148,11 +169,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except V2CRequestError as err:
         if not has_fallback:
             raise ConfigEntryNotReady(f"Unable to contact V2C Cloud: {err}") from err
-        _LOGGER.warning(
-            "V2C Cloud unreachable at startup; proceeding with local fallback for %s: %s",
-            fallback_device_id,
-            err,
-        )
+        if isinstance(err, V2CRateLimitError):
+            _LOGGER.warning(
+                "V2C Cloud rate-limited at startup; will retry via polling. "
+                "Proceeding with local fallback for %s",
+                fallback_device_id,
+            )
+        else:
+            _LOGGER.warning(
+                "V2C Cloud unreachable at startup; proceeding with local fallback for %s: %s",
+                fallback_device_id,
+                err,
+            )
         pairings = []
 
     if not pairings and not has_fallback:
@@ -195,6 +223,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
             if coordinator.data is not None:
                 return coordinator.data
+            if has_fallback:
+                _LOGGER.warning(
+                    "V2C Cloud rate-limited at startup; using local fallback for %s",
+                    fallback_device_id,
+                )
+                return _build_synthetic_fallback(fallback_device_id, fallback_ip)
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
             if has_fallback:
@@ -227,6 +261,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
             if coordinator.data is not None:
                 return coordinator.data
+            if has_fallback:
+                _LOGGER.warning(
+                    "V2C Cloud rate-limited at startup; using local fallback for %s",
+                    fallback_device_id,
+                )
+                return _build_synthetic_fallback(fallback_device_id, fallback_ip)
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
             _restore_default_interval("communication failure")
@@ -239,26 +279,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     fallback_device_id,
                     err,
                 )
-                synthetic_pairing: dict[str, object] = {
-                    "deviceId": fallback_device_id,
-                    "ip": fallback_ip,
-                }
-                return {
-                    "pairings": [synthetic_pairing],
-                    "devices": {
-                        fallback_device_id: {
-                            "device_id": fallback_device_id,
-                            "pairing": synthetic_pairing,
-                            "connected": None,
-                            "current_state": None,
-                            "reported_raw": None,
-                            "reported": {},
-                            "rfid_cards": None,
-                            "version": None,
-                            "additional": {"static_ip": fallback_ip},
-                        }
-                    },
-                }
+                return _build_synthetic_fallback(fallback_device_id, fallback_ip)
             raise UpdateFailed(f"Failed to update V2C data: {err}") from err
 
         device_count = len(devices)

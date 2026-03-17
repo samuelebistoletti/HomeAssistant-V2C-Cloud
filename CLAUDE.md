@@ -1,103 +1,98 @@
-# CLAUDE.md
+# Claude Context — Claudify
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This project uses Claudify, a professional operating system for Claude Code.
+Always read `.claude/memory.md` before taking action.
 
-## Commands
+## Quick Start
+- Run `/start` to begin work
+- Run `/sync` mid-day to refresh memory
+- Run `/wrap-up` at end of day
+- Run `/audit` to verify recent work quality
+- Run `/clear` to safely flush context and resume fresh
+- Run `/unstick` when stuck on a problem
+- Run `/retro` for sprint retrospective
+- Run `/system-audit` for deep infrastructure audit
 
-```bash
-# Run tests
-python -m pytest tests/ -v
+## Key Files
+- Memory: `.claude/memory.md` (read this for current context)
+- Knowledge Base: `.claude/knowledge-base.md` (system-wide learned rules — read before every task)
+- Task Board: `Task Board.md`
+- Scratchpad: `Scratchpad.md` (quick capture, processed during /sync, cleared at /wrap-up)
+- Daily Notes: `Daily Notes/` (created automatically by /start)
+- Knowledge Nominations: `.claude/knowledge-nominations.md` (candidate learnings — auditor reviews)
+- Command Index: `.claude/command-index.md` (all commands with triggers and tools)
 
-# Run a single test file
-python -m pytest tests/test_v2c_client.py -v
+## System Architecture
+- **Agents** (`.claude/agents/`): Specialist subagents with persistent memory
+  - `auditor` — Quality gate. Reviews work, promotes knowledge, proposes SOP revisions
+  - `unsticker` — Unblocks you when stuck. Root-cause analysis, fresh approaches
+  - `error-whisperer` — Translates cryptic errors into fixes. Pattern matching across sessions
+  - `rubber-duck` — Forces you to articulate the real problem. Socratic debugging
+  - `pr-ghostwriter` — Writes PR descriptions, commit messages, changelogs from diffs
+  - `yak-shave-detector` — Catches scope creep. "You started doing X but now you're doing Y"
+  - `debt-collector` — Tracks tech debt. Catalogues shortcuts, suggests when to pay them down
+  - `onboarding-sherpa` — Learns a new codebase fast. Architecture maps, key-file identification
+  - `archaeologist` — Excavates why code exists. Git blame + context reconstruction
+- **Commands** (`.claude/commands/`): Workflow rituals and utilities
+- **Hooks** (`.claude/hooks/`): Deterministic safety enforcement (logging, verification)
+- **Logs** (`.claude/logs/`): Audit trail + incident log — auto-populated by hooks
+- **Skills** (`.claude/skills/`): Domain knowledge, loaded on demand
 
-# Run a single test
-python -m pytest tests/test_v2c_client.py::test_function_name -v
+## Memory Architecture (6 Tiers)
+1. **memory.md** — Active session context (what you're doing now)
+2. **Agent Memory** (`.claude/agent-memory/`) — Per-agent persistent knowledge across sessions
+3. **Knowledge Base** (`.claude/knowledge-base.md`) — System-wide learned rules (auditor-gated)
+4. **Knowledge Nominations** (`.claude/knowledge-nominations.md`) — Candidate learnings pipeline
+5. **MCP Knowledge Graph** — Structured entities and relations (if memory MCP enabled)
+6. **Daily Notes** — Chronological session history and handoff records
 
-# Lint and format (runs ruff format + ruff check --fix)
-./scripts/lint
+## Command Awareness
 
-# Check compilation
-python -m compileall custom_components/v2c_cloud
+All agents can invoke system commands. Read `.claude/command-index.md` for the full catalog.
 
-# Install dependencies
-pip install -r requirements.txt -r requirements_test.txt
-```
+- **Self-execute**: If you have the tools a command requires, read `.claude/commands/{name}.md` and follow the procedure directly.
+- **Recommend**: If you lack the tools, output `RECOMMEND: /command [args] — [reason]` for the orchestrator.
+- Agents should proactively invoke commands when trigger conditions match.
 
-## Architecture
+## Retrieval Map — Where to look for what
 
-This is a Home Assistant custom integration for V2C EV chargers using a **cloud + local hybrid** approach:
+| You need... | Check first | Then |
+|---|---|---|
+| What am I doing right now? | `memory.md` → Now | Task Board → Today |
+| How to do a procedure | `.claude/commands/` or `.claude/skills/` | CLAUDE.md |
+| A fact or learned rule | `knowledge-base.md` | Agent memory |
+| What happened on a specific day | `Daily Notes/MMDDYY.md` | Audit trail |
+| What went wrong before | `knowledge-base.md` → Hard Rules | Agent memory → Known Patterns |
+| What commands exist | `.claude/command-index.md` | `.claude/commands/{name}.md` |
 
-- **Cloud coordinator** (`__init__.py`): Polls V2C Cloud REST API at `https://v2c.cloud/kong/v2c_service` with adaptive rate (min 90s, calculated as `ceil(devices * 86400 / 850)` to stay within 1000 calls/day). Handles pairings, device state, RFID, settings, and commands.
-- **Local coordinators** (`local_api.py`): One per device, polling `/RealTimeData` every 30s for real-time telemetry. Local data takes priority over cloud data for entities.
+## Context Health
 
-### Key Files
+Sessions have finite context. Heavy operations consume it fast.
 
-| File | Purpose |
-|------|---------|
-| `custom_components/v2c_cloud/__init__.py` | Entry point: coordinator setup, service registration, entity platform loading |
-| `custom_components/v2c_cloud/v2c_cloud.py` | `V2CClient` REST client with error handling and pairings cache |
-| `custom_components/v2c_cloud/local_api.py` | Local HTTP helpers: `fetch_real_time_data()`, `send_write_command()` |
-| `custom_components/v2c_cloud/config_flow.py` | API key validation, IP fallback setup, re-auth / reconfigure flows |
-| `custom_components/v2c_cloud/entity.py` | `V2CEntity` base class, device info builder |
-| `custom_components/v2c_cloud/const.py` | Domain, service names, limits, localization keys |
+**Automatic safety net (hooks):**
+- `PreCompact` hook saves state before auto-compaction
+- `SessionStart(compact)` hook restores context after compaction
+- `SessionStart(user)` hook resets stale gate files on every fresh session
 
-### Platform Modules
+**Completeness gates (PreToolUse Write|Edit — hard blocks):**
+- **knowledge-base.md**: Every entry needs `[Source:]` provenance, max 200 lines, no TBD/TODO
+- **memory.md**: Max 100 lines (Write only)
+- **settings.json**: Must be valid JSON (broken JSON breaks all hooks)
+- **Agent defs** (`.claude/agents/*.md`): No TBD/TODO — instructions must be definitive
+- **Ungated** (iterative by nature): Daily Notes, Scratchpad, Templates, Logs, Commands, Skills
 
-All platform entities inherit from `V2CEntity` and subscribe to either the cloud coordinator or a per-device local coordinator:
+**Self-monitoring (soft signals — Claude's responsibility):**
+- After ~30+ tool calls or 3+ large file reads: run `/clear` proactively
+- If you see a "compacting conversation" warning: run `/clear` immediately
+- If output quality degrades (repetition, missed details): run `/clear`
+- When a discrete multi-step task completes: consider `/clear` before starting the next unrelated task
+- When switching between different task domains: acknowledge the boundary, prefer `/clear` for heavy switches
 
-- `sensor.py`: Power readings, voltages, device identifiers, WiFi info
-- `switch.py`: Charger lock, pause, dynamic mode, timers, logo LED, RFID, OCPP
-- `number.py`: Current intensity (min/max/contracted power)
-- `select.py`: Installation type, slave device type, language, dynamic power mode
-- `binary_sensor.py`: V2C Cloud connectivity status
-- `button.py`: Reboot, firmware update trigger
+**How /clear works:** Distills session state into memory.md + daily note handoff, preserving retrieval paths. Then automatically resumes work by reloading compressed context and executing the next action. Seamless to the user.
 
-### Data Flow
-
-```
-Config Flow → V2CClient → Cloud Coordinator → Entities (cloud data)
-                               ↓
-                    per-device Local Coordinators → Entities (local/real-time data)
-                               ↓
-                         Services (mutations) → coordinator.async_request_refresh()
-```
-
-### Coordinator Data Model
-
-```python
-coordinator.data = {
-    "pairings": [...],           # list of device pairing dicts
-    "devices": {
-        device_id: {
-            "pairing": {...},
-            "connected": bool | None,
-            "current_state": any,
-            "reported": dict,    # cloud /device/reported state
-            "rfid_cards": list | None,
-            "version": str | None,
-            "additional": {
-                "reported_lower": dict,   # lowercase keys for lookups
-                "static_ip": str | None,
-                ...
-            }
-        }
-    },
-    "rate_limit": {"limit", "remaining", "reset"}
-}
-```
-
-### Error Handling Conventions
-
-- `V2CAuthError` (401) → triggers HA re-auth flow
-- `V2CRateLimitError` (429) → retains previous data, exponential backoff
-- `403` / network timeout on `/pairings/me` → fallback to stored device ID for local-only mode
-- Local failures → retry with backoff, schedule follow-up refresh
-- Optimistic smoothing (~20s) applied to cloud commands to prevent UI state flapping
-
-### Release Process
-
-1. Update version in `custom_components/v2c_cloud/manifest.json`
-2. Push to `main`
-3. CI (tests + security) must pass
-4. `tag-and-release.yaml` workflow auto-creates GitHub release with ZIP artifact
+## Maintenance
+- Keep memory.md compact (<100 lines)
+- Aggressively prune stale items
+- Done list cleared on Fridays
+- Review incident log during /sync and /wrap-up
+- Auditor proposes SOP revisions — user approves before changes apply

@@ -105,10 +105,15 @@ def _install_ha_stubs() -> None:
             def __init__(self, hass, logger, *, name, update_method, update_interval):
                 self.data: Any = None
                 self.last_update_success: bool = True
+                self.update_interval = update_interval
                 self._update_method = update_method
 
             async def async_config_entry_first_refresh(self) -> None:
-                self.data = await self._update_method()
+                from homeassistant.exceptions import ConfigEntryNotReady
+                try:
+                    self.data = await self._update_method()
+                except ha_coord.UpdateFailed as err:
+                    raise ConfigEntryNotReady(str(err)) from err
 
             async def async_refresh(self) -> None:
                 self.data = await self._update_method()

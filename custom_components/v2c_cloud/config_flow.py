@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 from typing import Any
@@ -43,6 +44,11 @@ async def _probe_local_api(
 
     Returns (device_id, None) on success or (None, error_key) on failure.
     """
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return None, "cannot_connect_local"
+
     session = aiohttp_client.async_get_clientsession(hass)
     url = f"http://{ip}/RealTimeData"
     try:

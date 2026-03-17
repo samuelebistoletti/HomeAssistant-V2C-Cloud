@@ -356,28 +356,21 @@ def _async_register_services(hass: HomeAssistant) -> None:
         raise HomeAssistantError(f"Unknown V2C device id {device_id!r}")
 
     async def _execute_and_refresh(
-        entry_data: V2CEntryRuntimeData,
+        entry_data: V2CEntryRuntimeData | None,
         call_coroutine,
         *,
         refresh: bool = True,
-    ) -> None:
+    ):
         try:
-            await call_coroutine
+            result = await call_coroutine
         except V2CAuthError as err:
             raise ConfigEntryAuthFailed("Authentication failed during service call") from err
         except V2CRequestError as err:
             raise HomeAssistantError(str(err)) from err
 
-        if refresh:
+        if refresh and entry_data is not None:
             await entry_data.coordinator.async_request_refresh()
-
-    async def _call_with_error_handling(call_coroutine):
-        try:
-            return await call_coroutine
-        except V2CAuthError as err:
-            raise ConfigEntryAuthFailed("Authentication failed during service call") from err
-        except V2CRequestError as err:
-            raise HomeAssistantError(str(err)) from err
+        return result
 
     async def async_handle_set_wifi(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
@@ -429,8 +422,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
                 vol.Required(ATTR_TIMER_ID): vol.Coerce(int),
-                vol.Required(ATTR_TIME_START): cv.matches_regex(r"^\\d{2}:\\d{2}$"),
-                vol.Required(ATTR_TIME_END): cv.matches_regex(r"^\\d{2}:\\d{2}$"),
+                vol.Required(ATTR_TIME_START): cv.matches_regex(r"^([01]\d|2[0-3]):[0-5]\d$"),
+                vol.Required(ATTR_TIME_END): cv.matches_regex(r"^([01]\d|2[0-3]):[0-5]\d$"),
                 vol.Optional(ATTR_TIMER_ACTIVE, default=True): cv.boolean,
             }
         ),
@@ -666,7 +659,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_OCPP_URL): cv.string,
+                vol.Required(ATTR_OCPP_URL): cv.matches_regex(r"^wss?://"),
             }
         ),
     )
@@ -687,7 +680,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_IP_ADDRESS): cv.string,
+                vol.Required(ATTR_IP_ADDRESS): cv.matches_regex(r"^(\d{1,3}\.){3}\d{1,3}$"),
             }
         ),
     )
@@ -728,8 +721,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
     async def async_handle_scan_wifi(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         entry_data = await _async_get_entry_for_device(device_id)
-        result = await _call_with_error_handling(
-            entry_data.client.async_get_wifi_list(device_id)
+        result = await _execute_and_refresh(
+            None, entry_data.client.async_get_wifi_list(device_id), refresh=False
         )
         hass.bus.async_fire(
             EVENT_WIFI_SCAN,
@@ -812,8 +805,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         timestamp = call.data[ATTR_PROFILE_TIMESTAMP]
         entry_data = await _async_get_entry_for_device(device_id)
-        result = await _call_with_error_handling(
-            entry_data.client.async_get_personal_power_profile(device_id, timestamp)
+        result = await _execute_and_refresh(
+            None,
+            entry_data.client.async_get_personal_power_profile(device_id, timestamp),
+            refresh=False,
         )
         hass.bus.async_fire(
             EVENT_POWER_PROFILES,
@@ -864,8 +859,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
     async def async_handle_list_power_profiles(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         entry_data = await _async_get_entry_for_device(device_id)
-        result = await _call_with_error_handling(
-            entry_data.client.async_list_personal_power_profiles(device_id)
+        result = await _execute_and_refresh(
+            None,
+            entry_data.client.async_list_personal_power_profiles(device_id),
+            refresh=False,
         )
         hass.bus.async_fire(
             EVENT_POWER_PROFILES,
@@ -891,12 +888,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
         date_start = call.data.get(ATTR_DATE_START)
         date_end = call.data.get(ATTR_DATE_END)
         entry_data = await _async_get_entry_for_device(device_id)
-        result = await _call_with_error_handling(
+        result = await _execute_and_refresh(
+            None,
             entry_data.client.async_get_device_statistics(
                 device_id,
                 start=date_start,
                 end=date_end,
-            )
+            ),
+            refresh=False,
         )
         hass.bus.async_fire(
             EVENT_DEVICE_STATISTICS,
@@ -915,8 +914,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Optional(ATTR_DATE_START): cv.string,
-                vol.Optional(ATTR_DATE_END): cv.string,
+                vol.Optional(ATTR_DATE_START): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
+                vol.Optional(ATTR_DATE_END): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
             }
         ),
     )
@@ -928,11 +927,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         first_entry = next(_iter_entries(hass), None)
         if first_entry is None:
             raise HomeAssistantError("V2C Cloud integration is not configured")
-        result = await _call_with_error_handling(
+        result = await _execute_and_refresh(
+            None,
             first_entry.client.async_get_global_statistics(
                 start=date_start,
                 end=date_end,
-            )
+            ),
+            refresh=False,
         )
         hass.bus.async_fire(
             EVENT_GLOBAL_STATISTICS,
@@ -949,8 +950,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         async_handle_get_global_statistics,
         schema=vol.Schema(
             {
-                vol.Optional(ATTR_DATE_START): cv.string,
-                vol.Optional(ATTR_DATE_END): cv.string,
+                vol.Optional(ATTR_DATE_START): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
+                vol.Optional(ATTR_DATE_END): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
             }
         ),
     )

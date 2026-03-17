@@ -43,14 +43,16 @@ class V2CConnectedBinarySensor(V2CEntity, BinarySensorEntity):
         self._attr_icon = "mdi:cloud"
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         connected = self.device_state.get("connected")
         if connected is None:
             connected = self.get_reported_value("connected")
+        if connected is None:
+            return None
         if isinstance(connected, bool):
             return connected
         if isinstance(connected, (int, float)):
             return bool(connected)
         if isinstance(connected, str):
             return connected.lower() in {"1", "true", "yes", "online"}
-        return False
+        return None

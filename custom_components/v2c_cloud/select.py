@@ -21,11 +21,13 @@ from .const import (
 )
 from .entity import V2CEntity
 from .local_api import (
+    V2CLocalApiError,
     async_get_or_create_local_coordinator,
     async_write_keyword,
     get_local_data,
     get_local_value,
 )
+from .v2c_cloud import V2CError
 
 
 def _localized_options(
@@ -103,7 +105,6 @@ async def async_setup_entry(
                 icon="mdi:translate",
             ),
         ]
-        await async_get_or_create_local_coordinator(hass, runtime_data, device_id)
         device_selects.append(
             V2CEnumSelect(
                 hass,
@@ -251,7 +252,7 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
                     await self._async_call_and_refresh(
                         self._setter(key), refresh=self._refresh_after_call
                     )
-                except Exception:
+                except (V2CError, V2CLocalApiError):
                     self._optimistic_value = previous
                     self._last_command_ts = None
                     self.async_write_ha_state()

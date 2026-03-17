@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 from datetime import timedelta
@@ -139,6 +140,11 @@ async def async_write_keyword(
     if not static_ip:
         raise V2CLocalApiError("Static IP for device is unavailable")
 
+    try:
+        ipaddress.ip_address(static_ip)
+    except ValueError as err:
+        raise V2CLocalApiError(f"Invalid IP address for device: {static_ip!r}") from err
+
     keyword_clean = keyword.strip()
     value_str = str(int(value)) if isinstance(value, bool) else str(value)
     url = f"http://{static_ip}/write/{quote(keyword_clean, safe='')}={quote(value_str, safe='')}"
@@ -172,7 +178,7 @@ async def async_get_or_create_local_coordinator(
     if device_id in runtime_data.local_coordinators:
         coordinator = runtime_data.local_coordinators[device_id]
         if not coordinator.last_update_success:
-            await coordinator.async_refresh()
+            await coordinator.async_request_refresh()
         return coordinator
 
     session = async_get_clientsession(hass)

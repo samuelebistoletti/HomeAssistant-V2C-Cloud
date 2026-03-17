@@ -202,7 +202,11 @@ class V2CClient:
         }
 
         _LOGGER.debug(
-            "V2C request %s %s params=%s body=%s", method, url, params, json_body
+            "V2C request %s %s params=%s body=%s",
+            method,
+            url,
+            {k: "***" if k == "password" else v for k, v in params.items()} if params else params,
+            json_body,
         )
 
         attempt = 0
@@ -712,167 +716,186 @@ class V2CClient:
         )
 
 
+async def _fetch_single_device_state(
+    client: V2CClient,
+    pairing: dict[str, Any],
+    previous_devices: dict[str, dict[str, Any]] | None,
+    now: float,
+) -> dict[str, Any]:
+    """Fetch and assemble state for a single device. Raises V2CRateLimitError if rate-limited."""
+    device_id = pairing["deviceId"]
+    state = V2CDeviceState(device_id=device_id, pairing=pairing)
+    previous_state = previous_devices.get(device_id, {}) if previous_devices else {}
+    previous_additional = previous_state.get("additional", {})
+    if isinstance(previous_additional, dict):
+        state.additional.update({k: v for k, v in previous_additional.items() if k != "reported_lower"})
+
+    try:
+        reported = await client.async_get_reported(device_id)
+    except V2CRateLimitError:
+        raise
+    except V2CError as err:
+        _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, err)
+        reported = None
+
+    state.reported_raw = reported
+    reported_dict: dict[str, Any] | None = None
+    if isinstance(reported, dict):
+        reported_dict = reported
+    elif isinstance(reported, str):
+        try:
+            parsed = json.loads(reported)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            reported_dict = parsed
+        else:
+            state.reported_raw = parsed if parsed is not None else reported
+    elif reported is not None and isinstance(reported, Iterable):
+        # Some payloads may be list-like; keep as raw
+        state.reported_raw = reported
+
+    if reported_dict is not None:
+        state.reported = reported_dict
+        lowered = {str(key).lower(): value for key, value in reported_dict.items()}
+        state.additional["reported_lower"] = lowered
+        state.additional["reported_timestamp"] = now
+
+        static_ip = _extract_static_ip(
+            reported_dict.get("wifi_static"),
+            reported_dict.get("wifi_info"),
+            reported_dict.get("huawei_ip"),
+            reported_dict.get("ip"),
+        )
+        if not static_ip and isinstance(previous_additional, dict):
+            static_ip = previous_additional.get("static_ip")
+        if static_ip:
+            state.additional["static_ip"] = static_ip
+    else:
+        state.additional.pop("reported_lower", None)
+        if isinstance(previous_state.get("reported"), dict):
+            state.reported = previous_state.get("reported")
+            lowered_prev = previous_state.get("additional", {}).get("reported_lower")
+            if isinstance(lowered_prev, dict):
+                state.additional["reported_lower"] = lowered_prev
+
+    connected_value: Any | None = None
+    lowered = state.additional.get("reported_lower")
+    if isinstance(lowered, dict):
+        for key in ("connected", "isconnected", "online", "is_online", "statusconnection"):
+            if key in lowered:
+                connected_value = lowered[key]
+                break
+    if connected_value is None:
+        connected_value = previous_state.get("connected")
+    state.connected = _normalize_bool(connected_value)
+
+    if state.reported is not None:
+        state.current_state = state.reported
+    elif previous_state.get("current_state") is not None:
+        state.current_state = previous_state.get("current_state")
+
+    previous_cards = previous_state.get("rfid_cards")
+    next_rfid_refresh = state.additional.get("_rfid_next_refresh", 0.0)
+    refresh_rfid = previous_cards is None or now >= float(next_rfid_refresh or 0)
+    if refresh_rfid:
+        try:
+            rfid_cards = await client.async_get_rfid_cards(device_id)
+        except V2CRateLimitError:
+            raise
+        except V2CError as err:
+            _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
+            rfid_cards = None
+        else:
+            if isinstance(rfid_cards, list):
+                state.rfid_cards = rfid_cards
+                state.additional["_rfid_last_success"] = now
+                state.additional["_rfid_next_refresh"] = now + RFID_REFRESH_INTERVAL
+            elif rfid_cards is not None:
+                state.additional["rfid_cards_raw"] = rfid_cards
+                state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+            else:
+                state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+                state.rfid_cards = None
+        if state.rfid_cards is None and previous_cards is not None:
+            state.rfid_cards = previous_cards
+            state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+    else:
+        state.rfid_cards = previous_cards
+
+    previous_version = previous_state.get("version")
+    version_info_prev = previous_state.get("additional", {}).get("version_info")
+    next_version_refresh = state.additional.get("_version_next_refresh", 0.0)
+    refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
+    if refresh_version:
+        try:
+            version_response = await client.async_get_version(device_id)
+        except V2CRateLimitError:
+            raise
+        except V2CError as err:
+            _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
+            version_response = None
+        version_info: dict[str, Any] | None = None
+        if isinstance(version_response, dict):
+            version_info = version_response
+        elif isinstance(version_response, str):
+            try:
+                parsed_version = json.loads(version_response)
+            except json.JSONDecodeError:
+                parsed_version = None
+            if isinstance(parsed_version, dict):
+                version_info = parsed_version
+            elif version_response:
+                state.version = version_response
+        elif version_response is not None:
+            state.version = str(version_response)
+
+        if version_info:
+            state.version = (
+                version_info.get("versionId")
+                or version_info.get("version")
+                or version_info.get("version_id")
+            )
+            state.additional["version_info"] = version_info
+        elif previous_version is not None:
+            state.version = previous_version
+            if isinstance(version_info_prev, dict):
+                state.additional["version_info"] = version_info_prev
+
+        state.additional["_version_next_refresh"] = now + (
+            VERSION_REFRESH_INTERVAL if state.version is not None else VERSION_RETRY_INTERVAL
+        )
+    else:
+        state.version = previous_version
+        if isinstance(version_info_prev, dict):
+            state.additional["version_info"] = version_info_prev
+        state.additional["_version_next_refresh"] = next_version_refresh
+
+    return state.as_dict()
+
+
 async def async_gather_devices_state(
     client: V2CClient,
     pairings: Iterable[dict[str, Any]],
     previous_devices: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Fetch the current state for each paired device."""
-    results: dict[str, dict[str, Any]] = {}
+    """Fetch the current state for each paired device, in parallel."""
     now = time.time()
+    valid_pairings = [p for p in pairings if p.get("deviceId")]
+    tasks = [
+        _fetch_single_device_state(client, pairing, previous_devices, now)
+        for pairing in valid_pairings
+    ]
+    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for pairing in pairings:
-        device_id = pairing.get("deviceId")
-        if not device_id:
+    results: dict[str, dict[str, Any]] = {}
+    for pairing, outcome in zip(valid_pairings, raw_results, strict=True):
+        device_id = pairing["deviceId"]
+        if isinstance(outcome, V2CRateLimitError):
+            raise outcome
+        if isinstance(outcome, Exception):
+            _LOGGER.warning("Unexpected error fetching state for %s: %s", device_id, outcome)
             continue
-
-        state = V2CDeviceState(device_id=device_id, pairing=pairing)
-        previous_state = previous_devices.get(device_id, {}) if previous_devices else {}
-        previous_additional = previous_state.get("additional", {})
-        if isinstance(previous_additional, dict):
-            state.additional.update({k: v for k, v in previous_additional.items() if k != "reported_lower"})
-
-        try:
-            reported = await client.async_get_reported(device_id)
-        except V2CRateLimitError:
-            raise
-        except V2CError as err:
-            _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, err)
-            reported = None
-
-        state.reported_raw = reported
-        reported_dict: dict[str, Any] | None = None
-        if isinstance(reported, dict):
-            reported_dict = reported
-        elif isinstance(reported, str):
-            try:
-                parsed = json.loads(reported)
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, dict):
-                reported_dict = parsed
-            else:
-                state.reported_raw = parsed if parsed is not None else reported
-        elif reported is not None and isinstance(reported, Iterable):
-            # Some payloads may be list-like; keep as raw
-            state.reported_raw = reported
-
-        if reported_dict is not None:
-            state.reported = reported_dict
-            lowered = {str(key).lower(): value for key, value in reported_dict.items()}
-            state.additional["reported_lower"] = lowered
-            state.additional["reported_timestamp"] = now
-
-            static_ip = _extract_static_ip(
-                reported_dict.get("wifi_static"),
-                reported_dict.get("wifi_info"),
-                reported_dict.get("huawei_ip"),
-                reported_dict.get("ip"),
-            )
-            if not static_ip and isinstance(previous_additional, dict):
-                static_ip = previous_additional.get("static_ip")
-            if static_ip:
-                state.additional["static_ip"] = static_ip
-        else:
-            state.additional.pop("reported_lower", None)
-            if isinstance(previous_state.get("reported"), dict):
-                state.reported = previous_state.get("reported")
-                lowered_prev = previous_state.get("additional", {}).get("reported_lower")
-                if isinstance(lowered_prev, dict):
-                    state.additional["reported_lower"] = lowered_prev
-
-        connected_value: Any | None = None
-        lowered = state.additional.get("reported_lower")
-        if isinstance(lowered, dict):
-            for key in ("connected", "isconnected", "online", "is_online", "statusconnection"):
-                if key in lowered:
-                    connected_value = lowered[key]
-                    break
-        if connected_value is None:
-            connected_value = previous_state.get("connected")
-        state.connected = _normalize_bool(connected_value)
-
-        if state.reported is not None:
-            state.current_state = state.reported
-        elif previous_state.get("current_state") is not None:
-            state.current_state = previous_state.get("current_state")
-
-        previous_cards = previous_state.get("rfid_cards")
-        next_rfid_refresh = state.additional.get("_rfid_next_refresh", 0.0)
-        refresh_rfid = previous_cards is None or now >= float(next_rfid_refresh or 0)
-        if refresh_rfid:
-            try:
-                rfid_cards = await client.async_get_rfid_cards(device_id)
-            except V2CRateLimitError:
-                raise
-            except V2CError as err:
-                _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
-                rfid_cards = None
-            else:
-                if isinstance(rfid_cards, list):
-                    state.rfid_cards = rfid_cards
-                    state.additional["_rfid_last_success"] = now
-                    state.additional["_rfid_next_refresh"] = now + RFID_REFRESH_INTERVAL
-                elif rfid_cards is not None:
-                    state.additional["rfid_cards_raw"] = rfid_cards
-                    state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
-                else:
-                    state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
-                    state.rfid_cards = None
-            if state.rfid_cards is None and previous_cards is not None:
-                state.rfid_cards = previous_cards
-                state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
-        else:
-            state.rfid_cards = previous_cards
-
-        previous_version = previous_state.get("version")
-        version_info_prev = previous_state.get("additional", {}).get("version_info")
-        next_version_refresh = state.additional.get("_version_next_refresh", 0.0)
-        refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
-        if refresh_version:
-            try:
-                version_response = await client.async_get_version(device_id)
-            except V2CRateLimitError:
-                raise
-            except V2CError as err:
-                _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
-                version_response = None
-            version_info: dict[str, Any] | None = None
-            if isinstance(version_response, dict):
-                version_info = version_response
-            elif isinstance(version_response, str):
-                try:
-                    parsed_version = json.loads(version_response)
-                except json.JSONDecodeError:
-                    parsed_version = None
-                if isinstance(parsed_version, dict):
-                    version_info = parsed_version
-                elif version_response:
-                    state.version = version_response
-            elif version_response is not None:
-                state.version = str(version_response)
-
-            if version_info:
-                state.version = (
-                    version_info.get("versionId")
-                    or version_info.get("version")
-                    or version_info.get("version_id")
-                )
-                state.additional["version_info"] = version_info
-            elif previous_version is not None:
-                state.version = previous_version
-                if isinstance(version_info_prev, dict):
-                    state.additional["version_info"] = version_info_prev
-
-            state.additional["_version_next_refresh"] = now + (
-                VERSION_REFRESH_INTERVAL if state.version is not None else VERSION_RETRY_INTERVAL
-            )
-        else:
-            state.version = previous_version
-            if isinstance(version_info_prev, dict):
-                state.additional["version_info"] = version_info_prev
-            state.additional["_version_next_refresh"] = next_version_refresh
-
-        results[device_id] = state.as_dict()
+        results[device_id] = outcome
 
     return results

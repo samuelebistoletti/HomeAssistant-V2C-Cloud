@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .entity import V2CEntity
 from .local_api import V2CLocalApiError
+from .v2c_cloud import V2CError
 
 
 async def async_setup_entry(
@@ -91,5 +92,5 @@ class V2CButton(V2CEntity, ButtonEntity):
                 self._coroutine_factory(),
                 refresh=self._refresh_after_call,
             )
-        except V2CLocalApiError as err:
+        except (V2CError, V2CLocalApiError) as err:
             raise HomeAssistantError(str(err)) from err

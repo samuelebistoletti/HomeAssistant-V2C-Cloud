@@ -49,7 +49,7 @@ async def _probe_local_api(
     except ValueError:
         return None, "cannot_connect_local"
 
-    if not addr.is_private or addr.is_loopback:
+    if not addr.is_private or addr.is_loopback or addr.is_link_local:
         return None, "cannot_connect_local"
 
     session = aiohttp_client.async_get_clientsession(hass)

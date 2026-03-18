@@ -154,9 +154,9 @@ async def async_write_keyword(  # noqa: PLR0913
         addr = ipaddress.ip_address(static_ip)
     except ValueError as err:
         raise V2CLocalApiError(f"Invalid IP address for device: {static_ip!r}") from err
-    if not addr.is_private or addr.is_loopback:
+    if not addr.is_private or addr.is_loopback or addr.is_link_local:
         raise V2CLocalApiError(
-            f"Refusing write to non-private/loopback IP {static_ip} — possible SSRF"
+            f"Refusing write to non-private/loopback/link-local IP {static_ip} — possible SSRF"
         )
 
     keyword_clean = keyword.strip()
@@ -206,9 +206,9 @@ async def async_get_or_create_local_coordinator(
             addr = ipaddress.ip_address(static_ip)
         except ValueError as err:
             raise UpdateFailed(f"Invalid IP address for device: {static_ip!r}") from err
-        if not addr.is_private or addr.is_loopback:
+        if not addr.is_private or addr.is_loopback or addr.is_link_local:
             _LOGGER.warning(
-                "Local API IP %s for device %s is not a private/non-loopback address — skipping fetch",
+                "Local API IP %s for device %s is not a private/non-loopback/non-link-local address — skipping fetch",
                 static_ip,
                 device_id,
             )

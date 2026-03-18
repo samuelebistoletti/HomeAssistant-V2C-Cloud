@@ -208,6 +208,7 @@ class TestSsrfBoundaries:
         "127.255.255.255",
         "8.8.8.8",
         "1.0.0.1",
+        "169.254.1.1",    # link-local — is_private=True on Python 3.11+ but must be rejected
     ])
     async def test_rejected_ips(self, ip):
         hass = MagicMock()

@@ -118,8 +118,7 @@ class TestSsrfGuardAddresses:
         "127.1.2.3",      # loopback range
         "8.8.8.8",        # public
         "1.1.1.1",        # public
-        # 169.254.x.x (link-local) is is_private=True in Python 3.11+ so it passes the SSRF
-        # guard and reaches the HTTP layer — not tested here as rejected
+        "169.254.1.1",    # link-local — is_private=True on Python 3.11+ but must be rejected
     ])
     async def test_non_routable_ips_rejected(self, ip):
         hass = MagicMock()

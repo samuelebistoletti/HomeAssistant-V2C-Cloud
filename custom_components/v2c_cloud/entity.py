@@ -121,7 +121,8 @@ def build_device_info(
 
 
 class _OptimisticHoldMixin:
-    """Mixin that centralises timestamp management for optimistic state buffering.
+    """
+    Mixin that centralises timestamp management for optimistic state buffering.
 
     After the user issues a command, entities should display the expected new
     state for a short window instead of flipping back to the stale cloud value.

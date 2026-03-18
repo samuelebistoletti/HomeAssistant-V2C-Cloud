@@ -64,6 +64,8 @@ def _install_ha_stubs() -> None:
     ha_const.UnitOfElectricCurrent = MagicMock()
     ha_const.UnitOfElectricPotential = MagicMock()
     ha_const.UnitOfTemperature = MagicMock()
+    ha_const.UnitOfTime = MagicMock()
+    ha_const.UnitOfVoltage = MagicMock()
     ha_const.CONF_HOST = "host"
     ha_const.CONF_NAME = "name"
 
@@ -83,7 +85,32 @@ def _install_ha_stubs() -> None:
     if not hasattr(ha_ce, "ConfigEntry"):
         ha_ce.ConfigEntry = MagicMock
     if not hasattr(ha_ce, "ConfigFlow"):
-        ha_ce.ConfigFlow = object
+        class ConfigFlow:
+            def __init_subclass__(cls, *, domain: str = "", **kwargs: Any) -> None:
+                super().__init_subclass__(**kwargs)
+            async def async_set_unique_id(self, unique_id: str) -> None:
+                pass
+            def _abort_if_unique_id_configured(self) -> None:
+                pass
+            def _get_reconfigure_entry(self) -> Any:
+                return MagicMock()
+            def _get_reauth_entry(self) -> Any:
+                return MagicMock()
+            def async_create_entry(self, *, title: str, data: Any) -> dict:
+                return {"title": title, "data": data}
+            def async_show_form(self, *, step_id: str, data_schema: Any = None, errors: Any = None) -> dict:
+                return {"type": "form", "step_id": step_id}
+            def async_update_reload_and_abort(self, entry: Any, *, data_updates: Any = None) -> dict:
+                return {"type": "abort"}
+        ha_ce.ConfigFlow = ConfigFlow
+    if not hasattr(ha_ce, "OptionsFlow"):
+        class OptionsFlow:
+            def async_create_entry(self, *, title: str = "", data: Any = None) -> dict:
+                return {"type": "create_entry", "data": data}
+            def async_show_form(self, *, step_id: str, data_schema: Any = None, errors: Any = None) -> dict:
+                return {"type": "form", "step_id": step_id}
+        ha_ce.OptionsFlow = OptionsFlow
+    ha_ce.callback = lambda f: f
     ha_ce.config_entries = MagicMock()
 
     # homeassistant.data_entry_flow
@@ -125,11 +152,40 @@ def _install_ha_stubs() -> None:
 
     if not hasattr(ha_coord, "CoordinatorEntity"):
         class CoordinatorEntity:
+            def __init__(self, coordinator: Any, *args: Any, **kwargs: Any) -> None:
+                self.coordinator = coordinator
+                self._attr_unique_id: str | None = None
+                self._attr_translation_key: str | None = None
+                self._attr_icon: str | None = None
+                self._attr_has_entity_name: bool = False
+                self._attr_entity_category: Any = None
+                self._attr_options: list = []
+                self._attr_native_unit_of_measurement: Any = None
+                self._attr_native_min_value: float = 0
+                self._attr_native_max_value: float = 100
+                self._attr_native_step: float = 1
+
             def __init_subclass__(cls, **kwargs: Any) -> None:
                 super().__init_subclass__(**kwargs)
 
             def __class_getitem__(cls, item: Any) -> Any:
                 return cls
+
+            def async_write_ha_state(self) -> None:  # noqa: B027
+                pass
+
+            def async_on_remove(self, callback: Any) -> None:  # noqa: B027
+                pass
+
+            async def async_added_to_hass(self) -> None:
+                pass
+
+            async def async_will_remove_from_hass(self) -> None:
+                pass
+
+            @property
+            def last_update_success(self) -> bool:
+                return self.coordinator.last_update_success if self.coordinator else True
 
         ha_coord.CoordinatorEntity = CoordinatorEntity
 
@@ -187,6 +243,36 @@ def _install_ha_stubs() -> None:
         comp_mod.BinarySensorDeviceClass = MagicMock()
         comp_mod.NumberMode = MagicMock()
         comp_mod.RestoreEntity = object
+
+    # SensorEntityDescription — used as base for V2CLocalRealtimeSensorDescription
+    from dataclasses import dataclass as _dataclass, field as _field
+
+    sensor_mod = sys.modules["homeassistant.components.sensor"]
+    if not hasattr(sensor_mod, "SensorEntityDescription"):
+        @_dataclass(frozen=True, kw_only=True)
+        class SensorEntityDescription:  # type: ignore[no-redef]
+            key: str = ""
+            translation_key: str | None = None
+            icon: str | None = None
+            device_class: Any = None
+            native_unit_of_measurement: Any = None
+            state_class: Any = None
+            entity_category: Any = None
+            name: Any = None
+            entity_registry_enabled_default: bool = True
+            entity_registry_visible_default: bool = True
+            force_update: bool = False
+            unit_of_measurement: Any = None
+
+        sensor_mod.SensorEntityDescription = SensorEntityDescription
+
+    # EntityCategory stub
+    ha_entity = _mod("homeassistant.helpers.entity")
+    if not hasattr(ha_entity, "EntityCategory"):
+        class EntityCategory:
+            CONFIG = "config"
+            DIAGNOSTIC = "diagnostic"
+        ha_entity.EntityCategory = EntityCategory
 
 
 _install_compat_stubs()

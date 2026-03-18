@@ -21,8 +21,8 @@ try:  # Home Assistant >= 2023.8
 except ImportError:  # pragma: no cover - older releases
     UnitOfVoltage = None
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,

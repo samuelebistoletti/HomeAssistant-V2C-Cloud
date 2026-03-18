@@ -169,7 +169,19 @@ pip install -r requirements_test.txt
 python -m pytest tests/ -v
 ```
 
-The suite covers the HTTP client, pairings cache, retry/rate-limit logic, and local API helpers without requiring a running Home Assistant instance or a real charger.
+The suite runs entirely without a live Home Assistant instance or a real charger. It covers:
+
+- **HTTP client** – cloud API calls, authentication, retry and rate-limit handling, pairings cache
+- **Device state gathering** – `async_gather_devices_state`, per-device fetch parallelism, fallback to previous data on transient errors
+- **Entity helpers** – `coerce_bool`, device state resolution, `_OptimisticHoldMixin` (hold window, expiry, match-clears-hold)
+- **Binary sensor** – `V2CConnectedBinarySensor.is_on` for all truthy/falsy types plus `reported` fallback
+- **Sensors** – conversion helpers (`_as_float`, `_as_int`, `_as_str`, `_as_flag`), `_localize_state` (all keys, multi-language), `V2CLocalRealtimeSensor.native_value`
+- **Switches** – `V2CBooleanSwitch` state resolution (local / reported / optimistic), availability, icon sync
+- **Numbers** – `V2CNumberEntity` native value (local vs reported), optimistic hold, `_values_match` tolerance, availability
+- **Selects** – `V2CEnumSelect` value resolution, `current_option`, optimistic hold, localised options
+- **Buttons** – `V2CButton.async_press` success, no-refresh mode, `V2CError` / `V2CLocalApiError` → `HomeAssistantError`
+- **Config flow** – `_probe_local_api` SSRF guard, valid/invalid IPs, HTTP error and malformed JSON handling
+- **Local API** – SSRF guard in `async_write_keyword` and `_async_fetch_local_data`, boundary address parametrisation
 
 ### CI / CD
 

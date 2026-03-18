@@ -7,12 +7,11 @@ import ipaddress
 import json
 import logging
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import async_timeout
 from aiohttp import ClientError, ClientSession
-
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -21,6 +20,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .entity import get_device_state_from_coordinator
 
+if TYPE_CHECKING:
+    from . import V2CEntryRuntimeData
+
 _LOGGER = logging.getLogger(__name__)
 
 LOCAL_TIMEOUT = 10
@@ -28,6 +30,7 @@ LOCAL_MAX_RETRIES = 3
 LOCAL_RETRY_BACKOFF = 1.5
 LOCAL_UPDATE_INTERVAL = timedelta(seconds=30)
 LOCAL_WRITE_RETRY_DELAY = 5
+_HTTP_ERROR_THRESHOLD = 400
 
 # Keywords writable via /write/ but absent from /RealTimeData.
 # Must be read individually via GET /read/<KeyWord>.
@@ -51,7 +54,7 @@ async def _async_read_keyword(
     url = f"http://{ip}/read/{quote(keyword, safe='')}"
     try:
         async with async_timeout.timeout(LOCAL_TIMEOUT), session.get(url) as response:
-            if response.status >= 400:  # noqa: PLR2004
+            if response.status >= _HTTP_ERROR_THRESHOLD:
                 return keyword, None
             text = (await response.text()).strip()
             return keyword, float(text)
@@ -59,7 +62,7 @@ async def _async_read_keyword(
         return keyword, None
 
 
-def resolve_static_ip(runtime_data, device_id: str) -> str | None:
+def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:
     """Return the static IP address associated with a charger, if known."""
     device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
     additional = device_state.get("additional")
@@ -91,7 +94,7 @@ def resolve_static_ip(runtime_data, device_id: str) -> str | None:
     return None
 
 
-def get_local_data(runtime_data, device_id: str) -> dict[str, Any] | None:
+def get_local_data(runtime_data: V2CEntryRuntimeData, device_id: str) -> dict[str, Any] | None:
     """Return the latest cached local real-time payload for a charger."""
     coordinator = runtime_data.local_coordinators.get(device_id)
     if coordinator and isinstance(coordinator.data, dict):
@@ -103,20 +106,27 @@ def get_local_value(local_data: dict[str, Any], key: str) -> tuple[bool, Any]:
     """
     Case-insensitive key lookup in a local RealTimeData payload.
 
-    Returns (found, value). Tries exact match first, then falls back to a
-    case-insensitive scan so that keys like ``LogoLED`` / ``Logoled`` are
-    treated as equivalent regardless of what casing the device firmware uses.
+    Returns (found, value). Tries exact match first, then uses the pre-built
+    ``_lower_index`` map (populated by the coordinator fetch) for O(1) lookup.
+    Falls back to a linear scan when the index is absent.
     """
     if key in local_data:
         return True, local_data[key]
     lower = key.lower()
+    index = local_data.get("_lower_index")
+    if isinstance(index, dict):
+        original = index.get(lower)
+        if original is not None:
+            return True, local_data.get(original)
+        return False, None
+    # Fallback O(n) scan for payloads without a pre-built index.
     for k, v in local_data.items():
-        if k.lower() == lower:
+        if not k.startswith("_") and k.lower() == lower:
             return True, v
     return False, None
 
 
-async def async_request_local_refresh(runtime_data, device_id: str) -> None:
+async def async_request_local_refresh(runtime_data: V2CEntryRuntimeData, device_id: str) -> None:
     """Trigger an immediate refresh of the local data coordinator if available."""
     coordinator = runtime_data.local_coordinators.get(device_id)
     if coordinator:
@@ -126,12 +136,12 @@ async def async_request_local_refresh(runtime_data, device_id: str) -> None:
             _LOGGER.debug("Failed to refresh local data for %s: %s", device_id, err)
 
 
-async def async_write_keyword(
+async def async_write_keyword(  # noqa: PLR0913
     hass: HomeAssistant,
-    runtime_data,
+    runtime_data: V2CEntryRuntimeData,
     device_id: str,
     keyword: str,
-    value: str | int | float | bool,
+    value: float | str | bool,
     *,
     refresh_local: bool = True,
 ) -> None:
@@ -141,9 +151,13 @@ async def async_write_keyword(
         raise V2CLocalApiError("Static IP for device is unavailable")
 
     try:
-        ipaddress.ip_address(static_ip)
+        addr = ipaddress.ip_address(static_ip)
     except ValueError as err:
         raise V2CLocalApiError(f"Invalid IP address for device: {static_ip!r}") from err
+    if not addr.is_private or addr.is_loopback:
+        raise V2CLocalApiError(
+            f"Refusing write to non-private/loopback IP {static_ip} — possible SSRF"
+        )
 
     keyword_clean = keyword.strip()
     value_str = str(int(value)) if isinstance(value, bool) else str(value)
@@ -151,14 +165,13 @@ async def async_write_keyword(
 
     session = async_get_clientsession(hass)
     try:
-        async with async_timeout.timeout(LOCAL_TIMEOUT):
-            async with session.get(url) as response:
-                body = await response.text()
-                if response.status >= 400:
-                    raise V2CLocalApiError(
-                        f"Local API returned HTTP {response.status} for {keyword_clean}: {body}"
-                    )
-    except asyncio.TimeoutError as err:
+        async with async_timeout.timeout(LOCAL_TIMEOUT), session.get(url) as response:
+            body = await response.text()
+            if response.status >= _HTTP_ERROR_THRESHOLD:
+                raise V2CLocalApiError(
+                    f"Local API returned HTTP {response.status} for {keyword_clean}: {body}"
+                )
+    except TimeoutError as err:
         _schedule_followup_refresh(hass, runtime_data, device_id)
         raise V2CLocalApiError(f"Timeout while calling local API for {keyword_clean}") from err
     except ClientError as err:
@@ -171,7 +184,7 @@ async def async_write_keyword(
 
 async def async_get_or_create_local_coordinator(
     hass: HomeAssistant,
-    runtime_data,
+    runtime_data: V2CEntryRuntimeData,
     device_id: str,
 ) -> DataUpdateCoordinator:
     """Return a coordinator fetching local real-time data, creating it if needed."""
@@ -189,17 +202,27 @@ async def async_get_or_create_local_coordinator(
         static_ip = resolve_static_ip(runtime_data, device_id)
         if not static_ip:
             raise UpdateFailed("Static IP for device is unavailable")
+        try:
+            addr = ipaddress.ip_address(static_ip)
+        except ValueError as err:
+            raise UpdateFailed(f"Invalid IP address for device: {static_ip!r}") from err
+        if not addr.is_private or addr.is_loopback:
+            _LOGGER.warning(
+                "Local API IP %s for device %s is not a private/non-loopback address — skipping fetch",
+                static_ip,
+                device_id,
+            )
+            raise UpdateFailed(f"Refusing to contact non-private/loopback IP {static_ip}")
 
         url = f"http://{static_ip}/RealTimeData"
         attempt = 1
         last_error: Exception | None = None
         while True:
             try:
-                async with async_timeout.timeout(LOCAL_TIMEOUT):
-                    async with session.get(url) as response:
-                        text = await response.text()
+                async with async_timeout.timeout(LOCAL_TIMEOUT), session.get(url) as response:
+                    text = await response.text()
                 break
-            except asyncio.TimeoutError as err:
+            except TimeoutError as err:
                 last_error = err
                 error_message = "Timeout while fetching local real-time data"
             except ClientError as err:
@@ -238,6 +261,11 @@ async def async_get_or_create_local_coordinator(
 
         payload["_static_ip"] = static_ip
 
+        # Pre-build a lowercase-key → original-key index for O(1) case-insensitive lookups.
+        payload["_lower_index"] = {
+            k.lower(): k for k in payload if not k.startswith("_")
+        }
+
         # Fetch writable keys absent from /RealTimeData (e.g. LogoLED)
         extra = await asyncio.gather(
             *(_async_read_keyword(session, static_ip, kw) for kw in _READ_ONLY_KEYWORDS),
@@ -248,18 +276,6 @@ async def async_get_or_create_local_coordinator(
                 kw, val = result
                 if val is not None:
                     payload[kw] = val
-
-        device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
-        if isinstance(device_state, dict):
-            additional = device_state.setdefault("additional", {})
-            for key in (
-                "DynamicPowerMode",
-                "ContractedPower",
-                "Paused",
-                "Locked",
-            ):
-                if key in payload:
-                    additional[key.lower()] = payload[key]
 
         if failure_count:
             _LOGGER.debug("Local API for %s recovered after %s failure(s)", device_id, failure_count)
@@ -285,13 +301,15 @@ async def async_get_or_create_local_coordinator(
     return coordinator
 
 
-def _schedule_followup_refresh(hass: HomeAssistant, runtime_data, device_id: str) -> None:
+def _schedule_followup_refresh(
+    hass: HomeAssistant, runtime_data: V2CEntryRuntimeData, device_id: str
+) -> None:
     """Schedule a follow-up refresh shortly after a failed write."""
     coordinator = runtime_data.local_coordinators.get(device_id)
     if not coordinator:
         return
 
-    def _refresh_callback(_now):
+    def _refresh_callback(_now: Any) -> None:
         hass.async_create_task(coordinator.async_request_refresh())
 
     async_call_later(hass, LOCAL_WRITE_RETRY_DELAY, _refresh_callback)

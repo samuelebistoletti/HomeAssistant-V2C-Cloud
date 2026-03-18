@@ -36,7 +36,8 @@ async def async_setup_entry(
 class V2CConnectedBinarySensor(V2CEntity, BinarySensorEntity):
     """Binary sensor indicating if the charger is online."""
 
-    def __init__(self, coordinator, client, device_id) -> None:
+    def __init__(self, coordinator: Any, client: Any, device_id: str) -> None:
+        """Initialise the binary sensor for the given device."""
         super().__init__(coordinator, client, device_id)
         self._attr_translation_key = "connected"
         self._attr_unique_id = f"v2c_{device_id}_connected_status"
@@ -44,6 +45,7 @@ class V2CConnectedBinarySensor(V2CEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
+        """Return True when the charger is online."""
         connected = self.device_state.get("connected")
         if connected is None:
             connected = self.get_reported_value("connected")

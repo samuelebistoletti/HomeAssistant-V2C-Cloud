@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     DOMAIN,
@@ -19,7 +20,7 @@ from .const import (
     LANGUAGES,
     SLAVE_TYPES,
 )
-from .entity import V2CEntity
+from .entity import V2CEntity, _OptimisticHoldMixin
 from .local_api import (
     V2CLocalApiError,
     async_get_or_create_local_coordinator,
@@ -28,6 +29,10 @@ from .local_api import (
     get_local_value,
 )
 from .v2c_cloud import V2CError
+
+if TYPE_CHECKING:
+    from . import V2CEntryRuntimeData
+    from .v2c_cloud import V2CClient
 
 
 def _localized_options(
@@ -133,18 +138,17 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class V2CEnumSelect(V2CEntity, SelectEntity):
+class V2CEnumSelect(_OptimisticHoldMixin, V2CEntity, SelectEntity):
     """Generic select entity backed by an integer option map."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _OPTIMISTIC_HOLD_SECONDS = 20.0
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         hass: HomeAssistant,
-        coordinator,
-        client,
-        runtime_data,
+        coordinator: DataUpdateCoordinator,
+        client: V2CClient,
+        runtime_data: V2CEntryRuntimeData,
         device_id: str,
         *,
         name_key: str,
@@ -156,6 +160,7 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         refresh_after_call: bool = True,
         icon: str | None = None,
     ) -> None:
+        """Initialise the select entity with coordinator, client and option map."""
         super().__init__(coordinator, client, device_id)
         self._runtime_data = runtime_data
         localized_map = _localized_options(options_map, hass)
@@ -190,27 +195,24 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
+        """Return the currently selected option label."""
         value = self._get_state_value()
         resolved = self._resolve_value(value)
-        now = time.monotonic()
         if resolved is not None:
-            if self._should_hold_value(resolved, now):
+            if self._should_hold_value(resolved):
                 return self._options_map.get(self._optimistic_value)
             self._optimistic_value = resolved
-            self._last_command_ts = None
+            self._clear_command()
             return self._options_map.get(resolved)
 
         if self._optimistic_value is not None:
-            if (
-                self._last_command_ts is not None
-                and now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
-            ):
-                self._last_command_ts = None
+            self._expire_hold_if_needed()
             return self._options_map.get(self._optimistic_value)
 
         return None
 
     async def async_added_to_hass(self) -> None:
+        """Subscribe to local coordinator updates when a local key is configured."""
         await super().async_added_to_hass()
         if not self._local_key:
             return
@@ -242,21 +244,22 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
         return None
 
     async def async_select_option(self, option: str) -> None:
+        """Select the given option and push the change to the device."""
         for key, label in self._options_map.items():
             if label == option:
                 previous = self._optimistic_value
                 self._optimistic_value = key
-                self._last_command_ts = time.monotonic()
+                self._record_command()
                 self.async_write_ha_state()
                 try:
                     await self._async_call_and_refresh(
                         self._setter(key), refresh=self._refresh_after_call
                     )
-                except (V2CError, V2CLocalApiError):
+                except (V2CError, V2CLocalApiError) as err:
                     self._optimistic_value = previous
-                    self._last_command_ts = None
+                    self._clear_command()
                     self.async_write_ha_state()
-                    raise
+                    raise HomeAssistantError(str(err)) from err
                 return
         raise ValueError(f"Unsupported option {option}")
 
@@ -275,10 +278,9 @@ class V2CEnumSelect(V2CEntity, SelectEntity):
             value = self.device_state.get(self._reported_keys[0])
         return value
 
-    def _should_hold_value(self, resolved: int, now: float) -> bool:
+    def _should_hold_value(self, resolved: int) -> bool:
         return (
             self._optimistic_value is not None
-            and self._last_command_ts is not None
-            and now - self._last_command_ts < self._OPTIMISTIC_HOLD_SECONDS
+            and self._is_within_hold()
             and resolved != self._optimistic_value
         )

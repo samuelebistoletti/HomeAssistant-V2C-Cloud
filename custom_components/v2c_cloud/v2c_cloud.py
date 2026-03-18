@@ -6,9 +6,11 @@ import asyncio
 import ipaddress
 import json
 import logging
+import random
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 import async_timeout
 from aiohttp import ClientError, ClientSession
@@ -38,6 +40,7 @@ class V2CRequestError(V2CError):
     """Raised when the V2C API responds with an unexpected error."""
 
     def __init__(self, message: str, *, status: int | None = None) -> None:
+        """Initialise with an error message and optional HTTP status code."""
         super().__init__(message)
         self.status = status
 
@@ -54,9 +57,9 @@ def _normalize_bool(value: Any) -> bool | None:
         return bool(value)
     if isinstance(value, str):
         lowered = value.strip().lower()
-        if lowered in {"true", "1", "yes", "on", "online"}:
+        if lowered in {"true", "1", "yes", "on", "online", "enabled"}:
             return True
-        if lowered in {"false", "0", "no", "off", "offline"}:
+        if lowered in {"false", "0", "no", "off", "offline", "disabled"}:
             return False
     return None
 
@@ -68,7 +71,7 @@ def _coerce_scalar(text: str) -> Any:
         return None
 
     # Some endpoints reply with json encoded as text/plain.
-    if stripped.startswith("{") or stripped.startswith("["):
+    if stripped.startswith(("{", "[")):
         try:
             return json.loads(stripped)
         except json.JSONDecodeError:
@@ -89,7 +92,7 @@ def _coerce_scalar(text: str) -> Any:
 def _extract_static_ip(*values: Any) -> str | None:
     """Extract an IPv4 address from nested payloads."""
 
-    def _parse(value: Any) -> str | None:
+    def _parse(value: Any) -> str | None:  # noqa: PLR0911
         if value is None:
             return None
         if isinstance(value, dict):
@@ -161,6 +164,7 @@ class V2CClient:
         base_url: str | None = None,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> None:
+        """Initialise the client with a session, API key and optional base URL."""
         self._session = session
         self._api_key = api_key
         self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
@@ -202,9 +206,10 @@ class V2CClient:
         }
 
         _LOGGER.debug(
-            "V2C request %s %s params=%s body=%s",
+            "V2C request %s %s headers=%s params=%s body=%s",
             method,
             url,
+            {k: "***" if k.lower() in ("apikey", "authorization") else v for k, v in headers.items()},
             {k: "***" if k == "password" else v for k, v in params.items()} if params else params,
             json_body,
         )
@@ -213,7 +218,7 @@ class V2CClient:
         while True:
             attempt += 1
             try:
-                async with async_timeout.timeout(self._timeout):
+                async with async_timeout.timeout(self._timeout):  # noqa: SIM117
                     async with self._session.request(
                         method,
                         url,
@@ -224,11 +229,11 @@ class V2CClient:
                         status = response.status
                         content_type = response.headers.get("Content-Type", "")
 
-                        if status == 401:
+                        if status == 401:  # noqa: PLR2004
                             text = await response.text()
                             raise V2CAuthError(f"V2C authentication failed: {text}")
 
-                        if status == 429:
+                        if status == 429:  # noqa: PLR2004
                             text = await response.text()
                             retry_after = response.headers.get("Retry-After")
                             if attempt < MAX_RETRIES:
@@ -237,7 +242,7 @@ class V2CClient:
                                 except (TypeError, ValueError):
                                     delay = None
                                 if delay is None:
-                                    delay = RETRY_BACKOFF * attempt
+                                    delay = RETRY_BACKOFF * attempt + random.uniform(0, 1)  # noqa: S311
                                 _LOGGER.warning(
                                     "Rate limited by V2C Cloud (attempt %s/%s), retrying in %.1f s",
                                     attempt,
@@ -251,7 +256,7 @@ class V2CClient:
                                 status=status,
                             )
 
-                        if status >= 400:
+                        if status >= 400:  # noqa: PLR2004
                             text = await response.text()
                             raise V2CRequestError(
                                 f"V2C API error {status}: {text or 'unknown error'}",
@@ -279,7 +284,7 @@ class V2CClient:
                             if any(value is not None for value in rate_limit.values()):
                                 self._last_rate_limit = rate_limit
 
-                        if status == 204:
+                        if status == 204:  # noqa: PLR2004
                             return None
 
                         if "application/json" in content_type:
@@ -287,7 +292,7 @@ class V2CClient:
 
                         text = await response.text()
                         return _coerce_scalar(text)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if attempt < MAX_RETRIES:
                     _LOGGER.warning(
                         "Timeout contacting V2C Cloud (attempt %s/%s), retrying",
@@ -320,11 +325,11 @@ class V2CClient:
 
         try:
             data = await self._request("GET", "/pairings/me")
-        except V2CRateLimitError as err:
+        except V2CRateLimitError:
             if self._pairings_cache is not None:
                 _LOGGER.warning("V2C rate limit reached when fetching pairings; using cached data")
                 return self._pairings_cache
-            raise err
+            raise
         except V2CRequestError as err:
             if self._pairings_cache is not None:
                 _LOGGER.warning(
@@ -332,7 +337,7 @@ class V2CClient:
                     err,
                 )
                 return self._pairings_cache
-            raise err
+            raise
 
         if isinstance(data, list):
             self._pairings_cache = data
@@ -694,7 +699,7 @@ class V2CClient:
             params={"deviceId": device_id},
         )
 
-    async def _device_command(
+    async def _device_command(  # noqa: PLR0913
         self,
         path: str,
         device_id: str,
@@ -716,7 +721,7 @@ class V2CClient:
         )
 
 
-async def _fetch_single_device_state(
+async def _fetch_single_device_state(  # noqa: C901
     client: V2CClient,
     pairing: dict[str, Any],
     previous_devices: dict[str, dict[str, Any]] | None,
@@ -730,12 +735,38 @@ async def _fetch_single_device_state(
     if isinstance(previous_additional, dict):
         state.additional.update({k: v for k, v in previous_additional.items() if k != "reported_lower"})
 
-    try:
-        reported = await client.async_get_reported(device_id)
-    except V2CRateLimitError:
-        raise
-    except V2CError as err:
-        _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, err)
+    # Pre-compute refresh conditions from previous state — no awaits required.
+    previous_cards = previous_state.get("rfid_cards")
+    next_rfid_refresh = state.additional.get("_rfid_next_refresh", 0.0)
+    refresh_rfid = previous_cards is None or now >= float(next_rfid_refresh or 0)
+
+    previous_version = previous_state.get("version")
+    version_info_prev = previous_state.get("additional", {}).get("version_info")
+    next_version_refresh = state.additional.get("_version_next_refresh", 0.0)
+    refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
+
+    # Fire all needed API calls in parallel.
+    coro_keys: list[str] = ["reported"]
+    coros: list[Any] = [client.async_get_reported(device_id)]
+    if refresh_rfid:
+        coro_keys.append("rfid")
+        coros.append(client.async_get_rfid_cards(device_id))
+    if refresh_version:
+        coro_keys.append("version")
+        coros.append(client.async_get_version(device_id))
+
+    gather_results = await asyncio.gather(*coros, return_exceptions=True)
+    result_map: dict[str, Any] = dict(zip(coro_keys, gather_results, strict=True))
+
+    # Rate-limit errors must propagate immediately to abort the whole refresh cycle.
+    for outcome in gather_results:
+        if isinstance(outcome, V2CRateLimitError):
+            raise outcome
+
+    # --- Process reported state ---
+    reported: Any = result_map["reported"]
+    if isinstance(reported, Exception):
+        _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, reported)
         reported = None
 
     state.reported_raw = reported
@@ -795,46 +826,35 @@ async def _fetch_single_device_state(
     elif previous_state.get("current_state") is not None:
         state.current_state = previous_state.get("current_state")
 
-    previous_cards = previous_state.get("rfid_cards")
-    next_rfid_refresh = state.additional.get("_rfid_next_refresh", 0.0)
-    refresh_rfid = previous_cards is None or now >= float(next_rfid_refresh or 0)
+    # --- Process RFID cards ---
     if refresh_rfid:
-        try:
-            rfid_cards = await client.async_get_rfid_cards(device_id)
-        except V2CRateLimitError:
-            raise
-        except V2CError as err:
-            _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, err)
-            rfid_cards = None
+        rfid_outcome: Any = result_map.get("rfid")
+        if isinstance(rfid_outcome, Exception):
+            _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, rfid_outcome)
+        elif isinstance(rfid_outcome, list):
+            state.rfid_cards = rfid_outcome
+            state.additional["_rfid_last_success"] = now
+            state.additional["_rfid_next_refresh"] = now + RFID_REFRESH_INTERVAL
+        elif rfid_outcome is not None:
+            state.additional["rfid_cards_raw"] = rfid_outcome
+            state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
         else:
-            if isinstance(rfid_cards, list):
-                state.rfid_cards = rfid_cards
-                state.additional["_rfid_last_success"] = now
-                state.additional["_rfid_next_refresh"] = now + RFID_REFRESH_INTERVAL
-            elif rfid_cards is not None:
-                state.additional["rfid_cards_raw"] = rfid_cards
-                state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
-            else:
-                state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
-                state.rfid_cards = None
+            state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
+            state.rfid_cards = None
         if state.rfid_cards is None and previous_cards is not None:
             state.rfid_cards = previous_cards
             state.additional["_rfid_next_refresh"] = now + RFID_RETRY_INTERVAL
     else:
         state.rfid_cards = previous_cards
 
-    previous_version = previous_state.get("version")
-    version_info_prev = previous_state.get("additional", {}).get("version_info")
-    next_version_refresh = state.additional.get("_version_next_refresh", 0.0)
-    refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
+    # --- Process firmware version ---
     if refresh_version:
-        try:
-            version_response = await client.async_get_version(device_id)
-        except V2CRateLimitError:
-            raise
-        except V2CError as err:
-            _LOGGER.debug("Failed to fetch version for %s: %s", device_id, err)
+        version_outcome: Any = result_map.get("version")
+        if isinstance(version_outcome, Exception):
+            _LOGGER.debug("Failed to fetch version for %s: %s", device_id, version_outcome)
             version_response = None
+        else:
+            version_response = version_outcome
         version_info: dict[str, Any] | None = None
         if isinstance(version_response, dict):
             version_info = version_response
@@ -896,6 +916,6 @@ async def async_gather_devices_state(
         if isinstance(outcome, Exception):
             _LOGGER.warning("Unexpected error fetching state for %s: %s", device_id, outcome)
             continue
-        results[device_id] = outcome
+        results[device_id] = outcome  # type: ignore[assignment]
 
     return results

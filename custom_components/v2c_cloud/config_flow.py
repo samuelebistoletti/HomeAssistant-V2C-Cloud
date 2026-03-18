@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import ipaddress
 import json
@@ -40,29 +39,32 @@ async def _probe_local_api(
     hass: HomeAssistant,
     ip: str,
 ) -> tuple[str | None, str | None]:
-    """Probe the charger's local RealTimeData endpoint.
+    """
+    Probe the charger's local RealTimeData endpoint.
 
     Returns (device_id, None) on success or (None, error_key) on failure.
     """
     try:
-        ipaddress.ip_address(ip)
+        addr = ipaddress.ip_address(ip)
     except ValueError:
+        return None, "cannot_connect_local"
+
+    if not addr.is_private or addr.is_loopback:
         return None, "cannot_connect_local"
 
     session = aiohttp_client.async_get_clientsession(hass)
     url = f"http://{ip}/RealTimeData"
     try:
-        async with async_timeout.timeout(_LOCAL_PROBE_TIMEOUT):
-            async with session.get(url) as response:
-                if response.status >= 400:
-                    return None, "cannot_connect_local"
-                text = (await response.text()).strip().rstrip("%").strip()
-                payload = json.loads(text)
-                device_id = payload.get("ID") or payload.get("id")
-                if not device_id:
-                    return None, "no_device_id"
-                return str(device_id), None
-    except (asyncio.TimeoutError, ClientError, json.JSONDecodeError):
+        async with async_timeout.timeout(_LOCAL_PROBE_TIMEOUT), session.get(url) as response:
+            if response.status >= 400:  # noqa: PLR2004
+                return None, "cannot_connect_local"
+            text = (await response.text()).strip().rstrip("%").strip()
+            payload = json.loads(text)
+            device_id = payload.get("ID") or payload.get("id")
+            if not device_id:
+                return None, "no_device_id"
+            return str(device_id), None
+    except (TimeoutError, ClientError, json.JSONDecodeError):
         return None, "cannot_connect_local"
 
 
@@ -99,7 +101,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Cloud unreachable — save the key and ask for a fallback IP
                 self._api_key = api_key
                 return await self.async_step_fallback_ip()
-            except Exception:  # noqa: BLE001 - surface as unknown
+            except Exception:
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
             else:
@@ -191,7 +193,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     reconfigure_entry,
                     data_updates={CONF_API_KEY: api_key},
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
             else:
@@ -215,7 +217,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
+    async def async_step_reauth(self, _entry_data: dict[str, Any]) -> FlowResult:
         """Handle reauthentication when the API key expires."""
         return await self.async_step_reauth_confirm()
 
@@ -239,7 +241,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.warning(
                     "V2C Cloud unavailable during reauth; saving new API key without cloud validation"
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
 

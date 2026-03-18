@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -21,14 +22,18 @@ except ImportError:  # pragma: no cover - older releases
     UnitOfVoltage = None
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
 
 from .const import CHARGE_STATE_LABELS, DOMAIN
-from .entity import build_device_info
-from .local_api import async_get_or_create_local_coordinator, resolve_static_ip
+from .entity import build_device_info, coerce_bool
+from .local_api import async_get_or_create_local_coordinator
+
+if TYPE_CHECKING:
+    from . import V2CEntryRuntimeData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +50,7 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _as_int(value: Any) -> int | None:
+def _as_int(value: Any) -> int | None:  # noqa: PLR0911
     """Convert arbitrary value to int."""
     if value is None:
         return None
@@ -64,23 +69,6 @@ def _as_int(value: Any) -> int | None:
         return None
 
 
-def _as_bool(value: Any) -> bool | None:
-    """Convert arbitrary payload to boolean."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {"1", "true", "on", "yes", "enabled"}:
-            return True
-        if lowered in {"0", "false", "off", "no", "disabled"}:
-            return False
-    return None
-
-
 def _as_str(value: Any) -> str | None:
     """Return a trimmed string or None."""
     if value is None:
@@ -93,7 +81,7 @@ def _as_str(value: Any) -> str | None:
 
 def _as_flag(value: Any) -> int | None:
     """Return 1/0 integers for boolean-like payloads."""
-    bool_value = _as_bool(value)
+    bool_value = coerce_bool(value)
     if bool_value is not None:
         return 1 if bool_value else 0
     int_value = _as_int(value)
@@ -353,15 +341,10 @@ async def async_setup_entry(
         coordinator = await async_get_or_create_local_coordinator(
             hass, runtime_data, device_id
         )
-        for description in REALTIME_SENSOR_DESCRIPTIONS:
-            entities.append(
-                V2CLocalRealtimeSensor(
-                    runtime_data,
-                    coordinator,
-                    device_id,
-                    description,
-                )
-            )
+        entities.extend(
+            V2CLocalRealtimeSensor(runtime_data, coordinator, device_id, description)
+            for description in REALTIME_SENSOR_DESCRIPTIONS
+        )
 
     async_add_entities(entities)
 
@@ -373,30 +356,21 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
 
     def __init__(
         self,
-        runtime_data,
+        runtime_data: V2CEntryRuntimeData,
         coordinator: DataUpdateCoordinator,
         device_id: str,
         description: V2CLocalRealtimeSensorDescription,
     ) -> None:
+        """Initialise the sensor for the given device and description."""
         super().__init__(coordinator)
         self._runtime_data = runtime_data
         self._device_id = device_id
         self.entity_description = description
         self._attr_translation_key = description.translation_key
         self._attr_unique_id = f"v2c_{device_id}_{description.unique_id_suffix}"
-        if description.icon:
-            self._attr_icon = description.icon
-        if description.device_class:
-            self._attr_device_class = description.device_class
-        if description.native_unit_of_measurement:
-            self._attr_native_unit_of_measurement = (
-                description.native_unit_of_measurement
-            )
-        if description.state_class:
-            self._attr_state_class = description.state_class
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         """Return registry information for the underlying charger."""
         return build_device_info(self._runtime_data.coordinator, self._device_id)
 

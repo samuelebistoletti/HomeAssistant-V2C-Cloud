@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -13,21 +12,26 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     DOMAIN,
     MAX_POWER_MAX_KW,
     MAX_POWER_MIN_KW,
 )
-from .entity import V2CEntity
+from .entity import V2CEntity, _OptimisticHoldMixin
 from .local_api import (
+    V2CLocalApiError,
     async_get_or_create_local_coordinator,
     async_write_keyword,
     get_local_data,
     get_local_value,
-    V2CLocalApiError,
 )
 from .v2c_cloud import V2CError
+
+if TYPE_CHECKING:
+    from . import V2CEntryRuntimeData
+    from .v2c_cloud import V2CClient
 
 CURRENT_MIN = 6.0
 CURRENT_MAX = 32.0
@@ -73,7 +77,7 @@ async def async_setup_entry(
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
-                    value_to_api=lambda value: int(round(value)),
+                    value_to_api=lambda value: round(value),
                     refresh_after_call=False,
                     icon="mdi:sine-wave",
                 ),
@@ -97,7 +101,7 @@ async def async_setup_entry(
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
-                    value_to_api=lambda value: int(round(value)),
+                    value_to_api=lambda value: round(value),
                     refresh_after_call=False,
                     icon="mdi:sine-wave",
                 ),
@@ -121,7 +125,7 @@ async def async_setup_entry(
                     minimum=POWER_MIN,
                     maximum=POWER_MAX,
                     step=POWER_STEP,
-                    value_to_api=lambda value: int(round(value * 1000)),
+                    value_to_api=lambda value: round(value * 1000),
                     source_to_native=lambda raw: raw / 1000 if raw else raw,
                     refresh_after_call=False,
                     icon="mdi:transmission-tower",
@@ -146,7 +150,7 @@ async def async_setup_entry(
                     minimum=CURRENT_MIN,
                     maximum=CURRENT_MAX,
                     step=CURRENT_STEP,
-                    value_to_api=lambda value: int(round(value)),
+                    value_to_api=lambda value: round(value),
                     refresh_after_call=False,
                     icon="mdi:sine-wave",
                 ),
@@ -156,17 +160,16 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class V2CNumberEntity(V2CEntity, NumberEntity):
+class V2CNumberEntity(_OptimisticHoldMixin, V2CEntity, NumberEntity):
     """Generic number entity for V2C Chargers."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _OPTIMISTIC_HOLD_SECONDS = 20.0
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        coordinator,
-        client,
-        runtime_data,
+        coordinator: DataUpdateCoordinator,
+        client: V2CClient,
+        runtime_data: V2CEntryRuntimeData,
         device_id: str,
         *,
         name_key: str,
@@ -185,6 +188,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         refresh_after_call: bool = True,
         icon: str | None = None,
     ) -> None:
+        """Initialise the number entity with coordinator, client and configuration."""
         super().__init__(coordinator, client, device_id)
         self._reported_keys = reported_keys
         self._setter = setter
@@ -216,6 +220,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
+        """Return the current value of this number entity."""
         value = None
         if self._local_key:
             local_data = get_local_data(self._runtime_data, self._device_id)
@@ -238,16 +243,16 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
             return self._optimistic_value
 
         native_numeric = self._source_to_native(float(numeric))
-        now = time.monotonic()
-        if self._should_hold_value(native_numeric, now):
+        if self._should_hold_value(native_numeric):
             return self._optimistic_value
 
         self._optimistic_value = native_numeric
-        self._last_command_ts = None
+        self._clear_command()
         return native_numeric
 
     @property
     def native_max_value(self) -> float | None:
+        """Return the maximum value, optionally derived from device state."""
         if self._dynamic_max_keys:
             dynamic = self.get_reported_value(*self._dynamic_max_keys)
             if dynamic is None:
@@ -264,6 +269,7 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         return super().native_max_value
 
     async def async_added_to_hass(self) -> None:
+        """Subscribe to local coordinator updates when a local key is configured."""
         await super().async_added_to_hass()
         if not self._local_key:
             return
@@ -277,9 +283,10 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
         self.async_on_remove(remove_listener)
 
     async def async_set_native_value(self, value: float) -> None:
+        """Update the number entity with the new value."""
         previous_value = self._optimistic_value
         self._optimistic_value = value
-        self._last_command_ts = time.monotonic()
+        self._record_command()
         self.async_write_ha_state()
         api_value = self._value_to_api(value)
         try:
@@ -289,21 +296,13 @@ class V2CNumberEntity(V2CEntity, NumberEntity):
             )
         except (V2CError, V2CLocalApiError) as err:
             self._optimistic_value = previous_value
-            self._last_command_ts = None
+            self._clear_command()
             self.async_write_ha_state()
             raise HomeAssistantError(str(err)) from err
 
-    def _should_hold_value(self, updated_value: float, now: float) -> bool:
-        if (
-            self._optimistic_value is None
-            or self._last_command_ts is None
-            or now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
-        ):
-            if (
-                self._last_command_ts is not None
-                and now - self._last_command_ts >= self._OPTIMISTIC_HOLD_SECONDS
-            ):
-                self._last_command_ts = None
+    def _should_hold_value(self, updated_value: float) -> bool:
+        if self._optimistic_value is None or not self._is_within_hold():
+            self._expire_hold_if_needed()
             return False
         return not self._values_match(updated_value, self._optimistic_value)
 

@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from .entity import V2CEntity
 from .local_api import V2CLocalApiError
 from .v2c_cloud import V2CError
+
+if TYPE_CHECKING:
+    from .v2c_cloud import V2CClient
 
 
 async def async_setup_entry(
@@ -64,19 +71,20 @@ async def async_setup_entry(
 class V2CButton(V2CEntity, ButtonEntity):
     """Generic button for invoking an API command."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        coordinator,
-        client,
+        coordinator: DataUpdateCoordinator,
+        client: V2CClient,
         device_id: str,
         *,
         name_key: str,
         unique_suffix: str,
-        coroutine_factory,
+        coroutine_factory: Callable[[], Any],
         icon: str,
         entity_category: EntityCategory | None = None,
         refresh_after_call: bool = True,
     ) -> None:
+        """Initialise the button with coordinator, client and action factory."""
         super().__init__(coordinator, client, device_id)
         self._coroutine_factory = coroutine_factory
         self._refresh_after_call = refresh_after_call
@@ -87,6 +95,7 @@ class V2CButton(V2CEntity, ButtonEntity):
             self._attr_entity_category = entity_category
 
     async def async_press(self) -> None:
+        """Execute the button action."""
         try:
             await self._async_call_and_refresh(
                 self._coroutine_factory(),

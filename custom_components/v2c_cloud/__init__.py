@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Iterable
-from datetime import timedelta
 from dataclasses import dataclass, field
+from datetime import timedelta
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -44,21 +45,20 @@ from .const import (
     ATTR_TIME_START,
     ATTR_TIMER_ACTIVE,
     ATTR_TIMER_ID,
-    ATTR_VOLTAGE,
     ATTR_UPDATED_AT,
+    ATTR_VOLTAGE,
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
     CONF_API_KEY,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
-    MIN_UPDATE_INTERVAL,
-    TARGET_DAILY_BUDGET,
     EVENT_DEVICE_STATISTICS,
     EVENT_GLOBAL_STATISTICS,
     EVENT_POWER_PROFILES,
     EVENT_WIFI_SCAN,
     INSTALLATION_VOLTAGE_MAX,
     INSTALLATION_VOLTAGE_MIN,
+    MIN_UPDATE_INTERVAL,
     SERVICE_ADD_RFID_CARD,
     SERVICE_CREATE_POWER_PROFILE,
     SERVICE_DELETE_POWER_PROFILE,
@@ -83,6 +83,7 @@ from .const import (
     SERVICE_TRIGGER_UPDATE,
     SERVICE_UPDATE_POWER_PROFILE,
     SERVICE_UPDATE_RFID_TAG,
+    TARGET_DAILY_BUDGET,
 )
 from .local_api import V2CLocalApiError, async_write_keyword
 from .v2c_cloud import (
@@ -144,7 +145,7 @@ async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
     """Set up V2C Cloud from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
@@ -196,11 +197,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         budget = max(1, TARGET_DAILY_BUDGET)
         seconds = math.ceil((device_count * 86400) / budget)
-        if seconds < min_seconds:
-            seconds = min_seconds
+        seconds = max(seconds, min_seconds)
         return timedelta(seconds=seconds)
 
-    async def _async_update_data() -> dict[str, object]:
+    async def _async_update_data() -> dict[str, object]:  # noqa: PLR0911
         """Fetch the latest data from the API."""
 
         def _restore_default_interval(reason: str) -> None:
@@ -333,13 +333,55 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        runtime_data: V2CEntryRuntimeData | None = hass.data[DOMAIN].get(entry.entry_id)
+        if runtime_data is not None:
+            # Cancel the scheduled polling task for every local coordinator so that
+            # orphaned asyncio handles do not keep the objects alive after removal.
+            for coord in runtime_data.local_coordinators.values():
+                if hasattr(coord, "async_shutdown"):
+                    coord.async_shutdown()
+                elif hasattr(coord, "_unsub_refresh") and coord._unsub_refresh:  # noqa: SLF001
+                    coord._unsub_refresh()  # noqa: SLF001
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not any(isinstance(v, V2CEntryRuntimeData) for v in hass.data[DOMAIN].values()):
+            _async_unregister_services(hass)
     return unload_ok
 
 
-def _async_register_services(hass: HomeAssistant) -> None:
-    """Register Home Assistant services for device management."""
+def _async_unregister_services(hass: HomeAssistant) -> None:
+    """Unregister all V2C services when the last config entry is removed."""
+    for service in (
+        SERVICE_ADD_RFID_CARD,
+        SERVICE_CREATE_POWER_PROFILE,
+        SERVICE_DELETE_POWER_PROFILE,
+        SERVICE_DELETE_RFID,
+        SERVICE_GET_DEVICE_STATISTICS,
+        SERVICE_GET_GLOBAL_STATISTICS,
+        SERVICE_GET_POWER_PROFILE,
+        SERVICE_LIST_POWER_PROFILES,
+        SERVICE_PROGRAM_TIMER,
+        SERVICE_REGISTER_RFID,
+        SERVICE_SCAN_WIFI,
+        SERVICE_SET_INSTALLATION_VOLTAGE,
+        SERVICE_SET_INVERTER_IP,
+        SERVICE_SET_OCPP_ADDRESS,
+        SERVICE_SET_OCPP_ENABLED,
+        SERVICE_SET_OCPP_ID,
+        SERVICE_SET_STOP_CHARGE_KWH,
+        SERVICE_SET_STOP_CHARGE_MINUTES,
+        SERVICE_SET_WIFI,
+        SERVICE_START_CHARGE_KWH,
+        SERVICE_START_CHARGE_MINUTES,
+        SERVICE_TRIGGER_UPDATE,
+        SERVICE_UPDATE_POWER_PROFILE,
+        SERVICE_UPDATE_RFID_TAG,
+    ):
+        if hass.services.has_service(DOMAIN, service):
+            hass.services.async_remove(DOMAIN, service)
 
+
+def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
+    """Register Home Assistant services for device management."""
     if hass.services.has_service(DOMAIN, SERVICE_SET_WIFI):
         # Already registered
         return
@@ -357,15 +399,17 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _execute_and_refresh(
         entry_data: V2CEntryRuntimeData | None,
-        call_coroutine,
+        call_coroutine: Any,
         *,
         refresh: bool = True,
-    ):
+    ) -> Any:
         try:
             result = await call_coroutine
         except V2CAuthError as err:
             raise ConfigEntryAuthFailed("Authentication failed during service call") from err
         except V2CRequestError as err:
+            raise HomeAssistantError(str(err)) from err
+        except V2CLocalApiError as err:
             raise HomeAssistantError(str(err)) from err
 
         if refresh and entry_data is not None:
@@ -445,7 +489,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_RFID_TAG): cv.string,
+                vol.Required(ATTR_RFID_TAG): vol.All(cv.string, vol.Length(min=1, max=64)),
             }
         ),
     )
@@ -467,8 +511,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_RFID_CODE): cv.string,
-                vol.Required(ATTR_RFID_TAG): cv.string,
+                vol.Required(ATTR_RFID_CODE): vol.All(cv.string, vol.Length(min=1, max=64)),
+                vol.Required(ATTR_RFID_TAG): vol.All(cv.string, vol.Length(min=1, max=64)),
             }
         ),
     )
@@ -490,8 +534,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_RFID_CODE): cv.string,
-                vol.Required(ATTR_RFID_TAG): cv.string,
+                vol.Required(ATTR_RFID_CODE): vol.All(cv.string, vol.Length(min=1, max=64)),
+                vol.Required(ATTR_RFID_TAG): vol.All(cv.string, vol.Length(min=1, max=64)),
             }
         ),
     )
@@ -512,7 +556,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_RFID_CODE): cv.string,
+                vol.Required(ATTR_RFID_CODE): vol.All(cv.string, vol.Length(min=1, max=64)),
             }
         ),
     )
@@ -659,7 +703,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_OCPP_URL): cv.matches_regex(r"^wss?://"),
+                vol.Required(ATTR_OCPP_URL): cv.matches_regex(r"^wss?://[a-zA-Z0-9][a-zA-Z0-9\-\.]{1,252}[a-zA-Z0-9](:[0-9]{1,5})?(/[^\s]*)?$"),
             }
         ),
     )
@@ -680,7 +724,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Required(ATTR_IP_ADDRESS): cv.matches_regex(r"^(\d{1,3}\.){3}\d{1,3}$"),
+                vol.Required(ATTR_IP_ADDRESS): cv.matches_regex(
+                    r"^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$"
+                ),
             }
         ),
     )
@@ -695,7 +741,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 entry_data,
                 device_id,
                 "VoltageInstallation",
-                int(round(float(voltage))),
+                round(float(voltage)),
             )
         except V2CLocalApiError as err:
             raise HomeAssistantError(str(err)) from err
@@ -914,8 +960,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required(ATTR_DEVICE_ID): cv.string,
-                vol.Optional(ATTR_DATE_START): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
-                vol.Optional(ATTR_DATE_END): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
+                vol.Optional(ATTR_DATE_START): cv.matches_regex(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$"),
+                vol.Optional(ATTR_DATE_END): cv.matches_regex(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$"),
             }
         ),
     )
@@ -950,8 +996,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         async_handle_get_global_statistics,
         schema=vol.Schema(
             {
-                vol.Optional(ATTR_DATE_START): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
-                vol.Optional(ATTR_DATE_END): cv.matches_regex(r"^\d{4}-\d{2}-\d{2}$"),
+                vol.Optional(ATTR_DATE_START): cv.matches_regex(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$"),
+                vol.Optional(ATTR_DATE_END): cv.matches_regex(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$"),
             }
         ),
     )

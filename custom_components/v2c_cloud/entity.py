@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 
 from .const import DOMAIN
+
+if TYPE_CHECKING:
+    from .v2c_cloud import V2CClient
+
+
+def coerce_bool(value: Any) -> bool | None:
+    """Coerce a V2C API value to boolean, returning None if not convertible."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "on", "yes", "enabled"}:
+            return True
+        if lowered in {"0", "false", "off", "no", "disabled"}:
+            return False
+    return None
 
 
 def get_device_state_from_coordinator(
@@ -96,6 +120,41 @@ def build_device_info(
     )
 
 
+class _OptimisticHoldMixin:
+    """Mixin that centralises timestamp management for optimistic state buffering.
+
+    After the user issues a command, entities should display the expected new
+    state for a short window instead of flipping back to the stale cloud value.
+    This mixin provides the bookkeeping for that window.
+
+    Subclasses must initialise ``_last_command_ts: float | None = None`` in
+    their own ``__init__``.  Override ``_OPTIMISTIC_HOLD_SECONDS`` as a class
+    *or* instance attribute to change the hold duration (default 20 s).
+    """
+
+    _OPTIMISTIC_HOLD_SECONDS: float = 20.0
+    _last_command_ts: float | None  # initialised by subclass
+
+    def _record_command(self) -> None:
+        """Mark that a command was issued; starts the optimistic hold window."""
+        self._last_command_ts = time.monotonic()
+
+    def _clear_command(self) -> None:
+        """Clear the hold so the entity reads real state on next coordinator update."""
+        self._last_command_ts = None
+
+    def _is_within_hold(self) -> bool:
+        """Return True if the optimistic hold window is still active."""
+        ts: float | None = getattr(self, "_last_command_ts", None)
+        return ts is not None and time.monotonic() - ts < self._OPTIMISTIC_HOLD_SECONDS
+
+    def _expire_hold_if_needed(self) -> None:
+        """Clear the hold timestamp once the window has elapsed."""
+        ts: float | None = getattr(self, "_last_command_ts", None)
+        if ts is not None and time.monotonic() - ts >= self._OPTIMISTIC_HOLD_SECONDS:
+            self._last_command_ts = None
+
+
 class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
     """Common base entity for V2C devices."""
 
@@ -104,15 +163,16 @@ class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
     def __init__(
         self,
         coordinator: DataUpdateCoordinator,
-        client,
+        client: V2CClient,
         device_id: str,
     ) -> None:
+        """Initialise the entity with coordinator, client and device identifier."""
         super().__init__(coordinator)
         self._client = client
         self._device_id = device_id
 
     @property
-    def client(self):
+    def client(self) -> V2CClient:
         """Return the API client."""
         return self._client
 
@@ -162,7 +222,7 @@ class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
         """Return device registry information."""
         return build_device_info(self.coordinator, self._device_id)
 
-    async def _async_call_and_refresh(self, coro, *, refresh: bool = True) -> None:
+    async def _async_call_and_refresh(self, coro: Any, *, refresh: bool = True) -> None:
         """Helper to perform an API call and optionally refresh the cloud coordinator."""
         await coro
         if refresh:

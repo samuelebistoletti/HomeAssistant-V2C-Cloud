@@ -18,3 +18,5 @@
 - [x] Update both READMEs (Development & Testing section) — 031826/031926
 - [x] Fix SSRF link-local guard (169.254.x.x) — 031926
 - [x] Release 1.1.3: CHANGELOG, manifest bump, README update, commit+push — 031926
+- [x] Fix 3 CodeQL clear-text logging alerts (#5, #6, #7) — 031926
+- [x] Release 1.1.4: CHANGELOG, manifest bump, commit+push — 031926

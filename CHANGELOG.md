@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.3] - 2026-03-19
+
+### Security
+
+- **SSRF guard now blocks link-local addresses** – on Python 3.11+ link-local IPs (`169.254.x.x`) have `is_private=True`, so the previous guard (`is_private AND NOT is_loopback`) incorrectly allowed them through. All three guard sites (`config_flow._probe_local_api`, `local_api.async_write_keyword`, `local_api._async_fetch_local_data`) now also reject `is_link_local` addresses.
+- **API key / authorization headers masked in debug logs** – the `apikey` and `authorization` headers are now logged as `***` in all request debug output, preventing credential leakage in log files.
+
+### Fixed
+
+- **Startup failure when cloud is rate-limited in Cloud+LAN mode** – if the V2C Cloud returned HTTP 429 during initial coordinator startup, the integration raised `ConfigEntryNotReady` and retried indefinitely at a very short interval. It now treats the rate-limit error as a transient failure and backs off to the normal poll cadence (#6).
+- **OCPP server URL, date fields and RFID tag data tightened** – malformed values are now rejected early with clear validation errors before reaching the API.
+- **`_normalize_bool` synced with `coerce_bool`** – the API client's bool parser now recognises `"enabled"`/`"disabled"` tokens, matching the entity-layer helper and preventing silent mismatches on firmware variants that report boolean fields as strings.
+
+### Changed
+
+- **Parallel cloud fetch per device** – `_fetch_single_device_state` now fires the `reported`, `rfid` and `version` API calls concurrently via `asyncio.gather` instead of sequentially, reducing per-device cloud poll latency by up to 2 × on fast connections.
+- **Rate-limit retry jitter** – backoff after a `429` response now includes a small random component to avoid simultaneous retries across multiple devices.
+- **Type annotations cleaned up** – entity modules use `V2CClient` instead of `Any` for the client parameter; `device_info` now declares a `DeviceInfo` return type; `DataUpdateCoordinator` imports follow the `TYPE_CHECKING`-only pattern where the type is annotation-only.
+
+### Testing
+
+- **Test suite expanded to 350 tests** – ten new test modules cover all entity types (binary sensor, sensor, switch, number, select, button), config flow SSRF guard, local API and device-state gathering. The full suite runs without a live Home Assistant instance or charger.
+
 ## [1.1.2] - 2026-03-12
 
 ### CI

@@ -173,14 +173,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         if isinstance(err, V2CRateLimitError):
             _LOGGER.warning(
                 "V2C Cloud rate-limited at startup; will retry via polling. "
-                "Proceeding with local fallback for %s",
-                fallback_device_id,
+                "Proceeding with local fallback.",
             )
         else:
             _LOGGER.warning(
-                "V2C Cloud unreachable at startup; proceeding with local fallback for %s: %s",
-                fallback_device_id,
-                err,
+                "V2C Cloud unreachable at startup; proceeding with local fallback: %s",
+                type(err).__name__,
             )
         pairings = []
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.4] - 2026-03-19
+
+### Security
+
+- **Clear-text logging of sensitive data eliminated** – three CodeQL alerts (`py/clear-text-logging-sensitive-data`) resolved: `headers` and `body` removed from the HTTP debug log in `_request` (the `apikey` header was already masked but the dict comprehension still constituted a taint path); `params` masking made case-insensitive; `fallback_device_id` (derived from `entry.data`, which contains the API key) removed from startup warning messages in `__init__.py`; exception objects replaced with `type(err).__name__` to prevent accidental credential leakage via exception messages.
+
 ## [1.1.3] - 2026-03-19
 
 ### Security

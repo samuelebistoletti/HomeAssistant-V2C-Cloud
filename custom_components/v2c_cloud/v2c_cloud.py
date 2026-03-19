@@ -206,12 +206,10 @@ class V2CClient:
         }
 
         _LOGGER.debug(
-            "V2C request %s %s headers=%s params=%s body=%s",
+            "V2C request %s %s params=%s",
             method,
             url,
-            {k: "***" if k.lower() in ("apikey", "authorization") else v for k, v in headers.items()},
-            {k: "***" if k == "password" else v for k, v in params.items()} if params else params,
-            json_body,
+            {k: "***" if k.lower() in ("apikey", "authorization", "password") else v for k, v in params.items()} if params else params,
         )
 
         attempt = 0

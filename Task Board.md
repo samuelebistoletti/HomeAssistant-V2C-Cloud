@@ -20,3 +20,9 @@
 - [x] Release 1.1.3: CHANGELOG, manifest bump, README update, commit+push — 031926
 - [x] Fix 3 CodeQL clear-text logging alerts (#5, #6, #7) — 031926
 - [x] Release 1.1.4: CHANGELOG, manifest bump, commit+push — 031926
+- [x] Diagnose persistent rate-limit loop from user live log — 032326
+- [x] Fix 1: Remove retry-on-429 in v2c_cloud.py — 032326
+- [x] Fix 2: Coordinator exponential backoff on rate limit — 032326
+- [x] Fix 3: Proactive pacing via RateLimit-Remaining — 032326
+- [x] Update tests (352 total, all green) — 032326
+- [x] Release 1.1.5: CHANGELOG + manifest staged — 032326

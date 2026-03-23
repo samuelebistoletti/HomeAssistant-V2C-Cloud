@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.6] - 2026-03-24
+
+### Fixed
+
+- **Reauth completion shows wrong message** – the reauth config flow called `async_update_reload_and_abort` without an explicit `reason=` argument, which defaults to `"reconfigure_successful"`. As a result, after a successful re-authentication the UI displayed "Reconfiguration was successful" instead of "Re-authentication was successful". The `reason="reauth_successful"` argument is now passed explicitly.
+- **Raw `reconfigure_successful` key shown in UI** – the `config.abort.reconfigure_successful` key was missing from `strings.json` and both translation files (`en.json`, `it.json`). Home Assistant rendered the raw key string instead of the localised message after a successful reconfigure flow. The key has been added to all three files.
+- **Gitleaks CI false positive on test fixture** – the placeholder API key `test-api-key-abc123` used in `tests/conftest.py` triggered the `generic-api-key` Gitleaks rule on the full git history scan, causing the security CI job to fail. Added `.gitleaks.toml` with a `stopwords` entry for `test-api-key` and a path allowlist for the `tests/` directory; the fixture is intentionally non-functional and has never been a real credential.
+
+### Changed
+
+- **Removed unused `cannot_connect` error key** – the `config.error.cannot_connect` key was declared in `strings.json` and both translation files but was never emitted by `config_flow.py`. When the V2C Cloud is unreachable during initial setup the flow redirects to the `fallback_ip` step rather than showing a connection error. The dead key has been removed from all three files.
+
 ## [1.1.5] - 2026-03-23
 
 ### Fixed

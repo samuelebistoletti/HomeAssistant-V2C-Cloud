@@ -6,7 +6,6 @@
       "reconfigure_successful": "Reconfiguration was successful"
     },
     "error": {
-      "cannot_connect": "Failed to connect to the V2C Cloud service.",
       "invalid_api_key": "The provided API key is not valid.",
       "unknown": "Unexpected error occurred",
       "cannot_connect_local": "Could not reach the charger at that IP address. Check the address and try again.",

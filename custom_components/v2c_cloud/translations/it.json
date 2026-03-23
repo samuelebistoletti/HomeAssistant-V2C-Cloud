@@ -6,7 +6,6 @@
       "reconfigure_successful": "Riconfigurazione completata"
     },
     "error": {
-      "cannot_connect": "Impossibile contattare il servizio V2C Cloud.",
       "invalid_api_key": "La API key fornita non è valida.",
       "unknown": "Si è verificato un errore imprevisto",
       "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",

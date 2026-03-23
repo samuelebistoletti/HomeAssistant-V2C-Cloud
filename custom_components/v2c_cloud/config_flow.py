@@ -249,6 +249,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 reauth_entry = self._get_reauth_entry()
                 return self.async_update_reload_and_abort(
                     reauth_entry,
+                    reason="reauth_successful",
                     data_updates={
                         CONF_API_KEY: api_key,
                         "initial_pairings": pairings,

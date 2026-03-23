@@ -1,0 +1,16 @@
+title = "V2C Cloud — Gitleaks configuration"
+
+[allowlist]
+  description = "Test fixtures use placeholder credentials — not real secrets"
+  # Suppress any finding whose secret value contains these strings.
+  # All values below are hard-coded test stubs that are intentionally
+  # non-functional and exist solely to satisfy argument requirements in
+  # unit tests; they are not and have never been real credentials.
+  stopwords = [
+    "test-api-key",
+  ]
+  # Belt-and-suspenders: also suppress by file path so that any future
+  # placeholder added to the test suite is covered automatically.
+  paths = [
+    '''(^|/)tests/''',
+  ]

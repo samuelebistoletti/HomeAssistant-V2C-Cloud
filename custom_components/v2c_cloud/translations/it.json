@@ -2,7 +2,8 @@
   "config": {
     "abort": {
       "already_configured": "Il dispositivo è già configurato",
-      "reauth_successful": "Re-autenticazione completata"
+      "reauth_successful": "Re-autenticazione completata",
+      "reconfigure_successful": "Riconfigurazione completata"
     },
     "error": {
       "cannot_connect": "Impossibile contattare il servizio V2C Cloud.",

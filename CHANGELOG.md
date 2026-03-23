@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.5] - 2026-03-23
+
+### Fixed
+
+- **Self-reinforcing rate-limit loop eliminated** – when the V2C Cloud API returned HTTP 429, the integration retried the same request up to three times before raising the error. Each retry consumed an additional call from an already-exhausted daily quota (1 000 calls/day), causing the budget to be burned at up to 3× the normal rate. Once the limit was hit, the quota was spent in its entirety on retries alone, making recovery impossible until the next daily reset. HTTP 429 responses are now raised immediately without any retry; the coordinator's exponential back-off (see below) handles pacing instead.
+- **Coordinator keeps hammering the API when rate-limited** – after a 429, the cloud polling interval was not adjusted, so the integration kept attempting requests every 120 s regardless of how many times it had been rejected. The poll interval now doubles on each rate-limit cycle (`120 s → 240 s → 480 s → 600 s`), capped at 10 minutes. The interval automatically resets to the normal cadence on the first successful response, so no manual intervention is required once the daily quota window resets.
+
+### Changed
+
+- **Proactive pacing via `RateLimit-Remaining` header** – successful responses from the V2C Cloud include a `RateLimit-Remaining` header indicating how many calls are left in the current daily window. When this value drops below 150, the integration stretches the polling interval proportionally (reserving 50 calls for user-initiated commands), so the remaining budget lasts a full 24 hours in the worst case. This prevents the quota from being exhausted mid-day on days with heavy polling or frequent HA restarts.
+
 ## [1.1.4] - 2026-03-19
 
 ### Security

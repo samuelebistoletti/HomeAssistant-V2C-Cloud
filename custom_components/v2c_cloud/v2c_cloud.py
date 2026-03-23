@@ -6,7 +6,6 @@ import asyncio
 import ipaddress
 import json
 import logging
-import random
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -233,22 +232,9 @@ class V2CClient:
 
                         if status == 429:  # noqa: PLR2004
                             text = await response.text()
-                            retry_after = response.headers.get("Retry-After")
-                            if attempt < MAX_RETRIES:
-                                try:
-                                    delay = float(retry_after) if retry_after else None
-                                except (TypeError, ValueError):
-                                    delay = None
-                                if delay is None:
-                                    delay = RETRY_BACKOFF * attempt + random.uniform(0, 1)  # noqa: S311
-                                _LOGGER.warning(
-                                    "Rate limited by V2C Cloud (attempt %s/%s), retrying in %.1f s",
-                                    attempt,
-                                    MAX_RETRIES,
-                                    delay,
-                                )
-                                await asyncio.sleep(delay)
-                                continue
+                            # Do not retry on 429: every retry consumes quota from an
+                            # already-exhausted budget.  Raise immediately and let the
+                            # coordinator apply exponential back-off instead.
                             raise V2CRateLimitError(
                                 f"V2C API rate limit reached: {text or 'unknown error'}",
                                 status=status,

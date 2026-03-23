@@ -181,6 +181,69 @@ class TestCoordinatorStartup:
 
         assert runtime.coordinator.data is original_data
 
+    async def test_rate_limit_doubles_coordinator_interval(self):
+        """Each rate-limit cycle doubles the polling interval up to MAX_RATE_LIMIT_INTERVAL."""
+        from datetime import timedelta
+
+        from custom_components.v2c_cloud.__init__ import async_setup_entry
+        from custom_components.v2c_cloud.const import (
+            DEFAULT_UPDATE_INTERVAL,
+            MAX_RATE_LIMIT_INTERVAL,
+        )
+
+        hass = _make_hass()
+        entry = _make_entry(fallback=True)
+        client = _make_client()
+
+        with _patch_setup(client):
+            await async_setup_entry(hass, entry)
+
+        runtime = hass.data[DOMAIN][ENTRY_ID]
+        assert runtime.coordinator.update_interval == DEFAULT_UPDATE_INTERVAL
+
+        client.async_get_pairings.side_effect = V2CRateLimitError("429", status=429)
+
+        # First rate-limit: interval doubles
+        await runtime.coordinator.async_refresh()
+        first_backoff = runtime.coordinator.update_interval
+        assert first_backoff == DEFAULT_UPDATE_INTERVAL * 2
+
+        # Repeated rate-limits keep doubling
+        await runtime.coordinator.async_refresh()
+        assert runtime.coordinator.update_interval == first_backoff * 2
+
+        # Interval is capped at MAX_RATE_LIMIT_INTERVAL
+        for _ in range(10):
+            await runtime.coordinator.async_refresh()
+        assert runtime.coordinator.update_interval == MAX_RATE_LIMIT_INTERVAL
+
+    async def test_rate_limit_pacing_on_low_remaining(self):
+        """When RateLimit-Remaining drops below threshold, the interval stretches to pace calls."""
+        import math
+        from datetime import timedelta
+
+        from custom_components.v2c_cloud.__init__ import async_setup_entry
+        from custom_components.v2c_cloud.const import RATE_LIMIT_COMMAND_RESERVE
+
+        hass = _make_hass()
+        entry = _make_entry(fallback=False)
+        client = _make_client()
+
+        remaining = 80  # below RATE_LIMIT_LOW_THRESHOLD (150)
+        client.last_rate_limit = {"limit": 1000, "remaining": remaining, "reset": None}
+
+        with _patch_setup(client):
+            await async_setup_entry(hass, entry)
+
+        runtime = hass.data[DOMAIN][ENTRY_ID]
+
+        # Trigger a successful poll that reads the low remaining value
+        await runtime.coordinator.async_refresh()
+
+        available = max(remaining - RATE_LIMIT_COMMAND_RESERVE, 1)
+        expected = timedelta(seconds=math.ceil(86400 / available))
+        assert runtime.coordinator.update_interval == expected
+
     async def test_auth_error_raises_config_entry_auth_failed(self):
         """A 401 at startup raises ConfigEntryAuthFailed to trigger the HA re-auth flow."""
         from custom_components.v2c_cloud.__init__ import async_setup_entry

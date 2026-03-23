@@ -63,37 +63,33 @@ class TestRequestErrors:
                 await client.async_get_pairings()
         assert exc_info.value.status == 404
 
-    async def test_429_exhausts_retries_then_raises_rate_limit(self, client):
+    async def test_429_raises_rate_limit_immediately(self, client):
         with aioresponses() as m:
-            # MAX_RETRIES = 3 → three 429 responses exhaust all attempts
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
+            # A single 429 must raise immediately — no retries should be made.
+            # Retrying a rate-limited request wastes quota from an already-exhausted
+            # daily budget, so the client raises V2CRateLimitError on the first 429.
             m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
             with pytest.raises(V2CRateLimitError):
                 await client.async_get_pairings()
 
-    async def test_429_retries_and_succeeds_on_second_attempt(self, client):
+    async def test_429_does_not_retry(self, client):
+        """Confirm that no retry request is made after a 429."""
         pairings = [{"deviceId": DEVICE_ID}]
         with aioresponses() as m:
-            m.get(
-                f"{BASE_URL}/pairings/me",
-                status=429,
-                headers={"Retry-After": "0"},
-                body="Too Many Requests",
-            )
+            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
+            # A second mock that would succeed if a retry were attempted.
             m.get(
                 f"{BASE_URL}/pairings/me",
                 status=200,
                 payload=pairings,
                 content_type="application/json",
             )
-            result = await client.async_get_pairings()
-        assert result == pairings
+            with pytest.raises(V2CRateLimitError):
+                await client.async_get_pairings()
+        # The second mock was never consumed, proving no retry occurred.
 
     async def test_rate_limit_error_is_subclass_of_request_error(self, client):
         with aioresponses() as m:
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
             m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
             with pytest.raises(V2CRequestError):
                 await client.async_get_pairings()
@@ -213,8 +209,6 @@ class TestPairingsCache:
         client.preload_pairings(cached_pairings, ttl=0.0)  # Expired
         with aioresponses() as m:
             m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
             result = await client.async_get_pairings()
         assert result == cached_pairings
 
@@ -228,8 +222,6 @@ class TestPairingsCache:
 
     async def test_raises_when_no_cache_and_rate_limited(self, client):
         with aioresponses() as m:
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
-            m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
             m.get(f"{BASE_URL}/pairings/me", status=429, body="Too Many Requests")
             with pytest.raises(V2CRateLimitError):
                 await client.async_get_pairings()

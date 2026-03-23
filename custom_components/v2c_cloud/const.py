@@ -11,6 +11,9 @@ CONF_API_KEY = "api_key"
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=120)
 MIN_UPDATE_INTERVAL = timedelta(seconds=90)
 TARGET_DAILY_BUDGET = 850
+MAX_RATE_LIMIT_INTERVAL = timedelta(minutes=10)
+RATE_LIMIT_LOW_THRESHOLD = 150  # remaining calls below this → pace proactively
+RATE_LIMIT_COMMAND_RESERVE = 50  # calls reserved for commands when pacing
 
 # Power limits (kW)
 MAX_POWER_MIN_KW = 1.0

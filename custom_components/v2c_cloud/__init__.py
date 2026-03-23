@@ -52,6 +52,9 @@ from .const import (
     CONF_API_KEY,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    MAX_RATE_LIMIT_INTERVAL,
+    RATE_LIMIT_COMMAND_RESERVE,
+    RATE_LIMIT_LOW_THRESHOLD,
     EVENT_DEVICE_STATISTICS,
     EVENT_GLOBAL_STATISTICS,
     EVENT_POWER_PROFILES,
@@ -210,6 +213,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             )
             coordinator.update_interval = DEFAULT_UPDATE_INTERVAL
 
+        def _back_off_on_rate_limit() -> None:
+            """Double the polling interval after a 429, up to MAX_RATE_LIMIT_INTERVAL.
+
+            Each retry on a 429 wastes one call from an already-exhausted budget.
+            Backing off here gives the daily quota window time to reset instead of
+            hammering the API at full speed until tomorrow.
+            """
+            current = coordinator.update_interval or DEFAULT_UPDATE_INTERVAL
+            backed_off = min(current * 2, MAX_RATE_LIMIT_INTERVAL)
+            if backed_off != current:
+                _LOGGER.debug(
+                    "Rate limited — backing off poll interval to %s", backed_off
+                )
+                coordinator.update_interval = backed_off
+
         # --- Step 1: fetch pairings ---
         latest_pairings: list[dict[str, object]] | None = None
         try:
@@ -218,6 +236,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             _restore_default_interval("authentication failure")
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
         except V2CRateLimitError as err:
+            _back_off_on_rate_limit()
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
             if coordinator.data is not None:
                 return coordinator.data
@@ -256,6 +275,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             _restore_default_interval("authentication failure")
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
         except V2CRateLimitError as err:
+            _back_off_on_rate_limit()
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
             if coordinator.data is not None:
                 return coordinator.data
@@ -282,6 +302,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
         device_count = len(devices)
         new_interval = _calculate_update_interval(device_count)
+
+        # Proactive pacing: if the API reports that remaining calls are running low,
+        # stretch the interval to avoid exhausting the daily budget before reset.
+        # We do not know when the window resets, so we assume worst-case (24 h away)
+        # and reserve RATE_LIMIT_COMMAND_RESERVE calls for user-initiated commands.
+        rl_info = client.last_rate_limit
+        if rl_info:
+            remaining = rl_info.get("remaining")
+            if remaining is not None and remaining < RATE_LIMIT_LOW_THRESHOLD:
+                available = max(remaining - RATE_LIMIT_COMMAND_RESERVE, 1)
+                pacing_interval = timedelta(seconds=math.ceil(86400 / available))
+                if pacing_interval > new_interval:
+                    _LOGGER.warning(
+                        "RateLimit-Remaining is %s — pacing poll interval to %s",
+                        remaining,
+                        pacing_interval,
+                    )
+                    new_interval = pacing_interval
+
         if coordinator.update_interval != new_interval:
             _LOGGER.debug(
                 "Adjusting polling interval to %s based on %s device(s) and %s daily budget",

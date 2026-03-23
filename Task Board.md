@@ -25,4 +25,10 @@
 - [x] Fix 2: Coordinator exponential backoff on rate limit — 032326
 - [x] Fix 3: Proactive pacing via RateLimit-Remaining — 032326
 - [x] Update tests (352 total, all green) — 032326
-- [x] Release 1.1.5: CHANGELOG + manifest staged — 032326
+- [x] Release 1.1.5: CHANGELOG + manifest, commit+push — 032326/032426
+- [x] Fix raw reconfigure_successful key shown in UI post-reconfigure — 032426
+- [x] Fix Gitleaks CI false positive (.gitleaks.toml) — 032426
+- [x] Full translation key audit (config_flow.py vs strings.json) — 032426
+- [x] Fix reauth flow: wrong abort message (missing reason= arg) — 032426
+- [x] Remove orphaned cannot_connect key from strings + translations — 032426
+- [x] Release 1.1.6: CHANGELOG, manifest, commit+push — 032426

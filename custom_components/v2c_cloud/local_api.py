@@ -321,23 +321,26 @@ async def async_get_or_create_local_coordinator(
 
     async def _async_fetch_local_data() -> dict[str, Any]:
         nonlocal failure_count
-        # Cloud-only shortcut: if the entry has no usable fallback IP
-        # (e.g. 4G-only charger), always build from cloud reported data.
-        entry_ip = runtime_data.coordinator.config_entry.data.get("fallback_ip", "")
-        if not entry_ip or entry_ip == "0.0.0.0":
-            return _build_realtime_from_reported(runtime_data, device_id)
+        # Cloud-only shortcut: if the config entry explicitly has an empty
+        # or placeholder fallback_ip, this is a known cloud-only device
+        # (e.g. 4G Trydan with no local API). Skip local fetch entirely.
+        entry_data = runtime_data.coordinator.config_entry.data
+        if "fallback_ip" in entry_data:
+            fip = entry_data["fallback_ip"]
+            if not fip or fip == "0.0.0.0":
+                return _build_realtime_from_reported(runtime_data, device_id)
 
         static_ip = resolve_static_ip(runtime_data, device_id)
         if not static_ip:
-            # Cloud-only mode (4G device): read from cloud coordinator's reported data
+            # No IP found anywhere → cloud-only fallback
             return _build_realtime_from_reported(runtime_data, device_id)
         try:
             addr = ipaddress.ip_address(static_ip)
         except ValueError:
-            # Invalid IP (e.g. placeholder) → cloud-only mode
+            # Invalid IP (e.g. placeholder) → cloud-only fallback
             return _build_realtime_from_reported(runtime_data, device_id)
-        if addr.is_unspecified or not addr.is_private or addr.is_loopback or addr.is_link_local:
-            # Non-reachable IP (0.0.0.0 placeholder or non-private) → cloud-only mode
+        if addr.is_unspecified or addr.is_loopback or addr.is_link_local:
+            # Non-reachable IP → cloud-only fallback
             return _build_realtime_from_reported(runtime_data, device_id)
 
         url = f"http://{static_ip}/RealTimeData"
@@ -357,6 +360,16 @@ async def async_get_or_create_local_coordinator(
 
             if attempt >= LOCAL_MAX_RETRIES:
                 failure_count += 1
+                # Fall back to cloud data instead of failing entirely
+                cloud_payload = _build_realtime_from_reported(runtime_data, device_id)
+                if cloud_payload.get("_data_source") != "cloud_reported_empty":
+                    _LOGGER.debug(
+                        "Local API unreachable for %s after %s attempt(s), "
+                        "falling back to cloud reported data",
+                        device_id,
+                        LOCAL_MAX_RETRIES,
+                    )
+                    return cloud_payload
                 raise UpdateFailed(
                     f"{error_message} after {LOCAL_MAX_RETRIES} attempt(s)"
                 ) from last_error
@@ -409,15 +422,20 @@ async def async_get_or_create_local_coordinator(
 
         return payload
 
-    # Use longer interval for cloud-only (data comes from cloud coordinator cache)
-    _ip = resolve_static_ip(runtime_data, device_id)
-    try:
-        _addr = ipaddress.ip_address(_ip) if _ip else None
-    except ValueError:
-        _addr = None
-    is_cloud_only = _addr is None or _addr.is_unspecified or not _addr.is_private
-    interval = CLOUD_ONLY_UPDATE_INTERVAL if is_cloud_only else LOCAL_UPDATE_INTERVAL
-    if is_cloud_only:
+    # Detect cloud-only to use longer poll interval and log once
+    _entry_data = runtime_data.coordinator.config_entry.data
+    _explicit_cloud = "fallback_ip" in _entry_data and (
+        not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"
+    )
+    if not _explicit_cloud:
+        _ip = resolve_static_ip(runtime_data, device_id)
+        try:
+            _addr = ipaddress.ip_address(_ip) if _ip else None
+        except ValueError:
+            _addr = None
+        _explicit_cloud = _addr is None or _addr.is_unspecified or _addr.is_loopback
+    interval = CLOUD_ONLY_UPDATE_INTERVAL if _explicit_cloud else LOCAL_UPDATE_INTERVAL
+    if _explicit_cloud:
         _LOGGER.info("V2C %s: cloud-only mode (4G), sensors from cloud reported data", device_id)
 
     coordinator = DataUpdateCoordinator(

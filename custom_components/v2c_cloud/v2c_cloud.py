@@ -393,6 +393,14 @@ class V2CClient:
             params={"deviceId": device_id},
         )
 
+    async def async_get_current_state_charge(self, device_id: str) -> Any:
+        """Return current charge state with real-time energy/power data."""
+        return await self._request(
+            "POST",
+            "/device/currentstatecharge",
+            params={"deviceId": device_id},
+        )
+
     async def async_get_rfid_cards(self, device_id: str) -> Any:
         """Return registered RFID cards for the device."""
         return await self._request(
@@ -730,8 +738,11 @@ async def _fetch_single_device_state(  # noqa: C901
     refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
 
     # Fire all needed API calls in parallel.
-    coro_keys: list[str] = ["reported"]
-    coros: list[Any] = [client.async_get_reported(device_id)]
+    coro_keys: list[str] = ["reported", "currentstatecharge"]
+    coros: list[Any] = [
+        client.async_get_reported(device_id),
+        client.async_get_current_state_charge(device_id),
+    ]
     if refresh_rfid:
         coro_keys.append("rfid")
         coros.append(client.async_get_rfid_cards(device_id))
@@ -809,6 +820,20 @@ async def _fetch_single_device_state(  # noqa: C901
         state.current_state = state.reported
     elif previous_state.get("current_state") is not None:
         state.current_state = previous_state.get("current_state")
+
+    # --- Process currentstatecharge (real-time energy/power data) ---
+    csc_outcome: Any = result_map.get("currentstatecharge")
+    if isinstance(csc_outcome, Exception):
+        _LOGGER.debug("Failed to fetch currentstatecharge for %s: %s", device_id, csc_outcome)
+    elif isinstance(csc_outcome, dict):
+        state.additional["currentstatecharge"] = csc_outcome
+    elif isinstance(csc_outcome, str):
+        try:
+            parsed_csc = json.loads(csc_outcome)
+            if isinstance(parsed_csc, dict):
+                state.additional["currentstatecharge"] = parsed_csc
+        except json.JSONDecodeError:
+            pass
 
     # --- Process RFID cards ---
     if refresh_rfid:

@@ -37,6 +37,125 @@ _HTTP_ERROR_THRESHOLD = 400
 _READ_ONLY_KEYWORDS: tuple[str, ...] = ("LogoLED",)
 
 
+# --- Cloud-only mode support for 4G Trydan devices ---
+CLOUD_ONLY_UPDATE_INTERVAL = timedelta(seconds=120)
+
+# Mapping: cloud reported key (lowercase) → (local RealTimeData key, needs_scale)
+_REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
+    "charge_state": ("ChargeState", False),
+    "chargestate": ("ChargeState", False),
+    "intensity": ("Intensity", False),
+    "currentintensity": ("Intensity", False),
+    "power": ("ChargePower", True),
+    "chargepower": ("ChargePower", True),
+    "charge_power": ("ChargePower", True),
+    "energy": ("ChargeEnergy", False),
+    "chargeenergy": ("ChargeEnergy", False),
+    "charge_energy": ("ChargeEnergy", False),
+    "seconds": ("ChargeTime", False),
+    "chargetime": ("ChargeTime", False),
+    "charge_time": ("ChargeTime", False),
+    "voltage": ("VoltageInstallation", True),
+    "voltageinstallation": ("VoltageInstallation", True),
+    "house_power": ("HousePower", True),
+    "housepower": ("HousePower", True),
+    "sun_power": ("FVPower", True),
+    "fvpower": ("FVPower", True),
+    "fv_power": ("FVPower", True),
+    "battery": ("BatteryPower", True),
+    "batterypower": ("BatteryPower", True),
+    "battery_power": ("BatteryPower", True),
+    "grid_power": ("GridPower", True),
+    "gridpower": ("GridPower", True),
+    "error": ("SlaveError", False),
+    "slaveerror": ("SlaveError", False),
+    "slave_error": ("SlaveError", False),
+    "pause": ("Paused", False),
+    "paused": ("Paused", False),
+    "phases": ("Phases", False),
+    "cp_level": ("CpLevel", False),
+    "ready_state": ("ReadyState", False),
+    "readystate": ("ReadyState", False),
+    "timer": ("Timer", False),
+    "dynamic": ("Dynamic", False),
+}
+
+_INT_FIELDS = frozenset({
+    "ChargeState", "ChargeTime", "SlaveError", "Intensity",
+    "Phases", "Paused", "CpLevel", "ReadyState", "Timer", "Dynamic",
+})
+
+
+def _detect_cloud_scale(reported: dict[str, object]) -> float:
+    """Detect if cloud values are in kW/kV vs W/V using voltage as indicator."""
+    for key in ("voltage", "voltageinstallation"):
+        raw = reported.get(key)
+        if raw is not None:
+            try:
+                v = float(str(raw))
+                if 0 < v < 10:
+                    return 1000  # kV → V
+            except (ValueError, TypeError):
+                pass
+    return 1
+
+
+def _build_realtime_from_reported(
+    runtime_data: "V2CEntryRuntimeData", device_id: str
+) -> dict[str, Any]:
+    """Convert cloud coordinator reported data to local /RealTimeData format.
+
+    This allows sensors to work identically whether data comes from
+    local HTTP or cloud API. No additional API calls are made —
+    data is read from the cloud coordinator's cache.
+    """
+    device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
+    reported = device_state.get("reported")
+    if not isinstance(reported, dict) or not reported:
+        _LOGGER.debug("Cloud-only: no reported data for %s, returning empty payload", device_id)
+        return {"_data_source": "cloud_reported_empty", "_lower_index": {}}
+
+    reported_lower = {k.lower(): v for k, v in reported.items()}
+    scale = _detect_cloud_scale(reported_lower)
+    result: dict[str, Any] = {"_data_source": "cloud_reported"}
+
+    for cloud_key, (local_key, needs_scale) in _REPORTED_TO_REALTIME.items():
+        if local_key in result:
+            continue
+        raw = reported_lower.get(cloud_key)
+        if raw is None:
+            continue
+        try:
+            value = float(str(raw))
+        except (ValueError, TypeError):
+            continue
+        if needs_scale:
+            value = value * scale
+        result[local_key] = int(value) if local_key in _INT_FIELDS else round(value, 2)
+
+    # Augment with currentstatecharge data for missing real-time fields
+    csc = device_state.get("additional", {}).get("currentstatecharge")
+    if isinstance(csc, dict):
+        csc_lower = {k.lower(): v for k, v in csc.items()}
+        csc_scale = _detect_cloud_scale(csc_lower)
+        for cloud_key, (local_key, needs_scale) in _REPORTED_TO_REALTIME.items():
+            if local_key in result:
+                continue
+            raw = csc_lower.get(cloud_key)
+            if raw is None:
+                continue
+            try:
+                value = float(str(raw))
+            except (ValueError, TypeError):
+                continue
+            if needs_scale:
+                value = value * csc_scale
+            result[local_key] = int(value) if local_key in _INT_FIELDS else round(value, 2)
+
+    result["_lower_index"] = {k.lower(): k for k in result if not k.startswith("_")}
+    return result
+
+
 class V2CLocalApiError(Exception):
     """Error raised when interacting with the local API."""
 
@@ -199,20 +318,24 @@ async def async_get_or_create_local_coordinator(
 
     async def _async_fetch_local_data() -> dict[str, Any]:
         nonlocal failure_count
+        # Cloud-only shortcut: if the entry has no usable fallback IP
+        # (e.g. 4G-only charger), always build from cloud reported data.
+        entry_ip = runtime_data.coordinator.config_entry.data.get("fallback_ip", "")
+        if not entry_ip or entry_ip == "0.0.0.0":
+            return _build_realtime_from_reported(runtime_data, device_id)
+
         static_ip = resolve_static_ip(runtime_data, device_id)
         if not static_ip:
-            raise UpdateFailed("Static IP for device is unavailable")
+            # Cloud-only mode (4G device): read from cloud coordinator's reported data
+            return _build_realtime_from_reported(runtime_data, device_id)
         try:
             addr = ipaddress.ip_address(static_ip)
-        except ValueError as err:
-            raise UpdateFailed(f"Invalid IP address for device: {static_ip!r}") from err
-        if not addr.is_private or addr.is_loopback or addr.is_link_local:
-            _LOGGER.warning(
-                "Local API IP %s for device %s is not a private/non-loopback/non-link-local address — skipping fetch",
-                static_ip,
-                device_id,
-            )
-            raise UpdateFailed(f"Refusing to contact non-private/loopback IP {static_ip}")
+        except ValueError:
+            # Invalid IP (e.g. placeholder) → cloud-only mode
+            return _build_realtime_from_reported(runtime_data, device_id)
+        if addr.is_unspecified or not addr.is_private or addr.is_loopback or addr.is_link_local:
+            # Non-reachable IP (0.0.0.0 placeholder or non-private) → cloud-only mode
+            return _build_realtime_from_reported(runtime_data, device_id)
 
         url = f"http://{static_ip}/RealTimeData"
         attempt = 1
@@ -283,12 +406,23 @@ async def async_get_or_create_local_coordinator(
 
         return payload
 
+    # Use longer interval for cloud-only (data comes from cloud coordinator cache)
+    _ip = resolve_static_ip(runtime_data, device_id)
+    try:
+        _addr = ipaddress.ip_address(_ip) if _ip else None
+    except ValueError:
+        _addr = None
+    is_cloud_only = _addr is None or _addr.is_unspecified or not _addr.is_private
+    interval = CLOUD_ONLY_UPDATE_INTERVAL if is_cloud_only else LOCAL_UPDATE_INTERVAL
+    if is_cloud_only:
+        _LOGGER.info("V2C %s: cloud-only mode (4G), sensors from cloud reported data", device_id)
+
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name=f"V2C local realtime {device_id}",
         update_method=_async_fetch_local_data,
-        update_interval=LOCAL_UPDATE_INTERVAL,
+        update_interval=interval,
     )
 
     runtime_data.local_coordinators[device_id] = coordinator

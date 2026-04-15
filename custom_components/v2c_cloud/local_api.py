@@ -78,11 +78,14 @@ _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "readystate": ("ReadyState", False),
     "timer": ("Timer", False),
     "dynamic": ("Dynamic", False),
+    "photovoltaic_on": ("PhotovoltaicOn", False),
+    "locked": ("Locked", False),
 }
 
 _INT_FIELDS = frozenset({
     "ChargeState", "ChargeTime", "SlaveError", "Intensity",
     "Phases", "Paused", "CpLevel", "ReadyState", "Timer", "Dynamic",
+    "PhotovoltaicOn", "Locked",
 })
 
 

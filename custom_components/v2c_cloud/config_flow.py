@@ -77,6 +77,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialise flow state."""
         super().__init__()
         self._api_key: str = ""
+        self._pairings: list[dict[str, Any]] = []
 
     @staticmethod
     @config_entries.callback
@@ -105,20 +106,9 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
             else:
-                unique_suffix = hashlib.pbkdf2_hmac(
-                    "sha256",
-                    api_key.encode(),
-                    b"v2c_cloud_unique_id",
-                    200_000,
-                ).hex()
-                await self.async_set_unique_id(unique_suffix)
-                self._abort_if_unique_id_configured()
-
-                data = {
-                    CONF_API_KEY: api_key,
-                    "initial_pairings": pairings,
-                }
-                return self.async_create_entry(title="V2C Cloud", data=data)
+                self._api_key = api_key
+                self._pairings = pairings
+                return await self.async_step_connection_type()
 
         schema = vol.Schema(
             {
@@ -130,6 +120,63 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=schema,
             errors=errors,
+        )
+
+    async def async_step_connection_type(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Ask the user how their charger connects to the network."""
+        if user_input is not None:
+            connection = user_input["connection_type"]
+
+            unique_suffix = hashlib.pbkdf2_hmac(
+                "sha256",
+                self._api_key.encode(),
+                b"v2c_cloud_unique_id",
+                200_000,
+            ).hex()
+            await self.async_set_unique_id(unique_suffix)
+            self._abort_if_unique_id_configured()
+
+            if connection == "cloud_only":
+                # 4G/cloud-only: extract device ID from pairings
+                device_id = ""
+                if self._pairings:
+                    device_id = self._pairings[0].get("deviceId", "")
+                return self.async_create_entry(
+                    title="V2C Cloud",
+                    data={
+                        CONF_API_KEY: self._api_key,
+                        "initial_pairings": self._pairings,
+                        "fallback_ip": "",
+                        "fallback_device_id": device_id,
+                    },
+                )
+
+            # Local Wi-Fi: no fallback_ip key → standard local behavior
+            return self.async_create_entry(
+                title="V2C Cloud",
+                data={
+                    CONF_API_KEY: self._api_key,
+                    "initial_pairings": self._pairings,
+                },
+            )
+
+        schema = vol.Schema(
+            {
+                vol.Required("connection_type", default="local"): vol.In(
+                    {
+                        "local": "Local (Wi-Fi)",
+                        "cloud_only": "Cloud only (4G)",
+                    }
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="connection_type",
+            data_schema=schema,
         )
 
     async def async_step_fallback_ip(

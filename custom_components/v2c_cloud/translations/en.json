@@ -33,6 +33,13 @@
           "api_key": "API key"
         }
       },
+      "connection_type": {
+        "title": "Connection type",
+        "description": "Select how your V2C charger connects to the network.\n\n**Local (Wi-Fi):** The charger has a local IP address on your network. Sensor data is fetched directly from the charger with low latency.\n\n**Cloud only (4G):** The charger connects via mobile data (4G) and has no local API. Sensor data is fetched from the V2C Cloud API. Note: the cloud API has a daily request limit (~850 requests/day). The integration manages this automatically, but polling intervals may increase when the limit is approached.",
+        "data": {
+          "connection_type": "Connection type"
+        }
+      },
       "fallback_ip": {
         "title": "V2C Cloud — cloud offline",
         "description": "The V2C Cloud API is currently unreachable. Enter the local IP address of your charger so the integration can still operate locally. When the cloud becomes available again its device list will be used automatically.",

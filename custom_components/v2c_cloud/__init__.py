@@ -197,7 +197,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             MIN_UPDATE_INTERVAL.total_seconds(),
         )
         budget = max(1, TARGET_DAILY_BUDGET)
-        seconds = math.ceil((device_count * 86400) / budget)
+        # 2 API calls per device per cycle (reported + currentstatecharge)
+        seconds = math.ceil((device_count * 2 * 86400) / budget)
         seconds = max(seconds, min_seconds)
         return timedelta(seconds=seconds)
 

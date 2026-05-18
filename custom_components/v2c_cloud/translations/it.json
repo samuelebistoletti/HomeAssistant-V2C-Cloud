@@ -33,6 +33,13 @@
           "api_key": "API key"
         }
       },
+      "connection_type": {
+        "title": "Tipo di connessione",
+        "description": "Seleziona come il tuo caricatore V2C si connette alla rete.\n\n**Locale (Wi-Fi):** Il caricatore ha un indirizzo IP locale sulla tua rete. I dati dei sensori vengono letti direttamente dal caricatore.\n\n**Solo cloud (4G):** Il caricatore si connette tramite rete mobile (4G) e non ha un'API locale. I dati dei sensori vengono letti dall'API V2C Cloud. Nota: l'API cloud ha un limite giornaliero di richieste (~850 richieste/giorno). L'integrazione lo gestisce automaticamente, ma gli intervalli di polling possono aumentare quando il limite è vicino.",
+        "data": {
+          "connection_type": "Tipo di connessione"
+        }
+      },
       "fallback_ip": {
         "title": "V2C Cloud — cloud non raggiungibile",
         "description": "Le API V2C Cloud non sono al momento disponibili. Inserisci l'indirizzo IP locale del tuo caricatore in modo che l'integrazione possa comunque operare in locale. Quando il cloud tornerà disponibile verrà usata automaticamente la lista dei dispositivi cloud.",

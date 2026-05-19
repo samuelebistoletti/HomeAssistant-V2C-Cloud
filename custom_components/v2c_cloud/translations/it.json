@@ -53,8 +53,9 @@
     "step": {
       "init": {
         "title": "Opzioni V2C Cloud",
-        "description": "Regola l'intervallo di polling LAN e (facoltativamente) l'IP locale di fallback.\n\n• **Intervallo di refresh locale:** ogni quanti secondi l'integrazione interroga il caricatore via LAN. Range 5-300, default 30. Valori inferiori a 15 s possono saturare una LAN lenta e non sono consigliati. I caricatori cloud-only (4G) ignorano questa impostazione.\n\n• **IP di fallback:** usato quando il cloud non è raggiungibile; lascia vuoto per disabilitare il fallback locale.",
+        "description": "Scegli come si connette il caricatore, regola l'intervallo di polling LAN e (facoltativamente) imposta un IP locale di fallback.\n\n• **Tipo di connessione:** puoi passare in qualsiasi momento tra **Locale (Wi-Fi)** e **Solo cloud (4G)**. Il cambio ricarica l'integrazione.\n\n• **Intervallo di refresh locale:** ogni quanti secondi l'integrazione interroga il caricatore via LAN. Range 5-300, default 30. Valori inferiori a 15 s possono saturare una LAN lenta e non sono consigliati. I caricatori cloud-only (4G) ignorano questa impostazione.\n\n• **IP di fallback:** usato quando il cloud non è raggiungibile (modalità Locale) o ignorato completamente in modalità Solo cloud (4G).",
         "data": {
+          "connection_type": "Tipo di connessione",
           "fallback_ip": "Indirizzo IP locale di fallback (lascia vuoto per disabilitare)",
           "local_update_interval": "Intervallo refresh locale (secondi)"
         }

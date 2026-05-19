@@ -32,6 +32,22 @@ from .const import (
 )
 from .v2c_cloud import V2CAuthError, V2CClient, V2CRequestError
 
+
+def _infer_connection_type(entry_data: dict[str, Any]) -> str:
+    """
+    Infer the declared connection mode from stored entry data.
+
+    cloud_only is encoded by the empty-string ``fallback_ip`` sentinel
+    (see ``_is_cloud_only_device`` in ``__init__.py``). Anything else is
+    treated as local (with or without an optional LAN fallback IP).
+    """
+    if "fallback_ip" not in entry_data:
+        return "local"
+    fip = entry_data.get("fallback_ip")
+    if not fip or fip == "0.0.0.0":  # noqa: S104 — sentinel, not bind  # nosec B104
+        return "cloud_only"
+    return "local"
+
 _LOGGER = logging.getLogger(__name__)
 
 _LOCAL_PROBE_TIMEOUT = 10
@@ -339,15 +355,18 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Manage the fallback IP and the local refresh interval."""
+        """Manage the connection type, fallback IP, and local refresh interval."""
         errors: dict[str, str] = {}
-        current_ip = self._config_entry.data.get("fallback_ip", "")
+        current_data = self._config_entry.data
+        current_ip = current_data.get("fallback_ip", "")
+        current_mode = _infer_connection_type(current_data)
         current_options = self._config_entry.options or {}
         current_interval = int(
             current_options.get(CONF_LOCAL_UPDATE_INTERVAL, DEFAULT_LOCAL_INTERVAL)
         )
 
         if user_input is not None:
+            new_mode = user_input.get("connection_type", current_mode)
             ip = user_input.get("fallback_ip", "").strip()
             interval_raw = user_input.get(CONF_LOCAL_UPDATE_INTERVAL, current_interval)
             try:
@@ -359,15 +378,24 @@ class V2COptionsFlow(config_entries.OptionsFlow):
             if not errors and not MIN_LOCAL_INTERVAL <= interval <= MAX_LOCAL_INTERVAL:
                 errors[CONF_LOCAL_UPDATE_INTERVAL] = "invalid_interval"
 
-            if not errors:
-                # 1. Persist interval into entry.options so the update listener
-                #    can react without requiring a reload.
-                new_options = dict(current_options)
-                new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
+            new_data = dict(current_data)
+            mode_changed = new_mode != current_mode
 
-                # 2. Persist the fallback IP into entry.data (existing behaviour).
-                new_data = dict(self._config_entry.data)
-                if ip:
+            if not errors:
+                if new_mode == "cloud_only":
+                    # Force the cloud-only sentinel; ignore any LAN IP the user
+                    # typed in the same form. We need a fallback_device_id so
+                    # the cloud-only flow can address the charger — pull it
+                    # from the live coordinator if it isn't already stored.
+                    new_data["fallback_ip"] = ""
+                    if not new_data.get("fallback_device_id"):
+                        device_id = self._pick_device_id_from_runtime()
+                        if device_id is None:
+                            errors["base"] = "no_device_id"
+                        else:
+                            new_data["fallback_device_id"] = device_id
+                # local mode — apply the user-provided fallback IP normally
+                elif ip:
                     device_id, error_key = await _probe_local_api(self.hass, ip)
                     if error_key:
                         errors["base"] = error_key
@@ -378,14 +406,37 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     new_data.pop("fallback_ip", None)
                     new_data.pop("fallback_device_id", None)
 
-                if not errors:
-                    self.hass.config_entries.async_update_entry(
-                        self._config_entry, data=new_data, options=new_options
+            if not errors:
+                new_options = dict(current_options)
+                new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
+
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, data=new_data, options=new_options
+                )
+
+                if mode_changed:
+                    # Switching modes restructures the coordinator topology
+                    # (cloud-only vs LAN polling). Schedule a reload so the
+                    # change takes effect immediately.
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(
+                            self._config_entry.entry_id
+                        )
                     )
-                    return self.async_create_entry(title="", data={})
+
+                return self.async_create_entry(title="", data={})
 
         schema = vol.Schema(
             {
+                vol.Required(
+                    "connection_type", default=current_mode
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=["local", "cloud_only"],
+                        translation_key="connection_type",
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
                 vol.Optional("fallback_ip", default=current_ip): str,
                 vol.Required(
                     CONF_LOCAL_UPDATE_INTERVAL,
@@ -401,3 +452,19 @@ class V2COptionsFlow(config_entries.OptionsFlow):
             data_schema=schema,
             errors=errors,
         )
+
+    def _pick_device_id_from_runtime(self) -> str | None:
+        """Return any known device_id for this entry, or None if unavailable."""
+        existing = self._config_entry.data.get("fallback_device_id")
+        if existing:
+            return existing
+        runtime = (
+            self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+            if hasattr(self.hass, "data")
+            else None
+        )
+        coordinator = getattr(runtime, "coordinator", None) if runtime else None
+        data = getattr(coordinator, "data", None) if coordinator else None
+        if isinstance(data, dict) and data:
+            return next(iter(data.keys()))
+        return None

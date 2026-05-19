@@ -53,8 +53,9 @@
     "step": {
       "init": {
         "title": "Opciones V2C Cloud",
-        "description": "Ajusta el intervalo de sondeo LAN y (opcionalmente) la IP local de respaldo.\n\n• **Intervalo de refresco local:** con qué frecuencia la integración consulta el cargador por LAN, en segundos. Rango 5-300, predeterminado 30. Valores inferiores a 15 s pueden saturar una LAN lenta y no se recomiendan. Los cargadores solo cloud (4G) ignoran esta opción.\n\n• **IP de respaldo:** usada cuando el cloud no está disponible; déjala vacía para deshabilitar el respaldo local.",
+        "description": "Elige cómo se conecta el cargador, ajusta el intervalo de sondeo LAN y (opcionalmente) configura una IP local de respaldo.\n\n• **Tipo de conexión:** puedes cambiar en cualquier momento entre **Local (Wi-Fi)** y **Solo cloud (4G)**. El cambio recarga la integración.\n\n• **Intervalo de refresco local:** con qué frecuencia la integración consulta el cargador por LAN, en segundos. Rango 5-300, predeterminado 30. Valores inferiores a 15 s pueden saturar una LAN lenta y no se recomiendan. Los cargadores solo cloud (4G) ignoran esta opción.\n\n• **IP de respaldo:** usada cuando el cloud no está disponible (modo Local) o ignorada por completo en modo Solo cloud (4G).",
         "data": {
+          "connection_type": "Tipo de conexión",
           "fallback_ip": "Dirección IP local de respaldo (vacío para deshabilitar)",
           "local_update_interval": "Intervalo de refresco local (segundos)"
         }

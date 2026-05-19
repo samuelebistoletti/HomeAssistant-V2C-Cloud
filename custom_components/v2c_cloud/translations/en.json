@@ -53,8 +53,9 @@
     "step": {
       "init": {
         "title": "V2C Cloud options",
-        "description": "Tune the LAN polling interval and (optionally) the local fallback IP.\n\n• **Local refresh interval:** how often the integration polls the charger over LAN, in seconds. Range 5-300, default 30. Values below 15 s can saturate a slow LAN and are not recommended. Cloud-only (4G) chargers ignore this setting.\n\n• **Fallback IP:** used when the cloud is unreachable; leave empty to disable local fallback.",
+        "description": "Choose how the charger connects, tune the LAN polling interval, and (optionally) set a local fallback IP.\n\n• **Connection type:** switch between **Local (Wi-Fi)** and **Cloud only (4G)** at any time. Changing this reloads the integration.\n\n• **Local refresh interval:** how often the integration polls the charger over LAN, in seconds. Range 5-300, default 30. Values below 15 s can saturate a slow LAN and are not recommended. Cloud-only (4G) chargers ignore this setting.\n\n• **Fallback IP:** used when the cloud is unreachable (Local mode) or ignored entirely in Cloud only (4G) mode.",
         "data": {
+          "connection_type": "Connection type",
           "fallback_ip": "Local fallback IP address (leave empty to disable)",
           "local_update_interval": "Local refresh interval (seconds)"
         }

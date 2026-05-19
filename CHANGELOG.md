@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Connection type editable post-setup** — the options flow now exposes a `Local (Wi-Fi)` / `Cloud only (4G)` toggle. Switching modes triggers an automatic integration reload. In cloud-only mode the optional local fallback IP field is ignored (forced to the empty sentinel); switching to local mode clears the cloud-only sentinel and the stored fallback device id, then accepts a new local IP via the same form. Resolves the inability to change connection type after the initial setup.
+
+### Fixed
+
+- **Connection-type radio labels were not translated** — the initial config-flow step rendered "Local (Wi-Fi)" / "Cloud only (4G)" in English regardless of the active UI locale because the schema used a hard-coded `vol.In({label: ...})` dict. Migrated the schema to `SelectSelector(translation_key="connection_type")` and added a top-level `selector` block to `strings.json` and all translation files (en/it/es).
+- **Italian "Intensità Light LED"** entity name was mixed Italian/English. Renamed to "Intensità LED".
+- **Connection-type description** now explicitly states that, if an optional local fallback IP is configured and becomes unreachable, control commands automatically fall back to the V2C Cloud API.
+
 ## [1.3.0-beta.1] - 2026-05-19
 
 Pre-release for early-adopter testing — same code as the unreleased 1.3.0

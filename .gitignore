@@ -17,6 +17,7 @@ coverage.xml
 .ruff_cache
 .venv
 .env
+.gh-token
 
 # Claude Code
 .claude

@@ -159,7 +159,7 @@ jobs:
       # source tree directly, including the dependency manifest files.
       - name: Generate SBOM (SPDX-JSON)
         if: env.EXISTS == 'false'
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           path: ${{ github.workspace }}
           format: spdx-json
@@ -170,7 +170,7 @@ jobs:
 
       - name: Generate SBOM (CycloneDX-JSON)
         if: env.EXISTS == 'false'
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           path: ${{ github.workspace }}
           format: cyclonedx-json

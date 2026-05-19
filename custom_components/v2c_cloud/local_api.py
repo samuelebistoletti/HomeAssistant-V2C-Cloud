@@ -499,6 +499,102 @@ async def async_write_keyword(  # noqa: PLR0913
         await async_request_local_refresh(runtime_data, device_id)
 
 
+# ---------------------------------------------------------------------------
+# Smart LAN-vs-cloud router
+# ---------------------------------------------------------------------------
+# Public helpers shared by services (__init__.py) and the entity platforms
+# (number.py / switch.py / select.py). Previously defined privately in
+# __init__.py; promoted to local_api.py so entity setters can use the same
+# router without a circular import on the package's top-level module.
+
+
+def is_cloud_only_device(entry_data: dict[str, Any]) -> bool:
+    """Return True when the entry is configured as cloud-only (no LAN)."""
+    if "fallback_ip" not in entry_data:
+        return False
+    fip = entry_data.get("fallback_ip")
+    return not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
+
+
+def config_data_for(runtime_data: V2CEntryRuntimeData) -> dict[str, Any]:
+    """Return the underlying ConfigEntry.data for the given runtime data."""
+    return dict(runtime_data.coordinator.config_entry.data)
+
+
+async def async_route_local_or_cloud(  # noqa: PLR0913
+    hass: HomeAssistant,
+    runtime_data: V2CEntryRuntimeData,
+    device_id: str,
+    *,
+    keyword: str,
+    value: float | str | bool,
+    cloud_call: Any | None,
+    config_data: dict[str, Any] | None = None,
+) -> None:
+    """
+    Send a control command via LAN when possible, otherwise via cloud.
+
+    ``cloud_call`` is an awaitable returned by a V2CClient method (the cloud
+    fallback), OR ``None`` for keywords that have no V2C Cloud endpoint —
+    e.g. ``LightLED`` and ``ContractedPower``, which are LAN-write-only.
+    The router prefers LAN: it tries ``async_write_keyword`` first, and only
+    falls back to the awaitable cloud call when the LAN write raises
+    ``V2CLocalApiError`` (no IP, SSRF, timeout, HTTP error...). For
+    explicitly cloud-only devices (4G), the LAN attempt is skipped entirely;
+    if ``cloud_call`` is ``None`` in cloud-only mode the function raises a
+    ``HomeAssistantError`` with a user-facing message stating that the
+    control cannot be operated remotely.
+
+    Lazy import of v2c_cloud exception classes keeps local_api.py importable
+    by v2c_cloud.py (no cycle).
+    """
+    # Lazy import to avoid a circular dependency at module-load time:
+    # local_api may be imported before v2c_cloud's exceptions are defined
+    # in some testing scenarios.
+    # HA exceptions are also imported lazily for symmetry.
+    from homeassistant.exceptions import (  # noqa: PLC0415
+        ConfigEntryAuthFailed,
+        HomeAssistantError,
+    )
+
+    from .v2c_cloud import V2CAuthError, V2CRequestError  # noqa: PLC0415
+
+    cfg = config_data if config_data is not None else config_data_for(runtime_data)
+    cloud_only = is_cloud_only_device(cfg)
+    if not cloud_only:
+        try:
+            await async_write_keyword(hass, runtime_data, device_id, keyword, value)
+            _LOGGER.debug("V2C router: LAN path used for %s/%s", device_id, keyword)
+        except V2CLocalApiError as err:
+            _LOGGER.debug(
+                "V2C router: LAN failed for %s/%s (%s) — falling back to cloud",
+                device_id,
+                keyword,
+                err,
+            )
+        else:
+            return
+
+    if cloud_call is None:
+        raise HomeAssistantError(
+            f"Cannot set {keyword!r} from Home Assistant in cloud-only mode: "
+            "the V2C Cloud API does not expose a remote setter for this "
+            "control. Adjust it via the V2C app (which uses a different "
+            "transport) or switch the integration to Local (Wi-Fi) mode if "
+            "the charger is on the same LAN."
+        )
+
+    try:
+        await cloud_call
+    except V2CAuthError as err:
+        raise ConfigEntryAuthFailed(
+            "Authentication failed during cloud control call"
+        ) from err
+    except V2CRequestError as err:
+        raise HomeAssistantError(str(err)) from err
+    _LOGGER.debug("V2C router: cloud path used for %s/%s", device_id, keyword)
+
+
 async def async_get_or_create_local_coordinator(
     hass: HomeAssistant,
     runtime_data: V2CEntryRuntimeData,

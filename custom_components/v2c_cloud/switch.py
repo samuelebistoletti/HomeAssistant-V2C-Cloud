@@ -19,7 +19,7 @@ from .local_api import (
     LAN_ONLY_KEYS,
     async_get_or_create_local_coordinator,
     async_request_local_refresh,
-    async_write_keyword,
+    async_route_local_or_cloud,
     get_local_data,
     get_local_value,
 )
@@ -54,12 +54,17 @@ async def async_setup_entry(
                     device_id,
                     name_key="dynamic_mode",
                     unique_suffix="dynamic",
-                    setter=lambda state, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Dynamic",
-                        1 if state else 0,
+                    setter=lambda state, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="Dynamic",
+                            value=1 if state else 0,
+                            cloud_call=client.async_cloud_set_dynamic(
+                                _device_id, bool(state)
+                            ),
+                        )
                     ),
                     reported_keys=("dynamic",),
                     local_keys=("Dynamic",),
@@ -74,12 +79,17 @@ async def async_setup_entry(
                     device_id,
                     name_key="pause_dynamic",
                     unique_suffix="pause_dynamic",
-                    setter=lambda state, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "PauseDynamic",
-                        1 if state else 0,
+                    # PauseDynamic has no V2C Cloud setter (LAN-only feature);
+                    # in cloud-only mode the router raises a clear error.
+                    setter=lambda state, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="PauseDynamic",
+                            value=1 if state else 0,
+                            cloud_call=None,
+                        )
                     ),
                     reported_keys=("pause_dynamic", "pausedynamic"),
                     local_keys=("PauseDynamic",),
@@ -95,12 +105,17 @@ async def async_setup_entry(
                     device_id,
                     name_key="locked",
                     unique_suffix="locked",
-                    setter=lambda state, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Locked",
-                        1 if state else 0,
+                    setter=lambda state, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="Locked",
+                            value=1 if state else 0,
+                            cloud_call=client.async_cloud_set_locked(
+                                _device_id, bool(state)
+                            ),
+                        )
                     ),
                     reported_keys=("locked",),
                     local_keys=("Locked",),
@@ -116,12 +131,21 @@ async def async_setup_entry(
                     device_id,
                     name_key="charging_pause",
                     unique_suffix="charging_pause",
-                    setter=lambda state, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Paused",
-                        1 if state else 0,
+                    # Paused: state=True -> pause (cloud /device/pausecharge);
+                    # state=False -> resume (cloud /device/startcharge).
+                    setter=lambda state, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="Paused",
+                            value=1 if state else 0,
+                            cloud_call=(
+                                client.async_cloud_pause_charge(_device_id)
+                                if state
+                                else client.async_cloud_start_charge(_device_id)
+                            ),
+                        )
                     ),
                     reported_keys=("paused",),
                     local_keys=("Paused",),
@@ -137,12 +161,17 @@ async def async_setup_entry(
                     device_id,
                     name_key="timer",
                     unique_suffix="timer",
-                    setter=lambda state, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Timer",
-                        1 if state else 0,
+                    # Timer has no V2C Cloud setter (LAN-only feature);
+                    # in cloud-only mode the router raises a clear error.
+                    setter=lambda state, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="Timer",
+                            value=1 if state else 0,
+                            cloud_call=None,
+                        )
                     ),
                     reported_keys=("timer",),
                     local_keys=("Timer",),
@@ -158,12 +187,17 @@ async def async_setup_entry(
                     device_id,
                     name_key="logo_led",
                     unique_suffix="logo_led",
-                    setter=lambda state, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "LogoLED",
-                        1 if state else 0,
+                    setter=lambda state, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="LogoLED",
+                            value=1 if state else 0,
+                            cloud_call=client.async_cloud_set_logo_led(
+                                _device_id, bool(state)
+                            ),
+                        )
                     ),
                     reported_keys=("logo_led", "logoled"),
                     local_keys=("LogoLED",),

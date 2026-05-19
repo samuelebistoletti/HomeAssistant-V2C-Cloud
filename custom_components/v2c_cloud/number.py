@@ -23,7 +23,7 @@ from .entity import V2CEntity, _OptimisticHoldMixin
 from .local_api import (
     V2CLocalApiError,
     async_get_or_create_local_coordinator,
-    async_write_keyword,
+    async_route_local_or_cloud,
     get_local_data,
     get_local_value,
 )
@@ -71,12 +71,17 @@ async def async_setup_entry(
                         "current_intensity",
                         "car_intensity",
                     ),
-                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "Intensity",
-                        api_value,
+                    setter=lambda api_value, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="Intensity",
+                            value=api_value,
+                            cloud_call=client.async_cloud_set_intensity(
+                                _device_id, int(api_value)
+                            ),
+                        )
                     ),
                     local_key="Intensity",
                     native_unit=UnitOfElectricCurrent.AMPERE,
@@ -101,12 +106,17 @@ async def async_setup_entry(
                         "min_car_int",
                         "mincar_int",
                     ),
-                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "MinIntensity",
-                        api_value,
+                    setter=lambda api_value, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="MinIntensity",
+                            value=api_value,
+                            cloud_call=client.async_cloud_set_min_car_intensity(
+                                _device_id, int(api_value)
+                            ),
+                        )
                     ),
                     local_key="MinIntensity",
                     native_unit=UnitOfElectricCurrent.AMPERE,
@@ -125,12 +135,18 @@ async def async_setup_entry(
                     name_key="contracted_power",
                     unique_suffix="contracted_power",
                     reported_keys=("contractedpower", "contracted_power"),
-                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "ContractedPower",
-                        api_value,
+                    # No V2C Cloud setter exists for ContractedPower — pass
+                    # cloud_call=None so the router raises a clear error in
+                    # cloud-only mode (LAN write still works when reachable).
+                    setter=lambda api_value, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="ContractedPower",
+                            value=api_value,
+                            cloud_call=None,
+                        )
                     ),
                     local_key="ContractedPower",
                     native_unit=UnitOfPower.KILO_WATT,
@@ -156,12 +172,17 @@ async def async_setup_entry(
                         "max_car_int",
                         "maxcar_int",
                     ),
-                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "MaxIntensity",
-                        api_value,
+                    setter=lambda api_value, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="MaxIntensity",
+                            value=api_value,
+                            cloud_call=client.async_cloud_set_max_car_intensity(
+                                _device_id, int(api_value)
+                            ),
+                        )
                     ),
                     local_key="MaxIntensity",
                     native_unit=UnitOfElectricCurrent.AMPERE,
@@ -180,12 +201,18 @@ async def async_setup_entry(
                     name_key="light_led",
                     unique_suffix="light_led",
                     reported_keys=("lightled", "light_led"),
-                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
-                        hass,
-                        runtime_data,
-                        _device_id,
-                        "LightLED",
-                        api_value,
+                    # No V2C Cloud setter exists for LightLED — pass
+                    # cloud_call=None so the router raises a clear error in
+                    # cloud-only mode (LAN write still works when reachable).
+                    setter=lambda api_value, _device_id=device_id: (
+                        async_route_local_or_cloud(
+                            hass,
+                            runtime_data,
+                            _device_id,
+                            keyword="LightLED",
+                            value=api_value,
+                            cloud_call=None,
+                        )
                     ),
                     local_key="LightLED",
                     native_unit=PERCENTAGE,

@@ -790,6 +790,20 @@ class V2CClient:
             extra_params={"value": str(int(watts))},
         )
 
+    async def async_cloud_set_logo_led(self, device_id: str, enabled: bool) -> Any:
+        """
+        Toggle the logo-LED.
+
+        Endpoint `/device/logo_led` is undocumented but reachable: confirmed
+        2026-05-19 via direct probe (HTTP 200) against a Trydan XQUXDU on
+        firmware 2.4.6. Mirrors the documented LAN keyword `LogoLED`.
+        """
+        return await self._device_command(
+            "/device/logo_led",
+            device_id,
+            extra_params={"value": "1" if enabled else "0"},
+        )
+
     async def async_cloud_get_connected(self, device_id: str) -> bool:
         """Return whether the device is online from the cloud's perspective."""
         data = await self._request(

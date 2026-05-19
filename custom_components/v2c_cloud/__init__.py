@@ -110,7 +110,9 @@ from .const import (
 from .local_api import (
     V2CLocalApiError,
     _build_local_interval,
+    async_route_local_or_cloud,
     async_write_keyword,
+    is_cloud_only_device,
 )
 from .v2c_cloud import (
     V2CAuthError,
@@ -389,7 +391,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     hass.data[DOMAIN][entry.entry_id] = V2CEntryRuntimeData(
         client=client,
         coordinator=coordinator,
-        cloud_only=_is_cloud_only_device(entry.data),
+        cloud_only=is_cloud_only_device(entry.data),
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -511,59 +513,6 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
     for service in _ALL_DOMAIN_SERVICES:
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
-
-
-def _is_cloud_only_device(entry_data: dict[str, Any]) -> bool:
-    """Return True when the entry is configured as cloud-only (no LAN)."""
-    if "fallback_ip" not in entry_data:
-        return False
-    fip = entry_data.get("fallback_ip")
-    return not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
-
-
-async def _async_route_local_or_cloud(  # noqa: PLR0913
-    hass: HomeAssistant,
-    entry_data: V2CEntryRuntimeData,
-    config_data: dict[str, Any],
-    device_id: str,
-    *,
-    keyword: str,
-    value: float | str | bool,
-    cloud_call: Any,
-) -> None:
-    """
-    Send a control command via LAN when possible, otherwise via cloud.
-
-    ``cloud_call`` must be an awaitable returned by a V2CClient method (the
-    cloud fallback). The router prefers LAN: it tries ``async_write_keyword``
-    first, and only falls back to the awaitable cloud call when the LAN write
-    raises ``V2CLocalApiError`` (no IP, SSRF, timeout, HTTP error...). For
-    explicitly cloud-only devices (4G), the LAN attempt is skipped entirely.
-    """
-    cloud_only = _is_cloud_only_device(config_data)
-    if not cloud_only:
-        try:
-            await async_write_keyword(hass, entry_data, device_id, keyword, value)
-            _LOGGER.debug("V2C router: LAN path used for %s/%s", device_id, keyword)
-        except V2CLocalApiError as err:
-            _LOGGER.debug(
-                "V2C router: LAN failed for %s/%s (%s) — falling back to cloud",
-                device_id,
-                keyword,
-                err,
-            )
-        else:
-            return
-
-    try:
-        await cloud_call
-    except V2CAuthError as err:
-        raise ConfigEntryAuthFailed(
-            "Authentication failed during service call"
-        ) from err
-    except V2CRequestError as err:
-        raise HomeAssistantError(str(err)) from err
-    _LOGGER.debug("V2C router: cloud path used for %s/%s", device_id, keyword)
 
 
 def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
@@ -1239,18 +1188,13 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
     # 1.3.0: new services with smart LAN-or-cloud routing
     # ------------------------------------------------------------------
 
-    def _config_data_for(entry_data: V2CEntryRuntimeData) -> dict[str, Any]:
-        """Return the underlying ConfigEntry.data for the given runtime data."""
-        return dict(entry_data.coordinator.config_entry.data)
-
     async def async_handle_start_charge(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         entry_data = await _async_get_entry_for_device(device_id)
         # LAN: Paused=0 resumes; Cloud fallback: /device/startcharge.
-        await _async_route_local_or_cloud(
+        await async_route_local_or_cloud(
             hass,
             entry_data,
-            _config_data_for(entry_data),
             device_id,
             keyword="Paused",
             value=0,
@@ -1268,10 +1212,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
     async def async_handle_pause_charge(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         entry_data = await _async_get_entry_for_device(device_id)
-        await _async_route_local_or_cloud(
+        await async_route_local_or_cloud(
             hass,
             entry_data,
-            _config_data_for(entry_data),
             device_id,
             keyword="Paused",
             value=1,
@@ -1290,10 +1233,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         device_id = call.data[ATTR_DEVICE_ID]
         amps = int(call.data[ATTR_AMPS])
         entry_data = await _async_get_entry_for_device(device_id)
-        await _async_route_local_or_cloud(
+        await async_route_local_or_cloud(
             hass,
             entry_data,
-            _config_data_for(entry_data),
             device_id,
             keyword="Intensity",
             value=amps,
@@ -1320,10 +1262,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         device_id = call.data[ATTR_DEVICE_ID]
         locked = bool(call.data[ATTR_LOCKED])
         entry_data = await _async_get_entry_for_device(device_id)
-        await _async_route_local_or_cloud(
+        await async_route_local_or_cloud(
             hass,
             entry_data,
-            _config_data_for(entry_data),
             device_id,
             keyword="Locked",
             value=1 if locked else 0,
@@ -1347,10 +1288,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         device_id = call.data[ATTR_DEVICE_ID]
         enabled = bool(call.data[ATTR_ENABLED])
         entry_data = await _async_get_entry_for_device(device_id)
-        await _async_route_local_or_cloud(
+        await async_route_local_or_cloud(
             hass,
             entry_data,
-            _config_data_for(entry_data),
             device_id,
             keyword="Dynamic",
             value=1 if enabled else 0,

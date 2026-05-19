@@ -26,7 +26,7 @@ from .local_api import (
     LAN_ONLY_KEYS,
     V2CLocalApiError,
     async_get_or_create_local_coordinator,
-    async_write_keyword,
+    async_route_local_or_cloud,
     get_local_data,
     get_local_value,
 )
@@ -124,12 +124,16 @@ async def async_setup_entry(
                 name_key="dynamic_power_mode",
                 unique_suffix="dynamic_power_mode",
                 options_map=DYNAMIC_POWER_MODES,
-                setter=lambda value, _device_id=device_id: async_write_keyword(
+                # DynamicPowerMode has no V2C Cloud setter (LAN-only feature).
+                # In cloud-only mode the entity is also `available=False` (B2),
+                # but route through cloud_call=None for defence in depth.
+                setter=lambda value, _device_id=device_id: async_route_local_or_cloud(
                     hass,
                     runtime_data,
                     _device_id,
-                    "DynamicPowerMode",
-                    value,
+                    keyword="DynamicPowerMode",
+                    value=value,
+                    cloud_call=None,
                 ),
                 reported_keys=("dynamicpowermode", "dynamic_power_mode"),
                 local_key="DynamicPowerMode",
@@ -147,12 +151,16 @@ async def async_setup_entry(
                 name_key="charge_mode",
                 unique_suffix="charge_mode",
                 options_map=CHARGE_MODES,
-                setter=lambda value, _device_id=device_id: async_write_keyword(
+                # ChargeMode has no V2C Cloud setter (LAN-only feature).
+                # In cloud-only mode the entity is also `available=False` (B2),
+                # but route through cloud_call=None for defence in depth.
+                setter=lambda value, _device_id=device_id: async_route_local_or_cloud(
                     hass,
                     runtime_data,
                     _device_id,
-                    "ChargeMode",
-                    value,
+                    keyword="ChargeMode",
+                    value=value,
+                    cloud_call=None,
                 ),
                 reported_keys=("chargemode", "charge_mode"),
                 local_key="ChargeMode",

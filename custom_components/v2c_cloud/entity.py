@@ -73,7 +73,9 @@ def build_device_info(
 ) -> DeviceInfo:
     """Construct Home Assistant device info for a V2C charger."""
     device_state = get_device_state_from_coordinator(coordinator, device_id)
-    pairing = get_pairing_from_coordinator(coordinator, device_id, device_state=device_state)
+    pairing = get_pairing_from_coordinator(
+        coordinator, device_id, device_state=device_state
+    )
     name = pairing.get("tag") or pairing.get("deviceId") or device_id
     model: str | None = None
 
@@ -105,7 +107,9 @@ def build_device_info(
             pairing_model_code = pairing.get("model")
             if isinstance(pairing_model_code, str) and pairing_model_code.strip():
                 model = pairing_model_code.replace("_", " ").title()
-            elif isinstance(pairing_model_code, (int, float)) and pairing_model_code not in (0, 0.0):
+            elif isinstance(
+                pairing_model_code, (int, float)
+            ) and pairing_model_code not in (0, 0.0):
                 model = f"Model {pairing_model_code}"
 
     version = device_state.get("version")
@@ -190,7 +194,9 @@ class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
     @property
     def pairing(self) -> dict[str, Any]:
         """Return pairing information for this device."""
-        return get_pairing_from_coordinator(self.coordinator, self._device_id, self.device_state)
+        return get_pairing_from_coordinator(
+            self.coordinator, self._device_id, self.device_state
+        )
 
     @property
     def reported(self) -> dict[str, Any]:

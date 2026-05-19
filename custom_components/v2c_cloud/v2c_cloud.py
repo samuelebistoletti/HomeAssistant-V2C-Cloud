@@ -182,7 +182,9 @@ class V2CClient:
         """Return the last RateLimit header snapshot."""
         return self._last_rate_limit
 
-    def preload_pairings(self, pairings: list[dict[str, Any]] | None, ttl: float | None = None) -> None:
+    def preload_pairings(
+        self, pairings: list[dict[str, Any]] | None, ttl: float | None = None
+    ) -> None:
         """Preload cached pairings to avoid initial rate-limit failures."""
         if pairings is None:
             return
@@ -208,7 +210,12 @@ class V2CClient:
             "V2C request %s %s params=%s",
             method,
             url,
-            {k: "***" if k.lower() in ("apikey", "authorization", "password") else v for k, v in params.items()} if params else params,
+            {
+                k: "***" if k.lower() in ("apikey", "authorization", "password") else v
+                for k, v in params.items()
+            }
+            if params
+            else params,
         )
 
         attempt = 0
@@ -251,18 +258,32 @@ class V2CClient:
                         if response.headers:
                             rate_limit = {}
                             limit_header = response.headers.get("RateLimit-Limit")
-                            remaining_header = response.headers.get("RateLimit-Remaining")
+                            remaining_header = response.headers.get(
+                                "RateLimit-Remaining"
+                            )
                             reset_header = response.headers.get("RateLimit-Reset")
                             try:
-                                rate_limit["limit"] = int(limit_header) if limit_header is not None else None
+                                rate_limit["limit"] = (
+                                    int(limit_header)
+                                    if limit_header is not None
+                                    else None
+                                )
                             except (TypeError, ValueError):
                                 rate_limit["limit"] = None
                             try:
-                                rate_limit["remaining"] = int(remaining_header) if remaining_header is not None else None
+                                rate_limit["remaining"] = (
+                                    int(remaining_header)
+                                    if remaining_header is not None
+                                    else None
+                                )
                             except (TypeError, ValueError):
                                 rate_limit["remaining"] = None
                             try:
-                                rate_limit["reset"] = int(reset_header) if reset_header is not None else None
+                                rate_limit["reset"] = (
+                                    int(reset_header)
+                                    if reset_header is not None
+                                    else None
+                                )
                             except (TypeError, ValueError):
                                 rate_limit["reset"] = None
                             if any(value is not None for value in rate_limit.values()):
@@ -296,22 +317,23 @@ class V2CClient:
                     )
                     await asyncio.sleep(RETRY_BACKOFF * attempt)
                     continue
-                raise V2CRequestError(f"HTTP error while calling V2C API: {err}") from err
+                raise V2CRequestError(
+                    f"HTTP error while calling V2C API: {err}"
+                ) from err
 
     async def async_get_pairings(self) -> list[dict[str, Any]]:
         """Return the pairings linked to the current account."""
         now = time.monotonic()
-        if (
-            self._pairings_cache is not None
-            and now < self._pairings_cache_expiry
-        ):
+        if self._pairings_cache is not None and now < self._pairings_cache_expiry:
             return self._pairings_cache
 
         try:
             data = await self._request("GET", "/pairings/me")
         except V2CRateLimitError:
             if self._pairings_cache is not None:
-                _LOGGER.warning("V2C rate limit reached when fetching pairings; using cached data")
+                _LOGGER.warning(
+                    "V2C rate limit reached when fetching pairings; using cached data"
+                )
                 return self._pairings_cache
             raise
         except V2CRequestError as err:
@@ -691,6 +713,94 @@ class V2CClient:
             params={"deviceId": device_id},
         )
 
+    # ------------------------------------------------------------------
+    # 1.3.0: extended cloud endpoints (charge control + intensity + locks)
+    # ------------------------------------------------------------------
+
+    async def async_cloud_start_charge(self, device_id: str) -> Any:
+        """Start or resume the charging session via the cloud endpoint."""
+        return await self._device_command("/device/startcharge", device_id)
+
+    async def async_cloud_pause_charge(self, device_id: str) -> Any:
+        """Pause the active charging session via the cloud endpoint."""
+        return await self._device_command("/device/pausecharge", device_id)
+
+    async def async_cloud_set_intensity(self, device_id: str, amps: int) -> Any:
+        """Set the maximum charging current (A) via the cloud endpoint."""
+        return await self._device_command(
+            "/device/intensity",
+            device_id,
+            extra_params={"value": str(int(amps))},
+        )
+
+    async def async_cloud_set_locked(self, device_id: str, locked: bool) -> Any:
+        """Lock or unlock the charge point via the cloud endpoint (1: lock)."""
+        return await self._device_command(
+            "/device/locked",
+            device_id,
+            extra_params={"value": "1" if locked else "0"},
+        )
+
+    async def async_cloud_set_dynamic(self, device_id: str, enabled: bool) -> Any:
+        """Toggle Dynamic Power Control via the cloud endpoint."""
+        return await self._device_command(
+            "/device/dynamic",
+            device_id,
+            extra_params={"value": "1" if enabled else "0"},
+        )
+
+    async def async_cloud_set_fv_mode(self, device_id: str, mode: int) -> Any:
+        """
+        Configure photovoltaic charging mode (0/1/2).
+
+        0 = PV + Minimum Power, 1 = Exclusive PV, 2 = Maximum Power.
+        """
+        if int(mode) not in (0, 1, 2):
+            raise V2CRequestError(
+                f"Invalid FV mode {mode!r}; expected 0/1/2",
+                status=None,
+            )
+        return await self._device_command(
+            "/device/chargefvmode",
+            device_id,
+            extra_params={"value": str(int(mode))},
+        )
+
+    async def async_cloud_set_max_car_intensity(self, device_id: str, amps: int) -> Any:
+        """Set the maximum current the EV accepts (A)."""
+        return await self._device_command(
+            "/device/max_car_int",
+            device_id,
+            extra_params={"value": str(int(amps))},
+        )
+
+    async def async_cloud_set_min_car_intensity(self, device_id: str, amps: int) -> Any:
+        """Set the minimum current the EV needs to start charging (A)."""
+        return await self._device_command(
+            "/device/min_car_int",
+            device_id,
+            extra_params={"value": str(int(amps))},
+        )
+
+    async def async_cloud_set_denka_max_power(self, device_id: str, watts: int) -> Any:
+        """Update Denka inverter maximum power (W)."""
+        return await self._device_command(
+            "/device/denka/max_power",
+            device_id,
+            extra_params={"value": str(int(watts))},
+        )
+
+    async def async_cloud_get_connected(self, device_id: str) -> bool:
+        """Return whether the device is online from the cloud's perspective."""
+        data = await self._request(
+            "GET",
+            "/device/connected",
+            params={"deviceId": device_id},
+        )
+        # The endpoint may reply with a plain bool/int/string — normalise it.
+        normalised = _normalize_bool(data)
+        return bool(normalised) if normalised is not None else False
+
     async def _device_command(  # noqa: PLR0913
         self,
         path: str,
@@ -725,7 +835,9 @@ async def _fetch_single_device_state(  # noqa: C901
     previous_state = previous_devices.get(device_id, {}) if previous_devices else {}
     previous_additional = previous_state.get("additional", {})
     if isinstance(previous_additional, dict):
-        state.additional.update({k: v for k, v in previous_additional.items() if k != "reported_lower"})
+        state.additional.update(
+            {k: v for k, v in previous_additional.items() if k != "reported_lower"}
+        )
 
     # Pre-compute refresh conditions from previous state — no awaits required.
     previous_cards = previous_state.get("rfid_cards")
@@ -735,7 +847,9 @@ async def _fetch_single_device_state(  # noqa: C901
     previous_version = previous_state.get("version")
     version_info_prev = previous_state.get("additional", {}).get("version_info")
     next_version_refresh = state.additional.get("_version_next_refresh", 0.0)
-    refresh_version = previous_version is None or now >= float(next_version_refresh or 0)
+    refresh_version = previous_version is None or now >= float(
+        next_version_refresh or 0
+    )
 
     # Fire all needed API calls in parallel.
     coro_keys: list[str] = ["reported", "currentstatecharge"]
@@ -761,7 +875,9 @@ async def _fetch_single_device_state(  # noqa: C901
     # --- Process reported state ---
     reported: Any = result_map["reported"]
     if isinstance(reported, Exception):
-        _LOGGER.warning("Failed to fetch reported state for %s: %s", device_id, reported)
+        _LOGGER.warning(
+            "Failed to fetch reported state for %s: %s", device_id, reported
+        )
         reported = None
 
     state.reported_raw = reported
@@ -808,7 +924,13 @@ async def _fetch_single_device_state(  # noqa: C901
     connected_value: Any | None = None
     lowered = state.additional.get("reported_lower")
     if isinstance(lowered, dict):
-        for key in ("connected", "isconnected", "online", "is_online", "statusconnection"):
+        for key in (
+            "connected",
+            "isconnected",
+            "online",
+            "is_online",
+            "statusconnection",
+        ):
             if key in lowered:
                 connected_value = lowered[key]
                 break
@@ -824,7 +946,9 @@ async def _fetch_single_device_state(  # noqa: C901
     # --- Process currentstatecharge (real-time energy/power data) ---
     csc_outcome: Any = result_map.get("currentstatecharge")
     if isinstance(csc_outcome, Exception):
-        _LOGGER.debug("Failed to fetch currentstatecharge for %s: %s", device_id, csc_outcome)
+        _LOGGER.debug(
+            "Failed to fetch currentstatecharge for %s: %s", device_id, csc_outcome
+        )
     elif isinstance(csc_outcome, dict):
         state.additional["currentstatecharge"] = csc_outcome
     elif isinstance(csc_outcome, str):
@@ -839,7 +963,9 @@ async def _fetch_single_device_state(  # noqa: C901
     if refresh_rfid:
         rfid_outcome: Any = result_map.get("rfid")
         if isinstance(rfid_outcome, Exception):
-            _LOGGER.debug("Failed to fetch RFID cards for %s: %s", device_id, rfid_outcome)
+            _LOGGER.debug(
+                "Failed to fetch RFID cards for %s: %s", device_id, rfid_outcome
+            )
         elif isinstance(rfid_outcome, list):
             state.rfid_cards = rfid_outcome
             state.additional["_rfid_last_success"] = now
@@ -860,7 +986,9 @@ async def _fetch_single_device_state(  # noqa: C901
     if refresh_version:
         version_outcome: Any = result_map.get("version")
         if isinstance(version_outcome, Exception):
-            _LOGGER.debug("Failed to fetch version for %s: %s", device_id, version_outcome)
+            _LOGGER.debug(
+                "Failed to fetch version for %s: %s", device_id, version_outcome
+            )
             version_response = None
         else:
             version_response = version_outcome
@@ -892,7 +1020,9 @@ async def _fetch_single_device_state(  # noqa: C901
                 state.additional["version_info"] = version_info_prev
 
         state.additional["_version_next_refresh"] = now + (
-            VERSION_REFRESH_INTERVAL if state.version is not None else VERSION_RETRY_INTERVAL
+            VERSION_REFRESH_INTERVAL
+            if state.version is not None
+            else VERSION_RETRY_INTERVAL
         )
     else:
         state.version = previous_version
@@ -923,7 +1053,9 @@ async def async_gather_devices_state(
         if isinstance(outcome, V2CRateLimitError):
             raise outcome
         if isinstance(outcome, Exception):
-            _LOGGER.warning("Unexpected error fetching state for %s: %s", device_id, outcome)
+            _LOGGER.warning(
+                "Unexpected error fetching state for %s: %s", device_id, outcome
+            )
             continue
         results[device_id] = outcome  # type: ignore[assignment]
 

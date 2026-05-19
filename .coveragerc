@@ -1,0 +1,14 @@
+[run]
+source = custom_components/v2c_cloud
+omit =
+    custom_components/v2c_cloud/__pycache__/*
+    custom_components/v2c_cloud/translations/*
+    tests/*
+
+[report]
+precision = 1
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:

@@ -1,6 +1,6 @@
 {
     "name": "samuelebistoletti/HomeAssistant-V2C-Cloud",
-    "image": "mcr.microsoft.com/devcontainers/python:3.13",
+    "image": "mcr.microsoft.com/devcontainers/python:3.14",
     "postCreateCommand": "scripts/setup",
     "customizations": {
         "vscode": {
@@ -21,6 +21,11 @@
                 "python.analysis.typeCheckingMode": "basic",
                 "python.analysis.autoImportCompletions": true,
                 "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.testing.pytestEnabled": true,
+                "python.testing.unittestEnabled": false,
+                "python.testing.pytestArgs": [
+                    "tests"
+                ],
                 "[python]": {
                     "editor.defaultFormatter": "charliermarsh.ruff"
                 }

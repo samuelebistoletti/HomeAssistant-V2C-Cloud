@@ -1,16 +1,25 @@
 name: Validate with hassfest
+
 permissions:
   contents: read
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   schedule:
-  - cron:  '0 0 * * *'
+    - cron: '0 0 * * *'
+
+concurrency:
+  group: hassfest-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: "ubuntu-latest"
     steps:
-    - uses: "actions/checkout@v6"
-    - uses: "home-assistant/actions/hassfest@dce0e860c68256ef2902ece06afa5401eb4674e1"  # master
+      - uses: "actions/checkout@v6"
+        with:
+          persist-credentials: false
+      - uses: "home-assistant/actions/hassfest@dce0e860c68256ef2902ece06afa5401eb4674e1"  # master

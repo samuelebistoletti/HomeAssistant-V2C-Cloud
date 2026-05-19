@@ -9,6 +9,7 @@
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/issues",
+  "min_ha_version": "2025.4.0",
   "requirements": [],
-  "version": "1.1.6"
+  "version": "1.3.0"
 }

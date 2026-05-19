@@ -28,7 +28,7 @@ body:
     attributes:
       label: Integration version
       description: Version of the V2C Cloud integration (visible in Settings → Devices & Services → V2C Cloud).
-      placeholder: "e.g. 1.1.1"
+      placeholder: "e.g. 1.3.0"
     validations:
       required: true
 
@@ -36,10 +36,22 @@ body:
     id: ha_version
     attributes:
       label: Home Assistant version
-      description: Version of your Home Assistant instance (visible in Settings → About).
-      placeholder: "e.g. 2024.12.0"
+      description: Version of your Home Assistant instance (visible in Settings → About). The integration requires 2025.4.0 or newer.
+      placeholder: "e.g. 2025.5.0"
     validations:
       required: true
+
+  - type: input
+    id: local_refresh_interval
+    attributes:
+      label: Local refresh interval (seconds)
+      description: >-
+        Visible under Settings → Devices & Services → V2C Cloud → Configure
+        (default 30 s, range 5-300). Leave blank if you have not changed it
+        or if your charger is cloud-only (4G).
+      placeholder: "30"
+    validations:
+      required: false
 
   - type: dropdown
     id: install_method

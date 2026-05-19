@@ -1,0 +1,336 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "El dispositivo ya está configurado",
+      "reauth_successful": "Reautenticación exitosa",
+      "reconfigure_successful": "Reconfiguración exitosa"
+    },
+    "error": {
+      "invalid_api_key": "La clave API proporcionada no es válida.",
+      "unknown": "Se produjo un error inesperado",
+      "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP. Verifica la dirección y vuelve a intentarlo.",
+      "no_device_id": "Conectado al cargador, pero no se pudo leer su identificador de dispositivo."
+    },
+    "step": {
+      "user": {
+        "title": "V2C Cloud",
+        "description": "Introduce tu clave API de V2C Cloud. Puedes generarla desde el portal V2C Cloud.",
+        "data": {
+          "api_key": "Clave API"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reautenticar V2C Cloud",
+        "description": "La clave API almacenada ya no es válida. Introduce una nueva clave.",
+        "data": {
+          "api_key": "Clave API"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar V2C Cloud",
+        "description": "Actualiza la clave API de V2C Cloud. La integración se recargará automáticamente.",
+        "data": {
+          "api_key": "Clave API"
+        }
+      },
+      "connection_type": {
+        "title": "Tipo de conexión",
+        "description": "Selecciona cómo se conecta tu cargador V2C a la red.\n\n**Local (Wi-Fi):** El cargador tiene una dirección IP local en tu red. Los datos del sensor se obtienen directamente del cargador con baja latencia.\n\n**Solo cloud (4G):** El cargador se conecta mediante datos móviles (4G) y no dispone de API local. Los datos del sensor se obtienen del API de V2C Cloud. Nota: el API cloud tiene un límite diario de peticiones (~850/día). La integración lo gestiona automáticamente, pero los intervalos de sondeo pueden aumentar al acercarse al límite.",
+        "data": {
+          "connection_type": "Tipo de conexión"
+        }
+      },
+      "fallback_ip": {
+        "title": "V2C Cloud — cloud no disponible",
+        "description": "El API de V2C Cloud no es accesible en este momento. Introduce la dirección IP local del cargador para que la integración pueda seguir operando localmente. Cuando el cloud vuelva a estar disponible, su lista de dispositivos se usará automáticamente.",
+        "data": {
+          "fallback_ip": "Dirección IP local del cargador"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones V2C Cloud",
+        "description": "Ajusta el intervalo de sondeo LAN y (opcionalmente) la IP local de respaldo.\n\n• **Intervalo de refresco local:** con qué frecuencia la integración consulta el cargador por LAN, en segundos. Rango 5-300, predeterminado 30. Valores inferiores a 15 s pueden saturar una LAN lenta y no se recomiendan. Los cargadores solo cloud (4G) ignoran esta opción.\n\n• **IP de respaldo:** usada cuando el cloud no está disponible; déjala vacía para deshabilitar el respaldo local.",
+        "data": {
+          "fallback_ip": "Dirección IP local de respaldo (vacío para deshabilitar)",
+          "local_update_interval": "Intervalo de refresco local (segundos)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP. Verifica la dirección y vuelve a intentarlo.",
+      "no_device_id": "Conectado al cargador, pero no se pudo leer su identificador de dispositivo.",
+      "invalid_interval": "El intervalo de refresco debe ser un entero entre 5 y 300 segundos."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Estado de conexión",
+        "state": {
+          "on": "Conectado",
+          "off": "Desconectado"
+        }
+      }
+    },
+    "sensor": {
+      "device_identifier": {
+        "name": "Identificador de dispositivo"
+      },
+      "firmware_version": {
+        "name": "Versión de firmware"
+      },
+      "charge_state": {
+        "name": "Estado de carga"
+      },
+      "ready_state": {
+        "name": "Estado listo"
+      },
+      "charge_power": {
+        "name": "Potencia de carga"
+      },
+      "charge_energy": {
+        "name": "Energía de carga"
+      },
+      "slave_error": {
+        "name": "Código de error del dispositivo"
+      },
+      "charge_time": {
+        "name": "Tiempo de carga"
+      },
+      "house_power": {
+        "name": "Consumo doméstico"
+      },
+      "fv_power": {
+        "name": "Potencia fotovoltaica"
+      },
+      "battery_power": {
+        "name": "Potencia de batería"
+      },
+      "timer_state": {
+        "name": "Estado del temporizador"
+      },
+      "grid_voltage": {
+        "name": "Tensión de red"
+      },
+      "wifi_ssid": {
+        "name": "SSID Wi-Fi"
+      },
+      "wifi_ip": {
+        "name": "Dirección IP Wi-Fi"
+      },
+      "signal_status": {
+        "name": "Señal Wi-Fi"
+      }
+    },
+    "switch": {
+      "dynamic_mode": {
+        "name": "Modo dinámico"
+      },
+      "pause_dynamic": {
+        "name": "Pausa control dinámico"
+      },
+      "locked": {
+        "name": "Bloqueo del cargador"
+      },
+      "charging_pause": {
+        "name": "Pausa de carga"
+      },
+      "logo_led": {
+        "name": "LED del logo"
+      },
+      "rfid_reader": {
+        "name": "Lector RFID"
+      },
+      "ocpp_enabled": {
+        "name": "OCPP"
+      },
+      "timer": {
+        "name": "Temporizador"
+      }
+    },
+    "select": {
+      "installation_type": {
+        "name": "Tipo de instalación"
+      },
+      "slave_type": {
+        "name": "Dispositivo slave"
+      },
+      "language": {
+        "name": "Idioma"
+      },
+      "dynamic_power_mode": {
+        "name": "Modo de potencia dinámica"
+      },
+      "charge_mode": {
+        "name": "Modo de carga"
+      }
+    },
+    "number": {
+      "current_intensity": {
+        "name": "Intensidad actual"
+      },
+      "min_intensity": {
+        "name": "Intensidad mínima"
+      },
+      "max_intensity": {
+        "name": "Intensidad máxima"
+      },
+      "contracted_power": {
+        "name": "Potencia contratada"
+      },
+      "light_led": {
+        "name": "Intensidad LED de iluminación"
+      }
+    },
+    "button": {
+      "reboot": {
+        "name": "Reiniciar cargador"
+      },
+      "trigger_update": {
+        "name": "Iniciar actualización de firmware"
+      }
+    }
+  },
+  "services": {
+    "set_wifi_credentials": {
+      "name": "Actualizar credenciales Wi-Fi",
+      "description": "Configura SSID y contraseña Wi-Fi para un cargador."
+    },
+    "program_timer": {
+      "name": "Configurar temporizador de carga",
+      "description": "Establece hora de inicio/fin y estado de activación de un temporizador del dispositivo."
+    },
+    "register_rfid": {
+      "name": "Registrar tarjeta RFID",
+      "description": "Activa el modo de registro de tarjeta con la etiqueta indicada."
+    },
+    "add_rfid_card": {
+      "name": "Añadir tarjeta RFID manualmente",
+      "description": "Registra una tarjeta RFID proporcionando su UID y nombre visible."
+    },
+    "update_rfid_tag": {
+      "name": "Actualizar etiqueta RFID",
+      "description": "Renombra una tarjeta RFID existente."
+    },
+    "delete_rfid": {
+      "name": "Eliminar tarjeta RFID",
+      "description": "Elimina una tarjeta RFID registrada del dispositivo."
+    },
+    "set_charge_stop_energy": {
+      "name": "Parada por energía",
+      "description": "Detiene la carga tras entregar una cantidad de energía concreta."
+    },
+    "set_charge_stop_minutes": {
+      "name": "Parada por tiempo",
+      "description": "Detiene la carga automáticamente tras los minutos indicados."
+    },
+    "start_charge_for_energy": {
+      "name": "Iniciar carga por energía",
+      "description": "Inicia una sesión de carga que terminará al alcanzar la energía objetivo."
+    },
+    "start_charge_for_minutes": {
+      "name": "Iniciar carga por tiempo",
+      "description": "Inicia una sesión de carga que terminará tras los minutos indicados."
+    },
+    "trigger_update": {
+      "name": "Iniciar actualización de firmware",
+      "description": "Pide al cargador que busque e instale las actualizaciones de firmware disponibles."
+    },
+    "set_ocpp_enabled": {
+      "name": "Activar OCPP",
+      "description": "Activa o desactiva la funcionalidad OCPP."
+    },
+    "set_ocpp_id": {
+      "name": "Establecer Charge Point ID OCPP",
+      "description": "Configura el identificador del punto de recarga usado en sesiones OCPP."
+    },
+    "set_ocpp_address": {
+      "name": "Establecer servidor OCPP",
+      "description": "Configura la URL del servidor OCPP remoto."
+    },
+    "set_inverter_ip": {
+      "name": "Establecer IP del inversor",
+      "description": "Configura la dirección IP del inversor conectado."
+    },
+    "set_installation_voltage": {
+      "name": "Establecer tensión de instalación",
+      "description": "Actualiza el valor de la tensión de instalación mediante el API local."
+    },
+    "scan_wifi_networks": {
+      "name": "Escanear redes Wi-Fi",
+      "description": "Lanza un escaneo Wi-Fi y publica la lista de redes visibles como evento."
+    },
+    "create_power_profile": {
+      "name": "Crear perfil de potencia",
+      "description": "Guarda un nuevo perfil de potencia personalizado (v2)."
+    },
+    "update_power_profile": {
+      "name": "Actualizar perfil de potencia",
+      "description": "Actualiza un perfil de potencia personalizado existente (v2)."
+    },
+    "get_power_profile": {
+      "name": "Obtener perfil de potencia",
+      "description": "Recupera un perfil de potencia personalizado mediante su timestamp."
+    },
+    "delete_power_profile": {
+      "name": "Eliminar perfil de potencia",
+      "description": "Elimina un perfil de potencia personalizado."
+    },
+    "list_power_profiles": {
+      "name": "Listar perfiles de potencia",
+      "description": "Recupera todos los perfiles de potencia personalizados del dispositivo."
+    },
+    "get_device_statistics": {
+      "name": "Estadísticas del dispositivo",
+      "description": "Obtiene las estadísticas de carga de un dispositivo concreto."
+    },
+    "get_global_statistics": {
+      "name": "Estadísticas globales",
+      "description": "Obtiene las estadísticas agregadas de carga de la cuenta."
+    },
+    "start_charge": {
+      "name": "Iniciar carga",
+      "description": "Inicia o reanuda la sesión de carga. Usa LAN cuando es posible; en caso contrario, el cloud."
+    },
+    "pause_charge": {
+      "name": "Pausar carga",
+      "description": "Pausa la sesión de carga activa. Usa LAN cuando es posible; en caso contrario, el cloud."
+    },
+    "set_charge_intensity": {
+      "name": "Ajustar intensidad de carga",
+      "description": "Ajusta la corriente máxima de carga (A). Usa LAN cuando es posible; en caso contrario, el cloud."
+    },
+    "set_locked": {
+      "name": "Bloquear cargador",
+      "description": "Bloquea o desbloquea el punto de recarga. Usa LAN cuando es posible; en caso contrario, el cloud."
+    },
+    "set_dynamic": {
+      "name": "Activar control dinámico",
+      "description": "Activa o desactiva el control dinámico de potencia. Usa LAN cuando es posible; en caso contrario, el cloud."
+    },
+    "set_fv_mode": {
+      "name": "Modo fotovoltaico",
+      "description": "Configura el modo de carga fotovoltaica (0=PV+mínima, 1=PV exclusivo, 2=máxima). Solo cloud."
+    },
+    "set_max_car_intensity": {
+      "name": "Corriente máxima del vehículo",
+      "description": "Actualiza la corriente máxima (A) que el vehículo acepta. Solo cloud."
+    },
+    "set_min_car_intensity": {
+      "name": "Corriente mínima del vehículo",
+      "description": "Actualiza la corriente mínima (A) que el vehículo requiere. Solo cloud."
+    },
+    "set_denka_max_power": {
+      "name": "Potencia máxima Denka",
+      "description": "Actualiza la potencia máxima del inversor Denka (W). Solo cloud."
+    },
+    "get_connected_status": {
+      "name": "Verificar conexión cloud",
+      "description": "Consulta el estado de conexión del dispositivo en el cloud; el resultado se publica en el evento v2c_cloud_connected_status."
+    }
+  }
+}

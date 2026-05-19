@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 
 def _make_coordinator(connected_value, reported_value=None):
     """Build a minimal coordinator with one device."""

@@ -53,15 +53,17 @@
     "step": {
       "init": {
         "title": "V2C Cloud options",
-        "description": "Set or update the local fallback IP address. The integration uses this IP when the V2C Cloud is unreachable. Leave empty to disable local fallback.",
+        "description": "Tune the LAN polling interval and (optionally) the local fallback IP.\n\n• **Local refresh interval:** how often the integration polls the charger over LAN, in seconds. Range 5-300, default 30. Values below 15 s can saturate a slow LAN and are not recommended. Cloud-only (4G) chargers ignore this setting.\n\n• **Fallback IP:** used when the cloud is unreachable; leave empty to disable local fallback.",
         "data": {
-          "fallback_ip": "Local fallback IP address (leave empty to disable)"
+          "fallback_ip": "Local fallback IP address (leave empty to disable)",
+          "local_update_interval": "Local refresh interval (seconds)"
         }
       }
     },
     "error": {
       "cannot_connect_local": "Could not reach the charger at that IP address. Check the address and try again.",
-      "no_device_id": "Connected to the charger but could not read its device ID."
+      "no_device_id": "Connected to the charger but could not read its device ID.",
+      "invalid_interval": "Refresh interval must be an integer between 5 and 300 seconds."
     }
   },
   "entity": {
@@ -162,6 +164,9 @@
       },
       "dynamic_power_mode": {
         "name": "Dynamic power mode"
+      },
+      "charge_mode": {
+        "name": "Charge mode"
       }
     },
     "number": {
@@ -176,6 +181,9 @@
       },
       "contracted_power": {
         "name": "Contracted power"
+      },
+      "light_led": {
+        "name": "Light LED intensity"
       }
     },
     "button": {
@@ -283,6 +291,47 @@
     "get_global_statistics": {
       "name": "Get global statistics",
       "description": "Retrieve aggregated charging statistics for the account."
+    },
+    "start_charge": {
+      "name": "Start charge",
+      "description": "Start or resume the charging session. Uses LAN when available, otherwise the cloud."
+    },
+    "pause_charge": {
+      "name": "Pause charge",
+      "description": "Pause the active charging session. Uses LAN when available, otherwise the cloud."
+    },
+    "set_charge_intensity": {
+      "name": "Set charge intensity",
+      "description": "Set the maximum charging current (A). Uses LAN when available, otherwise the cloud."
+    },
+    "set_locked": {
+      "name": "Lock charger",
+      "description": "Lock or unlock the charge point. Uses LAN when available, otherwise the cloud."
+    },
+    "set_dynamic": {
+      "name": "Toggle dynamic control",
+      "description": "Enable or disable dynamic power control. Uses LAN when available, otherwise the cloud."
+    },
+    "set_fv_mode": {
+      "name": "Set photovoltaic mode",
+      "description": "Configure photovoltaic charging mode (0=PV+Minimum, 1=PV exclusive, 2=Maximum). Cloud only."
+    },
+    "set_max_car_intensity": {
+      "name": "Set vehicle max current",
+      "description": "Update the maximum current the connected EV accepts (A). Cloud only."
+    },
+    "set_min_car_intensity": {
+      "name": "Set vehicle min current",
+      "description": "Update the minimum current the connected EV requires (A). Cloud only."
+    },
+    "set_denka_max_power": {
+      "name": "Set Denka maximum power",
+      "description": "Update Denka inverter maximum power (W). Cloud only."
+    },
+    "get_connected_status": {
+      "name": "Refresh cloud connection status",
+      "description": "Query the cloud-side connection status; the result is fired on the v2c_cloud_connected_status event."
     }
   }
 }
+

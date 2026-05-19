@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import time
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 
 def _make_switch(
@@ -37,7 +34,10 @@ def _make_switch(
                 "device_id": "dev-1",
                 "pairing": {"deviceId": "dev-1"},
                 "reported": reported,
-                "additional": {"reported_lower": reported_lower, "static_ip": "192.168.1.1"},
+                "additional": {
+                    "reported_lower": reported_lower,
+                    "static_ip": "192.168.1.1",
+                },
             }
         },
         "pairings": [{"deviceId": "dev-1"}],
@@ -48,7 +48,10 @@ def _make_switch(
     runtime_data.coordinator = coord
     if local_data:
         local_coord = MagicMock()
-        local_coord.data = {"Dynamic": local_value, "_lower_index": {"dynamic": "Dynamic"}}
+        local_coord.data = {
+            "Dynamic": local_value,
+            "_lower_index": {"dynamic": "Dynamic"},
+        }
         local_coord.last_update_success = True
         runtime_data.local_coordinators = {"dev-1": local_coord}
     else:
@@ -106,12 +109,16 @@ class TestV2CBooleanSwitchIsOn:
         assert switch.is_on is True
 
     def test_icon_set_on_for_true(self):
-        switch, _ = _make_switch(local_value=1, icon_on="mdi:flash", icon_off="mdi:flash-off")
+        switch, _ = _make_switch(
+            local_value=1, icon_on="mdi:flash", icon_off="mdi:flash-off"
+        )
         _ = switch.is_on
         assert switch._attr_icon == "mdi:flash"
 
     def test_icon_set_off_for_false(self):
-        switch, _ = _make_switch(local_value=0, icon_on="mdi:flash", icon_off="mdi:flash-off")
+        switch, _ = _make_switch(
+            local_value=0, icon_on="mdi:flash", icon_off="mdi:flash-off"
+        )
         _ = switch.is_on
         assert switch._attr_icon == "mdi:flash-off"
 

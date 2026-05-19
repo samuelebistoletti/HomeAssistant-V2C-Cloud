@@ -40,6 +40,7 @@ def no_sleep():
 # Error handling
 # ---------------------------------------------------------------------------
 
+
 class TestRequestErrors:
     """HTTP error codes are translated into the right exception types."""
 
@@ -98,6 +99,7 @@ class TestRequestErrors:
 # ---------------------------------------------------------------------------
 # Successful responses
 # ---------------------------------------------------------------------------
+
 
 class TestSuccessfulResponses:
     """Successful HTTP responses are decoded and returned correctly."""
@@ -166,7 +168,9 @@ class TestSuccessfulResponses:
             await client.async_get_pairings()
         # last_rate_limit may remain None if no RateLimit-* headers present
         # (it will only be set if at least one header value is not None)
-        assert client.last_rate_limit is None or isinstance(client.last_rate_limit, dict)
+        assert client.last_rate_limit is None or isinstance(
+            client.last_rate_limit, dict
+        )
 
     async def test_base_url_property(self, client):
         assert client.base_url == BASE_URL
@@ -178,6 +182,7 @@ class TestSuccessfulResponses:
 # ---------------------------------------------------------------------------
 # Pairings caching
 # ---------------------------------------------------------------------------
+
 
 class TestPairingsCache:
     """Pairings are cached in memory and stale data is used as fallback."""
@@ -253,6 +258,7 @@ class TestPairingsCache:
 # ---------------------------------------------------------------------------
 # Device commands
 # ---------------------------------------------------------------------------
+
 
 class TestDeviceCommands:
     """Device-specific command methods pass correct params to the API."""

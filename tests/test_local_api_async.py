@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from aiohttp import ClientSession
@@ -13,7 +13,6 @@ from custom_components.v2c_cloud.local_api import (
     async_write_keyword,
     resolve_static_ip,
 )
-
 
 # ---------------------------------------------------------------------------
 # resolve_static_ip
@@ -31,7 +30,9 @@ def _make_runtime(*, additional=None, local_data=None, pairing_ip=None):
     coord = MagicMock()
     coord.data = {
         "devices": {"dev-1": device_state},
-        "pairings": [{"deviceId": "dev-1", "ip": pairing_ip}] if pairing_ip else [{"deviceId": "dev-1"}],
+        "pairings": [{"deviceId": "dev-1", "ip": pairing_ip}]
+        if pairing_ip
+        else [{"deviceId": "dev-1"}],
     }
 
     runtime_data = MagicMock()
@@ -99,7 +100,10 @@ class TestResolveStaticIp:
 
 def _make_hass_with_session(session: ClientSession) -> MagicMock:
     hass = MagicMock()
-    with patch("custom_components.v2c_cloud.local_api.async_get_clientsession", return_value=session):
+    with patch(
+        "custom_components.v2c_cloud.local_api.async_get_clientsession",
+        return_value=session,
+    ):
         pass
     return hass
 
@@ -152,7 +156,9 @@ class TestAsyncWriteKeywordSsrfGuard:
                 hass = MagicMock()
                 # Suppress follow-up local refresh
                 rd.local_coordinators = {}
-                await async_write_keyword(hass, rd, "dev-1", "Intensity", 16, refresh_local=False)
+                await async_write_keyword(
+                    hass, rd, "dev-1", "Intensity", 16, refresh_local=False
+                )
         await session.close()
 
     async def test_bool_value_serialized_as_int(self):
@@ -172,7 +178,9 @@ class TestAsyncWriteKeywordSsrfGuard:
             ):
                 hass = MagicMock()
                 rd.local_coordinators = {}
-                await async_write_keyword(hass, rd, "dev-1", "Locked", True, refresh_local=False)
+                await async_write_keyword(
+                    hass, rd, "dev-1", "Locked", True, refresh_local=False
+                )
         await session.close()
 
     async def test_http_error_raises_local_api_error(self):
@@ -191,7 +199,9 @@ class TestAsyncWriteKeywordSsrfGuard:
                 hass = MagicMock()
                 rd.local_coordinators = {}
                 with pytest.raises(V2CLocalApiError, match="HTTP 500"):
-                    await async_write_keyword(hass, rd, "dev-1", "Intensity", 16, refresh_local=False)
+                    await async_write_keyword(
+                        hass, rd, "dev-1", "Intensity", 16, refresh_local=False
+                    )
         await session.close()
 
 
@@ -203,25 +213,31 @@ class TestAsyncWriteKeywordSsrfGuard:
 class TestSsrfBoundaries:
     """Parametrized test verifying exactly which IPs are allowed / blocked."""
 
-    @pytest.mark.parametrize("ip", [
-        "127.0.0.1",
-        "127.255.255.255",
-        "8.8.8.8",
-        "1.0.0.1",
-        "169.254.1.1",    # link-local — is_private=True on Python 3.11+ but must be rejected
-    ])
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "127.0.0.1",
+            "127.255.255.255",
+            "8.8.8.8",
+            "1.0.0.1",
+            "169.254.1.1",  # link-local — is_private=True on Python 3.11+ but must be rejected
+        ],
+    )
     async def test_rejected_ips(self, ip):
         hass = MagicMock()
         rd = _make_runtime(additional={"static_ip": ip})
         with pytest.raises(V2CLocalApiError):
             await async_write_keyword(hass, rd, "dev-1", "Intensity", 1)
 
-    @pytest.mark.parametrize("ip", [
-        "192.168.1.1",
-        "10.10.10.10",
-        "172.16.0.1",
-        "172.31.255.254",
-    ])
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "192.168.1.1",
+            "10.10.10.10",
+            "172.16.0.1",
+            "172.31.255.254",
+        ],
+    )
     async def test_allowed_ips_reach_http(self, ip):
         session = ClientSession()
         rd = _make_runtime(additional={"static_ip": ip})
@@ -239,5 +255,7 @@ class TestSsrfBoundaries:
             ):
                 hass = MagicMock()
                 rd.local_coordinators = {}
-                await async_write_keyword(hass, rd, "dev-1", "Dynamic", 1, refresh_local=False)
+                await async_write_keyword(
+                    hass, rd, "dev-1", "Dynamic", 1, refresh_local=False
+                )
         await session.close()

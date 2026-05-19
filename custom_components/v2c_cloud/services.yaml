@@ -417,3 +417,151 @@ get_global_statistics:
       required: false
       selector:
         date:
+start_charge:
+  name: Avvia ricarica
+  description: Avvia o riprende la sessione di ricarica. Usa l'API locale quando disponibile, altrimenti il cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+pause_charge:
+  name: Metti in pausa la ricarica
+  description: Mette in pausa la sessione attiva. Usa l'API locale quando disponibile, altrimenti il cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+set_charge_intensity:
+  name: Imposta intensità di ricarica
+  description: Imposta la corrente massima di ricarica (A). Usa l'API locale quando disponibile, altrimenti il cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    amps:
+      name: Corrente (A)
+      required: true
+      selector:
+        number:
+          min: 6
+          max: 32
+          step: 1
+          mode: box
+set_locked:
+  name: Blocca/sblocca caricatore
+  description: Blocca o sblocca l'accesso al caricatore. Usa l'API locale quando disponibile, altrimenti il cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    locked:
+      name: Bloccato
+      required: true
+      selector:
+        boolean:
+set_dynamic:
+  name: Abilita/disabilita controllo dinamico
+  description: Abilita o disabilita il controllo dinamico della potenza (load balancing). Usa l'API locale quando disponibile, altrimenti il cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Abilitato
+      required: true
+      selector:
+        boolean:
+set_fv_mode:
+  name: Imposta modalità fotovoltaica
+  description: 0=PV+Potenza minima, 1=PV esclusivo, 2=Potenza massima. Solo cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    mode:
+      name: Modalità FV
+      required: true
+      selector:
+        select:
+          options:
+            - label: "PV + Potenza minima (0)"
+              value: "0"
+            - label: "PV esclusivo (1)"
+              value: "1"
+            - label: "Potenza massima (2)"
+              value: "2"
+set_max_car_intensity:
+  name: Imposta corrente massima accettata dall'auto
+  description: Aggiorna la corrente massima (A) che il veicolo è in grado di accettare. Solo cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    amps:
+      name: Corrente (A)
+      required: true
+      selector:
+        number:
+          min: 6
+          max: 32
+          step: 1
+          mode: box
+set_min_car_intensity:
+  name: Imposta corrente minima richiesta dall'auto
+  description: Aggiorna la corrente minima (A) richiesta dal veicolo per iniziare la ricarica. Solo cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    amps:
+      name: Corrente (A)
+      required: true
+      selector:
+        number:
+          min: 6
+          max: 32
+          step: 1
+          mode: box
+set_denka_max_power:
+  name: Imposta potenza massima Denka
+  description: Aggiorna la potenza massima per gli inverter Denka. Solo cloud.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:
+    watts:
+      name: Potenza (W)
+      required: true
+      selector:
+        number:
+          min: 1000
+          max: 22000
+          step: 100
+          mode: box
+get_connected_status:
+  name: Verifica connessione cloud
+  description: Controlla se il dispositivo risulta online sul V2C Cloud. Il risultato è pubblicato sull'evento v2c_cloud_connected_status.
+  fields:
+    device_id:
+      name: Device ID
+      required: true
+      selector:
+        text:

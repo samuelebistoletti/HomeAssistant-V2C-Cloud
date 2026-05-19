@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-05-18
+
+### Added
+
+- **Full V2C Cloud endpoint coverage** – 10 new client methods cover every previously missing public endpoint: `start_charge`, `pause_charge`, `intensity`, `locked`, `dynamic`, `chargefvmode`, `max_car_int`, `min_car_int`, `denka/max_power`, and `GET /device/connected`. Each endpoint is exercised by dedicated tests in `tests/test_cloud_endpoints_1_3.py`.
+- **10 new Home Assistant services**: `start_charge`, `pause_charge`, `set_charge_intensity`, `set_locked`, `set_dynamic`, `set_fv_mode`, `set_max_car_intensity`, `set_min_car_intensity`, `set_denka_max_power`, `get_connected_status`. The first five use the new LAN-vs-cloud router (see below); the photovoltaic and Denka calls are cloud-only.
+- **Smart LAN-vs-cloud router** (`_async_route_local_or_cloud` in `__init__.py`). For control commands shared between LAN (`/write/`) and cloud, the integration prefers the LAN path when a `fallback_ip` is configured, and transparently falls back to the cloud endpoint when LAN is unreachable or the device is cloud-only (4G).
+- **`ChargeMode` select entity** (LAN write to the `ChargeMode` keyword: monophasic / threephasic / mixed).
+- **`LightLED` number entity** (LAN write to the `LightLED` keyword, 0-100 %).
+- **User-configurable local refresh interval** (5-300 s, default 30 s) exposed via the Reconfigure dialog (`CONF_LOCAL_UPDATE_INTERVAL`). Cloud-only (4G) devices keep their fixed cadence and ignore the option. Changes apply live via an entry update listener — no integration reload required.
+- **Spanish UI translation** – the previously incomplete Spanish support is now a full `translations/es.json` (235 keys), at parity with `en.json` and `it.json`.
+- **Live smoke-test script** (`scripts/live_smoke_test.py`) – exercises every read endpoint and issues safe no-op writes against a real Trydan plus the V2C Cloud, then verifies snapshot/restore. Requires the explicit `--confirm-restore` flag and is never run in CI.
+- **CI matrix on Python 3.12, 3.13 and 3.14**, ruff lint gate, coverage reporting via Codecov, and a new `.coveragerc`.
+- **`.github/dependabot.yml`** — weekly grouped updates for both GitHub Actions and pip dependencies, with timezone-aware schedules.
+- **`concurrency:` blocks** added to every push/PR workflow (`tests`, `security`, `hacs`, `hassfest`, `codeql`, `tag-and-release`). Saves CI minutes and avoids the "outdated result wins" race when developers push twice in a row.
+- **Pip caching** (`actions/setup-python@v5` with `cache: pip`) on every Python step.
+- **`tag-and-release.yaml` hardened** — the release pipeline now gates on the full Python matrix (3.12/3.13/3.14), ruff lint, hassfest and HACS validation in addition to the existing test + security checks. A manifest with a broken schema, a lint regression, or a HACS misconfiguration can no longer reach a published release.
+- **52 new unit tests** total across 4 new test files (`test_cloud_endpoints_1_3`, `test_router_1_3`, `test_options_flow_interval`, `test_manifest_hygiene`) plus the two previously skipped pre-existing failures (`test_gather` and `test_init::test_rate_limit_doubles_coordinator_interval`) are now fixed and re-enabled.
+
+### Changed
+
+- **SSRF guard deduplicated** into `custom_components/v2c_cloud/_net.py::validate_private_ip`. Replaces four scattered copies with a single, tested helper covering both IP parse errors and policy violations (private + not loopback + not link-local + not unspecified).
+- **Local API constants consolidated in `const.py`**: `LOCAL_HTTP_TIMEOUT`, `LOCAL_MAX_RETRIES`, `LOCAL_RETRY_BACKOFF`, `LOCAL_WRITE_RETRY_DELAY`, `CLOUD_ONLY_UPDATE_INTERVAL`, and the new `DEFAULT/MIN/MAX_LOCAL_INTERVAL` bounds.
+- **`async_write_keyword` now validates the keyword** against a documented whitelist (`WRITEABLE_KEYWORDS`) to reduce the SSRF surface and prevent accidental misuse from automations.
+- **`manifest.json` declares `min_ha_version = 2025.4.0`**, matching `hacs.json`.
+
+### Fixed
+
+- **`requirements.txt`**: `pyyaml` is now version-pinned (`>=6.0,<7`).
+- **`requirements_test.txt`**: all packages now have upper bounds for reproducible CI builds.
+- **`.ruff.toml`**: `target-version` aligned with the CI Python version (`py312`). Test/script directories have a targeted `per-file-ignores` so the strict `select = ALL` no longer drowns the lint output in test-only noise.
+- **Devcontainer**: image bumped to `mcr.microsoft.com/devcontainers/python:3.14` (matches the latest CI matrix entry). `scripts/setup` now installs `requirements_test.txt` and `pytest-cov` as well, so pytest discovery works in VSCode out-of-the-box. VSCode pytest settings (`python.testing.pytestEnabled`, `pytestArgs`) added to `.devcontainer.json`.
+- **`hacs.yaml` + `hassfest.yaml` triggers**: now scoped to `branches: [main]` on push so feature branches no longer spawn redundant runs. Daily cron retained.
+- **CI hardening**: `persist-credentials: false` on every checkout that does not push back to the repo. Bandit artifact retention pinned to 30 days. `pip-audit` calls now use `--strict` so unknown vulnerabilities also fail the job.
+- **Ruff format gate in CI**: the entire codebase has been mass-formatted with `ruff format` and both `ruff check` and `ruff format --check` now gate every PR and release. Future contributions must keep the tree formatted.
+- **SBOM generated on every release**: `tag-and-release.yaml` now produces both SPDX-JSON and CycloneDX-JSON Software Bill of Materials via `anchore/sbom-action@v0` and attaches them to the GitHub Release as `v2c_cloud-<version>.spdx.json` / `.cyclonedx.json`. Downstream consumers and security scanners can pick whichever standard they prefer.
+- **Reusable security pipeline**: `security.yaml` now exposes a `workflow_call` trigger so `tag-and-release.yaml` reuses the exact same SAST/audit/secret-scan jobs via `uses: ./.github/workflows/security.yaml`. Single source of truth — adding a scanner to `security.yaml` automatically gates releases too.
+
+### Security
+
+- **Tighter local-write surface**: writes are now rejected unless the keyword is in the documented Trydan write-list, the resolved IP parses cleanly *and* satisfies the private/non-loopback/non-link-local/non-unspecified policy.
+- Audit of credential masking, SSRF guards and `eval/exec/pickle/yaml.unsafe_load` use confirmed clean — no new findings.
+
 ## [1.1.6] - 2026-03-24
 
 ### Fixed

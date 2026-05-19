@@ -178,9 +178,8 @@ async def async_setup_entry(
                     device_id,
                     name_key="rfid_reader",
                     unique_suffix="rfid_reader",
-                    setter=lambda state, _device_id=device_id: client.async_set_rfid_mode(
-                        _device_id, state
-                    ),
+                    setter=lambda state,
+                    _device_id=device_id: client.async_set_rfid_mode(_device_id, state),
                     reported_keys=("set_rfid", "rfid_enabled", "rfid"),
                     icon_on="mdi:card-account-details",
                     icon_off="mdi:card-off",
@@ -197,7 +196,8 @@ async def async_setup_entry(
                     device_id,
                     name_key="ocpp_enabled",
                     unique_suffix="ocpp_enabled",
-                    setter=lambda state, _device_id=device_id: client.async_set_ocpp_enabled(
+                    setter=lambda state,
+                    _device_id=device_id: client.async_set_ocpp_enabled(
                         _device_id, state
                     ),
                     reported_keys=(
@@ -376,7 +376,9 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
             try:
                 await self.coordinator.async_request_refresh()
             except Exception:  # noqa: BLE001
-                _LOGGER.debug("Delayed coordinator refresh failed for %s", self._device_id)
+                _LOGGER.debug(
+                    "Delayed coordinator refresh failed for %s", self._device_id
+                )
 
         self._cancel_delayed_refresh = async_call_later(
             self.hass,

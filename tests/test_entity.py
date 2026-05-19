@@ -15,7 +15,6 @@ from custom_components.v2c_cloud.entity import (
     get_pairing_from_coordinator,
 )
 
-
 # ---------------------------------------------------------------------------
 # coerce_bool
 # ---------------------------------------------------------------------------
@@ -24,11 +23,16 @@ from custom_components.v2c_cloud.entity import (
 class TestCoerceBool:
     """Tests for entity-layer boolean coercion."""
 
-    @pytest.mark.parametrize("value", [True, 1, 1.0, 2, "1", "true", "True", "TRUE", "on", "yes", "enabled"])
+    @pytest.mark.parametrize(
+        "value", [True, 1, 1.0, 2, "1", "true", "True", "TRUE", "on", "yes", "enabled"]
+    )
     def test_truthy(self, value):
         assert coerce_bool(value) is True
 
-    @pytest.mark.parametrize("value", [False, 0, 0.0, "0", "false", "False", "FALSE", "off", "no", "disabled"])
+    @pytest.mark.parametrize(
+        "value",
+        [False, 0, 0.0, "0", "false", "False", "FALSE", "off", "no", "disabled"],
+    )
     def test_falsy(self, value):
         assert coerce_bool(value) is False
 
@@ -127,19 +131,23 @@ class TestGetPairingFromCoordinator:
 
     def test_returns_pairing_from_device_state(self):
         pairing = {"deviceId": "dev-1", "name": "Charger"}
-        coord = self._coordinator({
-            "devices": {"dev-1": {"pairing": pairing}},
-            "pairings": [],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {"dev-1": {"pairing": pairing}},
+                "pairings": [],
+            }
+        )
         result = get_pairing_from_coordinator(coord, "dev-1")
         assert result == pairing
 
     def test_falls_back_to_pairings_list(self):
         pairing = {"deviceId": "dev-1", "name": "Charger"}
-        coord = self._coordinator({
-            "devices": {"dev-1": {}},
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {"dev-1": {}},
+                "pairings": [pairing],
+            }
+        )
         result = get_pairing_from_coordinator(coord, "dev-1")
         assert result == pairing
 
@@ -158,10 +166,12 @@ class TestGetPairingFromCoordinator:
     def test_skips_non_matching_pairings(self):
         pairing_a = {"deviceId": "dev-A"}
         pairing_b = {"deviceId": "dev-B"}
-        coord = self._coordinator({
-            "devices": {"dev-B": {}},
-            "pairings": [pairing_a, pairing_b],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {"dev-B": {}},
+                "pairings": [pairing_a, pairing_b],
+            }
+        )
         result = get_pairing_from_coordinator(coord, "dev-B")
         assert result == pairing_b
 
@@ -181,10 +191,14 @@ class TestBuildDeviceInfo:
 
     def test_basic_device_info(self):
         pairing = {"deviceId": "dev-1", "tag": "My Charger"}
-        coord = self._coordinator({
-            "devices": {"dev-1": {"pairing": pairing, "version": "1.0", "additional": {}}},
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {
+                    "dev-1": {"pairing": pairing, "version": "1.0", "additional": {}}
+                },
+                "pairings": [pairing],
+            }
+        )
         info = build_device_info(coord, "dev-1")
         assert info["name"] == "My Charger"
         assert info["manufacturer"] == "V2C"
@@ -192,62 +206,74 @@ class TestBuildDeviceInfo:
 
     def test_name_falls_back_to_device_id(self):
         pairing = {"deviceId": "dev-1"}
-        coord = self._coordinator({
-            "devices": {"dev-1": {"pairing": pairing, "version": None, "additional": {}}},
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {
+                    "dev-1": {"pairing": pairing, "version": None, "additional": {}}
+                },
+                "pairings": [pairing],
+            }
+        )
         info = build_device_info(coord, "dev-1")
         assert info["name"] == "dev-1"
 
     def test_model_from_version_info(self):
         pairing = {"deviceId": "dev-1"}
-        coord = self._coordinator({
-            "devices": {
-                "dev-1": {
-                    "pairing": pairing,
-                    "version": "2.0",
-                    "additional": {
-                        "version_info": {"modelName": "trydan_v2"}
-                    },
-                }
-            },
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {
+                    "dev-1": {
+                        "pairing": pairing,
+                        "version": "2.0",
+                        "additional": {"version_info": {"modelName": "trydan_v2"}},
+                    }
+                },
+                "pairings": [pairing],
+            }
+        )
         info = build_device_info(coord, "dev-1")
         assert info["model"] == "Trydan V2"
 
     def test_model_init_is_suppressed(self):
         pairing = {"deviceId": "dev-1"}
-        coord = self._coordinator({
-            "devices": {
-                "dev-1": {
-                    "pairing": pairing,
-                    "version": None,
-                    "additional": {
-                        "version_info": {"modelName": "INIT"}
-                    },
-                }
-            },
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {
+                    "dev-1": {
+                        "pairing": pairing,
+                        "version": None,
+                        "additional": {"version_info": {"modelName": "INIT"}},
+                    }
+                },
+                "pairings": [pairing],
+            }
+        )
         info = build_device_info(coord, "dev-1")
         assert info.get("model") is None
 
     def test_model_from_pairing_model_name(self):
         pairing = {"deviceId": "dev-1", "modelName": "trydan_pro"}
-        coord = self._coordinator({
-            "devices": {"dev-1": {"pairing": pairing, "version": None, "additional": {}}},
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {
+                    "dev-1": {"pairing": pairing, "version": None, "additional": {}}
+                },
+                "pairings": [pairing],
+            }
+        )
         info = build_device_info(coord, "dev-1")
         assert info["model"] == "Trydan Pro"
 
     def test_sw_version_none_when_no_version(self):
         pairing = {"deviceId": "dev-1"}
-        coord = self._coordinator({
-            "devices": {"dev-1": {"pairing": pairing, "version": None, "additional": {}}},
-            "pairings": [pairing],
-        })
+        coord = self._coordinator(
+            {
+                "devices": {
+                    "dev-1": {"pairing": pairing, "version": None, "additional": {}}
+                },
+                "pairings": [pairing],
+            }
+        )
         info = build_device_info(coord, "dev-1")
         assert info.get("sw_version") is None
 

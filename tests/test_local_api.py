@@ -8,10 +8,10 @@ import pytest
 
 from custom_components.v2c_cloud.local_api import get_local_data, get_local_value
 
-
 # ---------------------------------------------------------------------------
 # get_local_value — case-insensitive key lookup
 # ---------------------------------------------------------------------------
+
 
 class TestGetLocalValue:
     """Tests for get_local_value key lookup in RealTimeData payloads."""
@@ -101,6 +101,7 @@ class TestGetLocalValue:
 # ---------------------------------------------------------------------------
 # get_local_data — read latest cached local payload
 # ---------------------------------------------------------------------------
+
 
 class TestGetLocalData:
     """Tests for get_local_data returning coordinator payload."""

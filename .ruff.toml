@@ -1,6 +1,6 @@
 # The contents of this file is based on https://github.com/home-assistant/core/blob/dev/pyproject.toml
 
-target-version = "py313"
+target-version = "py312"
 
 [lint]
 select = [
@@ -23,6 +23,60 @@ ignore = [
     "PLR0915", # Allow larger helper functions for aggregated state
     "D401", # Permit descriptive (non-imperative) docstrings
     "E501", # Defer line-length enforcement to formatter/docs
+]
+
+# Relax the rule set for tests and scripts/ — these are not part of the shipped
+# integration and the strict "ALL" select-list demands docstrings + type
+# annotations that would add no signal.
+[lint.per-file-ignores]
+"tests/**" = [
+    "D",        # docstring conventions
+    "ANN",      # type annotations
+    "S101",     # assert is fine in tests
+    "S105",     # hard-coded test passwords are fine in fixtures
+    "S106",     # hard-coded test passwords are fine in fixtures
+    "S104",     # 0.0.0.0 sentinel comparisons in tests
+    "PLR2004",  # magic-value comparisons are routine in test asserts
+    "PLC0415",  # import-outside-toplevel is fine in tests
+    "PLR0913",  # tests often need many fixture parameters
+    "PLC2701",  # importing private symbols under test is intentional
+    "SLF001",   # private-member access for testing internals
+    "FBT001",   # bool positional args mirror production surface
+    "FBT002",   # bool positional args mirror production surface
+    "FBT003",   # boolean positional argument in test call
+    "PT006",    # pytest.mark.parametrize signature style varies
+    "PT007",    # tuple vs list inside parametrize is irrelevant
+    "PT011",    # broad pytest.raises is acceptable in tests
+    "BLE001",   # broad Exception catch in mock helpers
+    "RUF029",   # async def without await acceptable for stubs
+    "ARG001",   # unused function arguments common with fixtures
+    "ARG002",   # unused method arguments mirror real signatures
+    "ARG005",   # unused lambda arguments common in fixtures
+    "INP001",   # implicit-namespace-package warning for test files
+    "TID252",   # relative-imports in tests are fine
+    "SIM117",   # nested with-blocks in HTTP mocks
+    "N818",     # custom test-helper exception names
+    "C408",     # dict() vs literal both fine in tests
+    "C901",     # complex test fixtures are acceptable
+    "ERA001",   # commented-out code in stubs is intentional
+    "PT022",    # yield-based fixtures without finalize
+]
+"scripts/**" = [
+    "D",
+    "ANN",
+    "T201",     # scripts print
+    "S101",
+    "S104",     # sentinel IP comparisons
+    "BLE001",
+    "PLR2004",
+    "PLC0415",
+    "PT",
+    "INP001",
+    "ARG001",
+    "ARG005",
+    "SIM117",
+    "ERA001",
+    "C901",
 ]
 
 [lint.flake8-pytest-style]

@@ -7,13 +7,29 @@ from datetime import timedelta
 DOMAIN = "v2c_cloud"
 
 CONF_API_KEY = "api_key"
+CONF_LOCAL_UPDATE_INTERVAL = "local_update_interval"
 
+# Cloud coordinator
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=120)
 MIN_UPDATE_INTERVAL = timedelta(seconds=90)
 TARGET_DAILY_BUDGET = 850
 MAX_RATE_LIMIT_INTERVAL = timedelta(minutes=10)
 RATE_LIMIT_LOW_THRESHOLD = 150  # remaining calls below this → pace proactively
 RATE_LIMIT_COMMAND_RESERVE = 50  # calls reserved for commands when pacing
+
+# Local coordinator (LAN polling)
+# DEFAULT_LOCAL_INTERVAL: stored as seconds (int) for direct use in entry.options.
+DEFAULT_LOCAL_INTERVAL = 30
+MIN_LOCAL_INTERVAL = 5
+MAX_LOCAL_INTERVAL = 300
+LOCAL_INTERVAL_SOFT_WARNING = 15  # below this we surface a UI warning
+LOCAL_HTTP_TIMEOUT = 10
+LOCAL_MAX_RETRIES = 3
+LOCAL_RETRY_BACKOFF = 1.5
+LOCAL_WRITE_RETRY_DELAY = 5
+
+# Cloud-only mode (4G Trydan, no LAN reachability)
+CLOUD_ONLY_UPDATE_INTERVAL = timedelta(seconds=120)
 
 # Power limits (kW)
 MAX_POWER_MIN_KW = 1.0
@@ -70,6 +86,24 @@ CHARGE_STATE_LABELS = {
     5: "General fault",
 }
 
+# Locally-writeable charge mode (Trydan Modbus spec: 0=monophasic, 1=threephasic, 2=mixed)
+CHARGE_MODES = {
+    0: {"en": "Monophasic", "it": "Monofase", "es": "Monofásico"},
+    1: {"en": "Threephasic", "it": "Trifase", "es": "Trifásico"},
+    2: {"en": "Mixed", "it": "Mista", "es": "Mixta"},
+}
+
+# Photovoltaic charging mode (cloud only — POST /device/chargefvmode)
+FV_MODES = {
+    0: {
+        "en": "PV + Minimum Power",
+        "it": "PV + Potenza minima",
+        "es": "PV + Potencia mínima",
+    },
+    1: {"en": "Exclusive PV", "it": "PV esclusivo", "es": "PV exclusivo"},
+    2: {"en": "Maximum Power", "it": "Potenza massima", "es": "Potencia máxima"},
+}
+
 # Service names
 SERVICE_SET_WIFI = "set_wifi_credentials"
 SERVICE_PROGRAM_TIMER = "program_timer"
@@ -95,6 +129,17 @@ SERVICE_DELETE_POWER_PROFILE = "delete_power_profile"
 SERVICE_LIST_POWER_PROFILES = "list_power_profiles"
 SERVICE_GET_DEVICE_STATISTICS = "get_device_statistics"
 SERVICE_GET_GLOBAL_STATISTICS = "get_global_statistics"
+# New services added in 1.3.0 (cloud endpoints + smart router)
+SERVICE_START_CHARGE = "start_charge"
+SERVICE_PAUSE_CHARGE = "pause_charge"
+SERVICE_SET_CHARGE_INTENSITY = "set_charge_intensity"
+SERVICE_SET_LOCKED = "set_locked"
+SERVICE_SET_DYNAMIC = "set_dynamic"
+SERVICE_SET_FV_MODE = "set_fv_mode"
+SERVICE_SET_MAX_CAR_INTENSITY = "set_max_car_intensity"
+SERVICE_SET_MIN_CAR_INTENSITY = "set_min_car_intensity"
+SERVICE_SET_DENKA_MAX_POWER = "set_denka_max_power"
+SERVICE_GET_CONNECTED_STATUS = "get_connected_status"
 
 # Common attribute keys
 ATTR_DEVICE_ID = "device_id"
@@ -119,9 +164,21 @@ ATTR_PROFILE_TIMESTAMP = "timestamp"
 ATTR_UPDATED_AT = "updated_at"
 ATTR_DATE_START = "date_start"
 ATTR_DATE_END = "date_end"
+# New attribute keys for services added in 1.3.0
+ATTR_AMPS = "amps"
+ATTR_WATTS = "watts"
+ATTR_LOCKED = "locked"
+ATTR_FV_MODE = "mode"
+
+# Charge intensity bounds (per Trydan spec)
+INTENSITY_MIN = 6
+INTENSITY_MAX = 32
+DENKA_POWER_MIN = 1000
+DENKA_POWER_MAX = 22000
 
 # Event names fired after data retrieval services
 EVENT_WIFI_SCAN = f"{DOMAIN}_wifi_scan"
 EVENT_DEVICE_STATISTICS = f"{DOMAIN}_device_statistics"
 EVENT_GLOBAL_STATISTICS = f"{DOMAIN}_global_statistics"
 EVENT_POWER_PROFILES = f"{DOMAIN}_power_profiles"
+EVENT_CONNECTED_STATUS = f"{DOMAIN}_connected_status"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import logging
 from datetime import timedelta
@@ -18,6 +17,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from ._net import validate_private_ip
+from .const import (
+    CLOUD_ONLY_UPDATE_INTERVAL,
+    CONF_LOCAL_UPDATE_INTERVAL,
+    DEFAULT_LOCAL_INTERVAL,
+    LOCAL_HTTP_TIMEOUT,
+    LOCAL_MAX_RETRIES,
+    LOCAL_RETRY_BACKOFF,
+    LOCAL_WRITE_RETRY_DELAY,
+)
 from .entity import get_device_state_from_coordinator
 
 if TYPE_CHECKING:
@@ -25,20 +34,55 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-LOCAL_TIMEOUT = 10
-LOCAL_MAX_RETRIES = 3
-LOCAL_RETRY_BACKOFF = 1.5
-LOCAL_UPDATE_INTERVAL = timedelta(seconds=30)
-LOCAL_WRITE_RETRY_DELAY = 5
+# Local HTTP timeout (seconds) for /RealTimeData, /write/, /read/ calls.
+LOCAL_TIMEOUT = LOCAL_HTTP_TIMEOUT
 _HTTP_ERROR_THRESHOLD = 400
 
 # Keywords writable via /write/ but absent from /RealTimeData.
 # Must be read individually via GET /read/<KeyWord>.
-_READ_ONLY_KEYWORDS: tuple[str, ...] = ("LogoLED",)
+# LightLED and LogoLED are LED intensity (0-100%) and need explicit /read/.
+_READ_ONLY_KEYWORDS: tuple[str, ...] = ("LogoLED", "LightLED")
+
+# Whitelist of keywords accepted by /write/. The list mirrors the keys
+# documented as "WRITE ENABLED = Y" in the Trydan Datamanager spec.
+WRITEABLE_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "VoltageInstallation",
+        "ChargeMode",
+        "Paused",
+        "Locked",
+        "Timer",
+        "Intensity",
+        "Dynamic",
+        "MinIntensity",
+        "MaxIntensity",
+        "PauseDynamic",
+        "LightLED",
+        "LogoLED",
+        "DynamicPowerMode",
+        "ContractedPower",
+    }
+)
 
 
-# --- Cloud-only mode support for 4G Trydan devices ---
-CLOUD_ONLY_UPDATE_INTERVAL = timedelta(seconds=120)
+def _build_local_interval(
+    entry_data: dict[str, Any], options: dict[str, Any]
+) -> timedelta:
+    """
+    Resolve the effective local poll interval from entry options.
+
+    Cloud-only devices (no ``fallback_ip``) keep ``CLOUD_ONLY_UPDATE_INTERVAL``;
+    LAN devices honour ``options[CONF_LOCAL_UPDATE_INTERVAL]`` when set, falling
+    back to ``DEFAULT_LOCAL_INTERVAL``. Always returns a ``timedelta``.
+    """
+    fip = entry_data.get("fallback_ip")
+    if "fallback_ip" in entry_data and (not fip or fip == "0.0.0.0"):  # noqa: S104 — sentinel, not bind  # nosec B104
+        return CLOUD_ONLY_UPDATE_INTERVAL
+    seconds = options.get(CONF_LOCAL_UPDATE_INTERVAL)
+    if not isinstance(seconds, int) or seconds <= 0:
+        seconds = DEFAULT_LOCAL_INTERVAL
+    return timedelta(seconds=seconds)
+
 
 # Mapping: cloud reported key (lowercase) → (local RealTimeData key, needs_scale)
 _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
@@ -82,11 +126,22 @@ _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "locked": ("Locked", False),
 }
 
-_INT_FIELDS = frozenset({
-    "ChargeState", "ChargeTime", "SlaveError", "Intensity",
-    "Phases", "Paused", "CpLevel", "ReadyState", "Timer", "Dynamic",
-    "PhotovoltaicOn", "Locked",
-})
+_INT_FIELDS = frozenset(
+    {
+        "ChargeState",
+        "ChargeTime",
+        "SlaveError",
+        "Intensity",
+        "Phases",
+        "Paused",
+        "CpLevel",
+        "ReadyState",
+        "Timer",
+        "Dynamic",
+        "PhotovoltaicOn",
+        "Locked",
+    }
+)
 
 
 def _detect_cloud_scale(reported: dict[str, object]) -> float:
@@ -96,7 +151,7 @@ def _detect_cloud_scale(reported: dict[str, object]) -> float:
         if raw is not None:
             try:
                 v = float(str(raw))
-                if 0 < v < 10:
+                if 0 < v < 10:  # noqa: PLR2004 — voltage in kV would be < 10 V
                     return 1000  # kV → V
             except (ValueError, TypeError):
                 pass
@@ -104,18 +159,23 @@ def _detect_cloud_scale(reported: dict[str, object]) -> float:
 
 
 def _build_realtime_from_reported(
-    runtime_data: "V2CEntryRuntimeData", device_id: str
+    runtime_data: V2CEntryRuntimeData, device_id: str
 ) -> dict[str, Any]:
-    """Convert cloud coordinator reported data to local /RealTimeData format.
+    """
+    Convert cloud coordinator reported data to local /RealTimeData format.
 
     This allows sensors to work identically whether data comes from
     local HTTP or cloud API. No additional API calls are made —
     data is read from the cloud coordinator's cache.
     """
-    device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
+    device_state = get_device_state_from_coordinator(
+        runtime_data.coordinator, device_id
+    )
     reported = device_state.get("reported")
     if not isinstance(reported, dict) or not reported:
-        _LOGGER.debug("Cloud-only: no reported data for %s, returning empty payload", device_id)
+        _LOGGER.debug(
+            "Cloud-only: no reported data for %s, returning empty payload", device_id
+        )
         return {"_data_source": "cloud_reported_empty", "_lower_index": {}}
 
     reported_lower = {k.lower(): v for k, v in reported.items()}
@@ -153,7 +213,9 @@ def _build_realtime_from_reported(
                 continue
             if needs_scale:
                 value = value * csc_scale
-            result[local_key] = int(value) if local_key in _INT_FIELDS else round(value, 2)
+            result[local_key] = (
+                int(value) if local_key in _INT_FIELDS else round(value, 2)
+            )
 
     result["_lower_index"] = {k.lower(): k for k in result if not k.startswith("_")}
     return result
@@ -186,7 +248,9 @@ async def _async_read_keyword(
 
 def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:
     """Return the static IP address associated with a charger, if known."""
-    device_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
+    device_state = get_device_state_from_coordinator(
+        runtime_data.coordinator, device_id
+    )
     additional = device_state.get("additional")
     if isinstance(additional, dict):
         static_ip = additional.get("static_ip")
@@ -195,7 +259,9 @@ def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str 
 
     local_coordinator = runtime_data.local_coordinators.get(device_id)
     if local_coordinator and isinstance(local_coordinator.data, dict):
-        ip_value = local_coordinator.data.get("_static_ip") or local_coordinator.data.get("IP")
+        ip_value = local_coordinator.data.get(
+            "_static_ip"
+        ) or local_coordinator.data.get("IP")
         if isinstance(ip_value, str) and ip_value:
             return ip_value
 
@@ -205,7 +271,11 @@ def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str 
         if isinstance(candidate, str) and candidate:
             return candidate
 
-    pairings = runtime_data.coordinator.data.get("pairings") if runtime_data.coordinator.data else []
+    pairings = (
+        runtime_data.coordinator.data.get("pairings")
+        if runtime_data.coordinator.data
+        else []
+    )
     if isinstance(pairings, list):
         for item in pairings:
             if item.get("deviceId") == device_id:
@@ -216,7 +286,9 @@ def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str 
     return None
 
 
-def get_local_data(runtime_data: V2CEntryRuntimeData, device_id: str) -> dict[str, Any] | None:
+def get_local_data(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> dict[str, Any] | None:
     """Return the latest cached local real-time payload for a charger."""
     coordinator = runtime_data.local_coordinators.get(device_id)
     if coordinator and isinstance(coordinator.data, dict):
@@ -248,7 +320,9 @@ def get_local_value(local_data: dict[str, Any], key: str) -> tuple[bool, Any]:
     return False, None
 
 
-async def async_request_local_refresh(runtime_data: V2CEntryRuntimeData, device_id: str) -> None:
+async def async_request_local_refresh(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> None:
     """Trigger an immediate refresh of the local data coordinator if available."""
     coordinator = runtime_data.local_coordinators.get(device_id)
     if coordinator:
@@ -272,16 +346,30 @@ async def async_write_keyword(  # noqa: PLR0913
     if not static_ip:
         raise V2CLocalApiError("Static IP for device is unavailable")
 
+    # Distinguish parse failures from policy violations so the developer-facing
+    # error is actionable. validate_private_ip groups both behind the
+    # ``cannot_connect_local`` translation key for UI parity; the write path
+    # benefits from the finer-grained distinction.
+    import ipaddress as _ip_mod  # noqa: PLC0415
+
     try:
-        addr = ipaddress.ip_address(static_ip)
+        _ip_mod.ip_address(static_ip)
     except ValueError as err:
         raise V2CLocalApiError(f"Invalid IP address for device: {static_ip!r}") from err
-    if not addr.is_private or addr.is_loopback or addr.is_link_local:
+    is_safe, _error_key = validate_private_ip(static_ip)
+    if not is_safe:
         raise V2CLocalApiError(
             f"Refusing write to non-private/loopback/link-local IP {static_ip} — possible SSRF"
         )
 
     keyword_clean = keyword.strip()
+    # Reject keywords outside the documented writeable set to limit SSRF surface
+    # and accidental misuse from automations.
+    if keyword_clean not in WRITEABLE_KEYWORDS:
+        raise V2CLocalApiError(
+            f"Refusing to write unknown keyword {keyword_clean!r}; "
+            "must be one of the documented writeable Trydan registers"
+        )
     value_str = str(int(value)) if isinstance(value, bool) else str(value)
     url = f"http://{static_ip}/write/{quote(keyword_clean, safe='')}={quote(value_str, safe='')}"
 
@@ -295,10 +383,14 @@ async def async_write_keyword(  # noqa: PLR0913
                 )
     except TimeoutError as err:
         _schedule_followup_refresh(hass, runtime_data, device_id)
-        raise V2CLocalApiError(f"Timeout while calling local API for {keyword_clean}") from err
+        raise V2CLocalApiError(
+            f"Timeout while calling local API for {keyword_clean}"
+        ) from err
     except ClientError as err:
         _schedule_followup_refresh(hass, runtime_data, device_id)
-        raise V2CLocalApiError(f"Error while calling local API for {keyword_clean}: {err}") from err
+        raise V2CLocalApiError(
+            f"Error while calling local API for {keyword_clean}: {err}"
+        ) from err
 
     if refresh_local:
         await async_request_local_refresh(runtime_data, device_id)
@@ -327,20 +419,16 @@ async def async_get_or_create_local_coordinator(
         entry_data = runtime_data.coordinator.config_entry.data
         if "fallback_ip" in entry_data:
             fip = entry_data["fallback_ip"]
-            if not fip or fip == "0.0.0.0":
+            if not fip or fip == "0.0.0.0":  # noqa: S104 — sentinel, not bind  # nosec B104
                 return _build_realtime_from_reported(runtime_data, device_id)
 
         static_ip = resolve_static_ip(runtime_data, device_id)
         if not static_ip:
             # No IP found anywhere → cloud-only fallback
             return _build_realtime_from_reported(runtime_data, device_id)
-        try:
-            addr = ipaddress.ip_address(static_ip)
-        except ValueError:
-            # Invalid IP (e.g. placeholder) → cloud-only fallback
-            return _build_realtime_from_reported(runtime_data, device_id)
-        if addr.is_unspecified or addr.is_loopback or addr.is_link_local:
-            # Non-reachable IP → cloud-only fallback
+        is_safe, _err = validate_private_ip(static_ip)
+        if not is_safe:
+            # Invalid / non-routable IP → cloud-only fallback
             return _build_realtime_from_reported(runtime_data, device_id)
 
         url = f"http://{static_ip}/RealTimeData"
@@ -348,7 +436,10 @@ async def async_get_or_create_local_coordinator(
         last_error: Exception | None = None
         while True:
             try:
-                async with async_timeout.timeout(LOCAL_TIMEOUT), session.get(url) as response:
+                async with (
+                    async_timeout.timeout(LOCAL_TIMEOUT),
+                    session.get(url) as response,
+                ):
                     text = await response.text()
                 break
             except TimeoutError as err:
@@ -393,7 +484,9 @@ async def async_get_or_create_local_coordinator(
         try:
             payload = json.loads(payload_text)
         except json.JSONDecodeError as err:
-            raise UpdateFailed(f"Invalid JSON response from local endpoint: {payload_text}") from err
+            raise UpdateFailed(
+                f"Invalid JSON response from local endpoint: {payload_text}"
+            ) from err
 
         if not isinstance(payload, dict):
             raise UpdateFailed("Unexpected payload type from local endpoint")
@@ -407,7 +500,10 @@ async def async_get_or_create_local_coordinator(
 
         # Fetch writable keys absent from /RealTimeData (e.g. LogoLED)
         extra = await asyncio.gather(
-            *(_async_read_keyword(session, static_ip, kw) for kw in _READ_ONLY_KEYWORDS),
+            *(
+                _async_read_keyword(session, static_ip, kw)
+                for kw in _READ_ONLY_KEYWORDS
+            ),
             return_exceptions=True,
         )
         for result in extra:
@@ -417,26 +513,34 @@ async def async_get_or_create_local_coordinator(
                     payload[kw] = val
 
         if failure_count:
-            _LOGGER.debug("Local API for %s recovered after %s failure(s)", device_id, failure_count)
+            _LOGGER.debug(
+                "Local API for %s recovered after %s failure(s)",
+                device_id,
+                failure_count,
+            )
         failure_count = 0
 
         return payload
 
     # Detect cloud-only to use longer poll interval and log once
-    _entry_data = runtime_data.coordinator.config_entry.data
+    entry_obj = runtime_data.coordinator.config_entry
+    _entry_data = entry_obj.data
+    _options = entry_obj.options if entry_obj.options else {}
     _explicit_cloud = "fallback_ip" in _entry_data and (
-        not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"
+        not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
     )
     if not _explicit_cloud:
         _ip = resolve_static_ip(runtime_data, device_id)
-        try:
-            _addr = ipaddress.ip_address(_ip) if _ip else None
-        except ValueError:
-            _addr = None
-        _explicit_cloud = _addr is None or _addr.is_unspecified or _addr.is_loopback
-    interval = CLOUD_ONLY_UPDATE_INTERVAL if _explicit_cloud else LOCAL_UPDATE_INTERVAL
+        _is_safe, _ = validate_private_ip(_ip) if _ip else (False, None)
+        _explicit_cloud = not _is_safe
+
     if _explicit_cloud:
-        _LOGGER.info("V2C %s: cloud-only mode (4G), sensors from cloud reported data", device_id)
+        interval = CLOUD_ONLY_UPDATE_INTERVAL
+        _LOGGER.info(
+            "V2C %s: cloud-only mode (4G), sensors from cloud reported data", device_id
+        )
+    else:
+        interval = _build_local_interval(_entry_data, _options)
 
     coordinator = DataUpdateCoordinator(
         hass,

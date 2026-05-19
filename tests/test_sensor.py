@@ -14,7 +14,6 @@ from custom_components.v2c_cloud.sensor import (
     _localize_state,
 )
 
-
 # ---------------------------------------------------------------------------
 # _as_float
 # ---------------------------------------------------------------------------
@@ -199,7 +198,9 @@ class TestLocalizeState:
         assert _localize_state("Locked", 0, self._hass()) == "Unlocked"
 
     def test_dynamic_power_mode(self):
-        assert _localize_state("DynamicPowerMode", 2, self._hass()) == "Exclusive PV mode"
+        assert (
+            _localize_state("DynamicPowerMode", 2, self._hass()) == "Exclusive PV mode"
+        )
 
     def test_language_with_region_code(self):
         """hass.config.language may include region like 'en-US'."""
@@ -214,7 +215,10 @@ class TestLocalizeState:
 
 def _make_local_sensor(key: str, raw_value, value_fn=None):
     """Instantiate V2CLocalRealtimeSensor with a simple coordinator payload."""
-    from custom_components.v2c_cloud.sensor import V2CLocalRealtimeSensor, V2CLocalRealtimeSensorDescription
+    from custom_components.v2c_cloud.sensor import (
+        V2CLocalRealtimeSensor,
+        V2CLocalRealtimeSensorDescription,
+    )
 
     description = V2CLocalRealtimeSensorDescription(
         key=key,

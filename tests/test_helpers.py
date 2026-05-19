@@ -152,7 +152,9 @@ class TestExtractStaticIp:
 
     def test_nested_dict_with_ip(self):
         # wifi_info or similar nested payloads
-        assert _extract_static_ip({"static_ip": {"ip": "192.168.50.1"}}) == "192.168.50.1"
+        assert (
+            _extract_static_ip({"static_ip": {"ip": "192.168.50.1"}}) == "192.168.50.1"
+        )
 
 
 class TestV2CDeviceState:

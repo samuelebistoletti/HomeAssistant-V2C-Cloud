@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CHARGE_MODES,
     DOMAIN,
     DYNAMIC_POWER_MODES,
     INSTALLATION_TYPES,
@@ -43,7 +44,9 @@ def _localized_options(
     localized: dict[int, str] = {}
     for key, label in options_map.items():
         if isinstance(label, dict):
-            localized[key] = label.get(language, label.get("en") or next(iter(label.values())))
+            localized[key] = label.get(
+                language, label.get("en") or next(iter(label.values()))
+            )
         else:
             localized[key] = str(label)
     return localized
@@ -73,7 +76,8 @@ async def async_setup_entry(
                 name_key="installation_type",
                 unique_suffix="installation_type",
                 options_map=INSTALLATION_TYPES,
-                setter=lambda value, _device_id=device_id: client.async_set_installation_type(
+                setter=lambda value,
+                _device_id=device_id: client.async_set_installation_type(
                     _device_id, value
                 ),
                 reported_keys=("inst_type", "installation_type"),
@@ -131,6 +135,29 @@ async def async_setup_entry(
                 local_key="DynamicPowerMode",
                 refresh_after_call=False,
                 icon="mdi:lightning-bolt-circle",
+            )
+        )
+        device_selects.append(
+            V2CEnumSelect(
+                hass,
+                coordinator,
+                client,
+                runtime_data,
+                device_id,
+                name_key="charge_mode",
+                unique_suffix="charge_mode",
+                options_map=CHARGE_MODES,
+                setter=lambda value, _device_id=device_id: async_write_keyword(
+                    hass,
+                    runtime_data,
+                    _device_id,
+                    "ChargeMode",
+                    value,
+                ),
+                reported_keys=("chargemode", "charge_mode"),
+                local_key="ChargeMode",
+                refresh_after_call=False,
+                icon="mdi:transmission-tower",
             )
         )
         entities.extend(device_selects)

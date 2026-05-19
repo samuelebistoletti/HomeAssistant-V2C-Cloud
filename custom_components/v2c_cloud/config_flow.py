@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 import logging
 from typing import Any
@@ -17,7 +16,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import aiohttp_client
 
-from .const import CONF_API_KEY, DOMAIN
+from ._net import validate_private_ip
+from .const import (
+    CONF_API_KEY,
+    CONF_LOCAL_UPDATE_INTERVAL,
+    DEFAULT_LOCAL_INTERVAL,
+    DOMAIN,
+    MAX_LOCAL_INTERVAL,
+    MIN_LOCAL_INTERVAL,
+)
 from .v2c_cloud import V2CAuthError, V2CClient, V2CRequestError
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,18 +51,17 @@ async def _probe_local_api(
 
     Returns (device_id, None) on success or (None, error_key) on failure.
     """
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return None, "cannot_connect_local"
-
-    if not addr.is_private or addr.is_loopback or addr.is_link_local:
-        return None, "cannot_connect_local"
+    is_safe, error_key = validate_private_ip(ip)
+    if not is_safe:
+        return None, error_key
 
     session = aiohttp_client.async_get_clientsession(hass)
     url = f"http://{ip}/RealTimeData"
     try:
-        async with async_timeout.timeout(_LOCAL_PROBE_TIMEOUT), session.get(url) as response:
+        async with (
+            async_timeout.timeout(_LOCAL_PROBE_TIMEOUT),
+            session.get(url) as response,
+        ):
             if response.status >= 400:  # noqa: PLR2004
                 return None, "cannot_connect_local"
             text = (await response.text()).strip().rstrip("%").strip()
@@ -317,7 +323,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class V2COptionsFlow(config_entries.OptionsFlow):
-    """Allow post-setup configuration of the fallback local IP."""
+    """Allow post-setup tweaks: fallback local IP + local refresh interval."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialise options flow."""
@@ -327,37 +333,61 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Manage the fallback IP option."""
+        """Manage the fallback IP and the local refresh interval."""
         errors: dict[str, str] = {}
         current_ip = self._config_entry.data.get("fallback_ip", "")
+        current_options = self._config_entry.options or {}
+        current_interval = int(
+            current_options.get(CONF_LOCAL_UPDATE_INTERVAL, DEFAULT_LOCAL_INTERVAL)
+        )
 
         if user_input is not None:
             ip = user_input.get("fallback_ip", "").strip()
-            if ip:
-                device_id, error_key = await _probe_local_api(self.hass, ip)
-                if error_key:
-                    errors["base"] = error_key
+            interval_raw = user_input.get(CONF_LOCAL_UPDATE_INTERVAL, current_interval)
+            try:
+                interval = int(interval_raw)
+            except (TypeError, ValueError):
+                interval = current_interval
+                errors[CONF_LOCAL_UPDATE_INTERVAL] = "invalid_interval"
+
+            if not errors and not MIN_LOCAL_INTERVAL <= interval <= MAX_LOCAL_INTERVAL:
+                errors[CONF_LOCAL_UPDATE_INTERVAL] = "invalid_interval"
+
+            if not errors:
+                # 1. Persist interval into entry.options so the update listener
+                #    can react without requiring a reload.
+                new_options = dict(current_options)
+                new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
+
+                # 2. Persist the fallback IP into entry.data (existing behaviour).
+                new_data = dict(self._config_entry.data)
+                if ip:
+                    device_id, error_key = await _probe_local_api(self.hass, ip)
+                    if error_key:
+                        errors["base"] = error_key
+                    else:
+                        new_data["fallback_ip"] = ip
+                        new_data["fallback_device_id"] = device_id
                 else:
-                    new_data = dict(self._config_entry.data)
-                    new_data["fallback_ip"] = ip
-                    new_data["fallback_device_id"] = device_id
+                    new_data.pop("fallback_ip", None)
+                    new_data.pop("fallback_device_id", None)
+
+                if not errors:
                     self.hass.config_entries.async_update_entry(
-                        self._config_entry, data=new_data
+                        self._config_entry, data=new_data, options=new_options
                     )
                     return self.async_create_entry(title="", data={})
-            else:
-                # Empty field → remove fallback
-                new_data = dict(self._config_entry.data)
-                new_data.pop("fallback_ip", None)
-                new_data.pop("fallback_device_id", None)
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data
-                )
-                return self.async_create_entry(title="", data={})
 
         schema = vol.Schema(
             {
                 vol.Optional("fallback_ip", default=current_ip): str,
+                vol.Required(
+                    CONF_LOCAL_UPDATE_INTERVAL,
+                    default=current_interval,
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_LOCAL_INTERVAL, max=MAX_LOCAL_INTERVAL),
+                ),
             }
         )
         return self.async_show_form(

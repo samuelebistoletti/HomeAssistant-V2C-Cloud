@@ -7,6 +7,15 @@ on:
     branches: [main]
   schedule:
     - cron: "0 8 * * 1"
+  # Allow the release workflow (tag-and-release.yaml) to reuse this entire
+  # pipeline via `uses: ./.github/workflows/security.yaml`. Keeps the security
+  # gate definition in one place — adding a scanner here automatically gates
+  # releases as well.
+  workflow_call:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   bandit:
@@ -17,10 +26,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
+          cache: pip
 
       - name: Install bandit
         run: pip install bandit
@@ -41,6 +53,7 @@ jobs:
         with:
           name: bandit-report
           path: bandit-report.json
+          retention-days: 30
 
   pip-audit:
     name: Dependency audit (pip-audit)
@@ -50,19 +63,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
+          cache: pip
 
       - name: Install pip-audit
         run: pip install pip-audit
 
       - name: Audit runtime dependencies
-        run: pip-audit -r requirements.txt --format=columns
+        run: pip-audit -r requirements.txt --format=columns --strict
 
       - name: Audit test dependencies
-        run: pip-audit -r requirements_test.txt --format=columns
+        run: pip-audit -r requirements_test.txt --format=columns --strict
 
   gitleaks:
     name: Secret scanning (gitleaks)
@@ -74,6 +90,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:

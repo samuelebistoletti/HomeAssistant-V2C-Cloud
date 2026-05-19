@@ -6,21 +6,62 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-flight runs when the same ref is pushed again. Saves CI minutes and
+# avoids the "outdated result wins" race when developers push twice in a row.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor: 3.12 (matches manifest min_ha_version=2025.4.0 + .ruff.toml target).
+        # Ceiling: 3.14 (latest stable, supported by current Home Assistant core).
+        # Drop 3.12 once the minimum HA version is bumped to a release requiring 3.13+.
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements_test.txt
 
-      - name: Install test dependencies
-        run: pip install -r requirements_test.txt
+      - name: Install dev + test dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements_test.txt
+          pip install pytest-cov
 
-      - name: Run tests
-        run: python -m pytest tests/ -v
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Run tests with coverage
+        run: |
+          python -m pytest tests/ -v \
+            --cov=custom_components/v2c_cloud \
+            --cov-report=xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true

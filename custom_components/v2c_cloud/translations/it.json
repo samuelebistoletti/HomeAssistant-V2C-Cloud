@@ -53,15 +53,17 @@
     "step": {
       "init": {
         "title": "Opzioni V2C Cloud",
-        "description": "Imposta o aggiorna l'indirizzo IP locale di fallback. L'integrazione usa questo IP quando V2C Cloud non è raggiungibile. Lascia vuoto per disabilitare il fallback locale.",
+        "description": "Regola l'intervallo di polling LAN e (facoltativamente) l'IP locale di fallback.\n\n• **Intervallo di refresh locale:** ogni quanti secondi l'integrazione interroga il caricatore via LAN. Range 5-300, default 30. Valori inferiori a 15 s possono saturare una LAN lenta e non sono consigliati. I caricatori cloud-only (4G) ignorano questa impostazione.\n\n• **IP di fallback:** usato quando il cloud non è raggiungibile; lascia vuoto per disabilitare il fallback locale.",
         "data": {
-          "fallback_ip": "Indirizzo IP locale di fallback (lascia vuoto per disabilitare)"
+          "fallback_ip": "Indirizzo IP locale di fallback (lascia vuoto per disabilitare)",
+          "local_update_interval": "Intervallo refresh locale (secondi)"
         }
       }
     },
     "error": {
       "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",
-      "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo."
+      "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo.",
+      "invalid_interval": "L'intervallo di refresh deve essere un intero tra 5 e 300 secondi."
     }
   },
   "entity": {
@@ -162,6 +164,9 @@
       },
       "dynamic_power_mode": {
         "name": "Modalità potenza dinamica"
+      },
+      "charge_mode": {
+        "name": "Modalità di ricarica"
       }
     },
     "number": {
@@ -176,6 +181,9 @@
       },
       "contracted_power": {
         "name": "Potenza contrattuale"
+      },
+      "light_led": {
+        "name": "Intensità Light LED"
       }
     },
     "button": {
@@ -283,6 +291,47 @@
     "get_global_statistics": {
       "name": "Statistiche globali",
       "description": "Ottiene le statistiche aggregate di tutte le ricariche dell'account."
+    },
+    "start_charge": {
+      "name": "Avvia ricarica",
+      "description": "Avvia o riprende la sessione di ricarica. Usa la LAN quando disponibile, altrimenti il cloud."
+    },
+    "pause_charge": {
+      "name": "Metti in pausa ricarica",
+      "description": "Mette in pausa la sessione di ricarica attiva. Usa la LAN quando disponibile, altrimenti il cloud."
+    },
+    "set_charge_intensity": {
+      "name": "Imposta intensità di ricarica",
+      "description": "Imposta la corrente massima di ricarica (A). Usa la LAN quando disponibile, altrimenti il cloud."
+    },
+    "set_locked": {
+      "name": "Blocca caricatore",
+      "description": "Blocca o sblocca il punto di ricarica. Usa la LAN quando disponibile, altrimenti il cloud."
+    },
+    "set_dynamic": {
+      "name": "Abilita controllo dinamico",
+      "description": "Abilita o disabilita il controllo dinamico della potenza. Usa la LAN quando disponibile, altrimenti il cloud."
+    },
+    "set_fv_mode": {
+      "name": "Imposta modalità fotovoltaica",
+      "description": "Configura la modalità di ricarica fotovoltaica (0=PV+minima, 1=PV esclusivo, 2=massima). Solo cloud."
+    },
+    "set_max_car_intensity": {
+      "name": "Corrente massima accettata dall'auto",
+      "description": "Aggiorna la corrente massima (A) che il veicolo può accettare. Solo cloud."
+    },
+    "set_min_car_intensity": {
+      "name": "Corrente minima richiesta dall'auto",
+      "description": "Aggiorna la corrente minima (A) richiesta dal veicolo. Solo cloud."
+    },
+    "set_denka_max_power": {
+      "name": "Potenza massima Denka",
+      "description": "Aggiorna la potenza massima per gli inverter Denka (W). Solo cloud."
+    },
+    "get_connected_status": {
+      "name": "Verifica connessione cloud",
+      "description": "Verifica lo stato di connessione cloud del dispositivo; il risultato è pubblicato sull'evento v2c_cloud_connected_status."
     }
   }
 }
+

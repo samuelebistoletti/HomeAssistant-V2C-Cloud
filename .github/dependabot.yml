@@ -1,0 +1,47 @@
+version: 2
+
+updates:
+  # Pin all GitHub Actions to commit SHAs and let Dependabot bump them weekly.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      # Group all non-security GitHub Actions updates into one PR per week so
+      # the review queue does not get flooded.
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Track Python dependency updates (runtime + test). Pin floors are intentional;
+  # upper bounds prevent surprise breakages.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      include: scope
+    labels:
+      - dependencies
+      - python
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - minor
+          - patch

@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from custom_components.v2c_cloud.const import DOMAIN
@@ -63,7 +62,9 @@ def _make_client(
         client.async_get_pairings = AsyncMock(side_effect=pairings_side_effect)
     else:
         client.async_get_pairings = AsyncMock(
-            return_value=pairings_return if pairings_return is not None else [SAMPLE_PAIRING]
+            return_value=pairings_return
+            if pairings_return is not None
+            else [SAMPLE_PAIRING]
         )
     client.last_rate_limit = None
     client.preload_pairings = MagicMock()
@@ -81,7 +82,10 @@ def _patch_setup(mock_client: MagicMock, *, gather_return: dict | None = None):
             patch("custom_components.v2c_cloud.__init__.async_get_clientsession")
         )
         stack.enter_context(
-            patch("custom_components.v2c_cloud.__init__.V2CClient", return_value=mock_client)
+            patch(
+                "custom_components.v2c_cloud.__init__.V2CClient",
+                return_value=mock_client,
+            )
         )
         stack.enter_context(
             patch(
@@ -104,6 +108,7 @@ def _patch_setup(mock_client: MagicMock, *, gather_return: dict | None = None):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestCoordinatorStartup:
     """Coordinator initialisation scenarios in async_setup_entry."""
@@ -183,7 +188,6 @@ class TestCoordinatorStartup:
 
     async def test_rate_limit_doubles_coordinator_interval(self):
         """Each rate-limit cycle doubles the polling interval up to MAX_RATE_LIMIT_INTERVAL."""
-        from datetime import timedelta
 
         from custom_components.v2c_cloud.__init__ import async_setup_entry
         from custom_components.v2c_cloud.const import (
@@ -199,20 +203,28 @@ class TestCoordinatorStartup:
             await async_setup_entry(hass, entry)
 
         runtime = hass.data[DOMAIN][ENTRY_ID]
-        assert runtime.coordinator.update_interval == DEFAULT_UPDATE_INTERVAL
+        # After the first refresh, the coordinator recalculates the interval based
+        # on the device count and the daily-budget formula (2 calls per device per
+        # cycle). With one device the result (~204 s) exceeds DEFAULT (120 s); the
+        # exact value depends on device count, so we just assert it is *at least*
+        # DEFAULT and then verify the doubling behaviour relative to that.
+        starting_interval = runtime.coordinator.update_interval
+        assert starting_interval >= DEFAULT_UPDATE_INTERVAL
 
         client.async_get_pairings.side_effect = V2CRateLimitError("429", status=429)
 
-        # First rate-limit: interval doubles
+        # First rate-limit: interval doubles relative to whatever it currently is
         await runtime.coordinator.async_refresh()
         first_backoff = runtime.coordinator.update_interval
-        assert first_backoff == DEFAULT_UPDATE_INTERVAL * 2
+        assert first_backoff == min(starting_interval * 2, MAX_RATE_LIMIT_INTERVAL)
 
-        # Repeated rate-limits keep doubling
+        # Repeated rate-limits keep doubling, still capped
         await runtime.coordinator.async_refresh()
-        assert runtime.coordinator.update_interval == first_backoff * 2
+        assert runtime.coordinator.update_interval == min(
+            first_backoff * 2, MAX_RATE_LIMIT_INTERVAL
+        )
 
-        # Interval is capped at MAX_RATE_LIMIT_INTERVAL
+        # Eventually pinned at MAX_RATE_LIMIT_INTERVAL
         for _ in range(10):
             await runtime.coordinator.async_refresh()
         assert runtime.coordinator.update_interval == MAX_RATE_LIMIT_INTERVAL

@@ -29,19 +29,26 @@ All contributions are managed through GitHub. Issues and pull requests are prefe
 
 Before opening a PR, please ensure you have:
 
-1. **Updated documentation** for any user-facing change. Keep the root `README.md` and `custom_components/v2c_cloud/README.md` identical.
-2. **Reviewed translations** (`strings.json`, `translations/en.json`, `translations/it.json`) and added new keys if the UI changes.
-3. **Updated version metadata** (e.g. `manifest.json`, changelog, release notes) when releasing or adding notable features.
+1. **Updated documentation** for any user-facing change. Keep the root `README.md` and `custom_components/v2c_cloud/README.md` identical (`diff README.md custom_components/v2c_cloud/README.md` must be empty).
+2. **Reviewed translations** (`strings.json`, `translations/en.json`, `translations/it.json`, `translations/es.json`) and added new keys if the UI changes. `tests/test_manifest_hygiene.py::TestTranslationsParity` will fail if a key is missing in any of the four files.
+3. **Updated version metadata** (e.g. `manifest.json`, `CHANGELOG.md`, release notes) when releasing or adding notable features.
 4. **Formatted and linted** the code:
    ```bash
    ./scripts/lint
+   ruff check .
    python -m compileall custom_components/v2c_cloud
    ```
-5. **Run the automated tests** and confirmed they all pass:
+5. **Run the automated tests** and confirmed they all pass on Python 3.12 and 3.13 (CI tests both):
    ```bash
    python -m pytest tests/ -v
    ```
 6. **Tested the behaviour**. Prefer exercising changes in the dev container or against a real charger when possible. If tests cannot be automated, mention the manual steps taken in the PR.
+7. *(Optional)* **Ran the live smoke test** against a real Trydan + cloud account when the change affects HTTP surface:
+   ```bash
+   V2C_CLOUD_API_KEY=<your_test_key> V2C_LOCAL_IP=<your_device_ip> \
+     python scripts/live_smoke_test.py --confirm-restore
+   ```
+   The `--confirm-restore` flag is required (the script aborts without it). Always take a fresh out-of-band backup of the V2C Cloud configuration before running it against a production wallbox; the script restores every value it touches but a backup is a sensible belt-and-braces measure.
 
 ## Filing Issues
 
@@ -54,7 +61,8 @@ Use [GitHub issues](../../issues) to report bugs or request features. Helpful re
 
 ## Coding Style
 
-- Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/). The `scripts/lint` helper runs both format and lint passes.
+- Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/). The `scripts/lint` helper runs both format and lint passes. CI gates on `ruff check .` (the format check is not yet gated — see the workflow).
+- Target Python is **3.12** (CI runs the matrix on 3.12 and 3.13). `.ruff.toml` sets `target-version = "py312"`.
 - Keep functions small and prefer explicit typing (`from __future__ import annotations` is already enabled).
 - Add concise comments only when the behaviour is not obvious from the code.
 

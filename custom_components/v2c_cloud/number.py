@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfElectricCurrent, UnitOfPower
+from homeassistant.const import PERCENTAGE, UnitOfElectricCurrent, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
@@ -64,7 +64,13 @@ async def async_setup_entry(
                     device_id,
                     name_key="current_intensity",
                     unique_suffix="intensity",
-                    reported_keys=("intensity", "currentintensity", "current_int", "current_intensity", "car_intensity"),
+                    reported_keys=(
+                        "intensity",
+                        "currentintensity",
+                        "current_int",
+                        "current_intensity",
+                        "car_intensity",
+                    ),
                     setter=lambda api_value, _device_id=device_id: async_write_keyword(
                         hass,
                         runtime_data,
@@ -88,7 +94,13 @@ async def async_setup_entry(
                     device_id,
                     name_key="min_intensity",
                     unique_suffix="min_intensity",
-                    reported_keys=("mincarint", "min_intensity", "mincarintensity", "min_car_int", "mincar_int"),
+                    reported_keys=(
+                        "mincarint",
+                        "min_intensity",
+                        "mincarintensity",
+                        "min_car_int",
+                        "mincar_int",
+                    ),
                     setter=lambda api_value, _device_id=device_id: async_write_keyword(
                         hass,
                         runtime_data,
@@ -137,7 +149,13 @@ async def async_setup_entry(
                     device_id,
                     name_key="max_intensity",
                     unique_suffix="max_intensity",
-                    reported_keys=("maxcarint", "max_intensity", "maxcarintensity", "max_car_int", "maxcar_int"),
+                    reported_keys=(
+                        "maxcarint",
+                        "max_intensity",
+                        "maxcarintensity",
+                        "max_car_int",
+                        "maxcar_int",
+                    ),
                     setter=lambda api_value, _device_id=device_id: async_write_keyword(
                         hass,
                         runtime_data,
@@ -153,6 +171,30 @@ async def async_setup_entry(
                     value_to_api=lambda value: round(value),
                     refresh_after_call=False,
                     icon="mdi:sine-wave",
+                ),
+                V2CNumberEntity(
+                    coordinator,
+                    client,
+                    runtime_data,
+                    device_id,
+                    name_key="light_led",
+                    unique_suffix="light_led",
+                    reported_keys=("lightled", "light_led"),
+                    setter=lambda api_value, _device_id=device_id: async_write_keyword(
+                        hass,
+                        runtime_data,
+                        _device_id,
+                        "LightLED",
+                        api_value,
+                    ),
+                    local_key="LightLED",
+                    native_unit=PERCENTAGE,
+                    minimum=0,
+                    maximum=100,
+                    step=1,
+                    value_to_api=lambda value: round(value),
+                    refresh_after_call=False,
+                    icon="mdi:led-on",
                 ),
             )
         )

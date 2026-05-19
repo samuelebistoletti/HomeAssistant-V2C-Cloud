@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,9 +18,11 @@ def _make_client(
     reported=None,
     rfid=None,
     version=None,
+    current_state_charge=None,
     reported_error=None,
     rfid_error=None,
     version_error=None,
+    current_state_charge_error=None,
 ):
     client = MagicMock()
     client.async_get_reported = AsyncMock(
@@ -34,6 +36,14 @@ def _make_client(
     client.async_get_version = AsyncMock(
         side_effect=version_error,
         return_value=None if version_error else (version or {"versionId": "1.0"}),
+    )
+    # _fetch_single_device_state also calls async_get_current_state_charge in
+    # parallel with the others; mock it so asyncio.gather sees an awaitable.
+    client.async_get_current_state_charge = AsyncMock(
+        side_effect=current_state_charge_error,
+        return_value=None
+        if current_state_charge_error
+        else (current_state_charge or {}),
     )
     return client
 

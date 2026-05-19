@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-
 INSTALLATION_TYPES = {
     0: {"en": "Single-phase", "it": "Monofase"},
     1: {"en": "Three-phase", "it": "Trifase"},

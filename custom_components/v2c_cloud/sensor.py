@@ -93,11 +93,27 @@ def _as_flag(value: Any) -> int | None:
 STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
     "ChargeState": {
         0: {"en": CHARGE_STATE_LABELS[0], "es": "Desconectado", "it": "Disconnesso"},
-        1: {"en": CHARGE_STATE_LABELS[1], "es": "Vehículo conectado (inactivo)", "it": "Veicolo collegato"},
+        1: {
+            "en": CHARGE_STATE_LABELS[1],
+            "es": "Vehículo conectado (inactivo)",
+            "it": "Veicolo collegato",
+        },
         2: {"en": CHARGE_STATE_LABELS[2], "es": "Cargando", "it": "In carica"},
-        3: {"en": CHARGE_STATE_LABELS[3], "es": "Ventilación requerida", "it": "Ventilazione richiesta"},
-        4: {"en": CHARGE_STATE_LABELS[4], "es": "Cortocircuito en piloto de control", "it": "Corto del pilot"},
-        5: {"en": CHARGE_STATE_LABELS[5], "es": "Fallo general", "it": "Guasto generale"},
+        3: {
+            "en": CHARGE_STATE_LABELS[3],
+            "es": "Ventilación requerida",
+            "it": "Ventilazione richiesta",
+        },
+        4: {
+            "en": CHARGE_STATE_LABELS[4],
+            "es": "Cortocircuito en piloto de control",
+            "it": "Corto del pilot",
+        },
+        5: {
+            "en": CHARGE_STATE_LABELS[5],
+            "es": "Fallo general",
+            "it": "Guasto generale",
+        },
     },
     "SlaveError": {
         0: {"en": "No error", "es": "Sin error", "it": "Nessun errore"},
@@ -105,12 +121,24 @@ STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
         2: {"en": "Reading", "es": "Lectura", "it": "Lettura"},
         3: {"en": "Slave", "es": "Esclavo", "it": "Slave"},
         4: {"en": "Waiting Wi-Fi", "es": "Esperando Wi-Fi", "it": "In attesa Wi-Fi"},
-        5: {"en": "Waiting communication", "es": "Esperando comunicación", "it": "In attesa comunicazione"},
+        5: {
+            "en": "Waiting communication",
+            "es": "Esperando comunicación",
+            "it": "In attesa comunicazione",
+        },
         6: {"en": "Wrong IP", "es": "IP incorrecta", "it": "IP errato"},
-        7: {"en": "Slave not found", "es": "Esclavo no encontrado", "it": "Slave non trovato"},
+        7: {
+            "en": "Slave not found",
+            "es": "Esclavo no encontrado",
+            "it": "Slave non trovato",
+        },
         8: {"en": "Wrong slave", "es": "Esclavo incorrecto", "it": "Slave errato"},
         9: {"en": "No response", "es": "Sin respuesta", "it": "Nessuna risposta"},
-        10: {"en": "Clamp not connected", "es": "Pinza no conectada", "it": "Pinza non collegata"},
+        10: {
+            "en": "Clamp not connected",
+            "es": "Pinza no conectada",
+            "it": "Pinza non collegata",
+        },
     },
     "Paused": {
         0: {"en": "No", "es": "No", "it": "No"},
@@ -125,7 +153,11 @@ STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
         1: {"en": "Locked", "es": "Bloqueado", "it": "Bloccato"},
     },
     "Timer": {
-        0: {"en": "Timer off", "es": "Temporizador desactivado", "it": "Timer disattivo"},
+        0: {
+            "en": "Timer off",
+            "es": "Temporizador desactivado",
+            "it": "Timer disattivo",
+        },
         1: {"en": "Timer on", "es": "Temporizador activado", "it": "Timer attivo"},
     },
     "Dynamic": {
@@ -137,10 +169,22 @@ STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
         1: {"en": "Not modulating", "es": "Sin modulación", "it": "Non modula"},
     },
     "DynamicPowerMode": {
-        0: {"en": "Timed power enabled", "es": "Potencia programada activada", "it": "Potenza programmata attiva"},
-        1: {"en": "Timed power disabled", "es": "Potencia programada desactivada", "it": "Potenza programmata disattiva"},
+        0: {
+            "en": "Timed power enabled",
+            "es": "Potencia programada activada",
+            "it": "Potenza programmata attiva",
+        },
+        1: {
+            "en": "Timed power disabled",
+            "es": "Potencia programada desactivada",
+            "it": "Potenza programmata disattiva",
+        },
         2: {"en": "Exclusive PV mode", "es": "Modo FV exclusivo", "it": "Solo PV"},
-        3: {"en": "Minimum power mode", "es": "Modo potencia mínima", "it": "Modalità potenza minima"},
+        3: {
+            "en": "Minimum power mode",
+            "es": "Modo potencia mínima",
+            "it": "Modalità potenza minima",
+        },
         4: {"en": "Grid + PV mode", "es": "Modo red + FV", "it": "Modalità rete + PV"},
         5: {"en": "Stop mode", "es": "Modo parado", "it": "Modalità stop"},
     },

@@ -138,6 +138,7 @@ class TestShouldHoldValue:
         number._OPTIMISTIC_HOLD_SECONDS = 0.01
         number._record_command()
         import time
+
         time.sleep(0.02)
         assert number._should_hold_value(10.0) is False
 

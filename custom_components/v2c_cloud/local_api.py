@@ -198,15 +198,18 @@ _INT_FIELDS = frozenset(
 # the LAN convention, so the synthesis must rescale.
 #
 # Why each entry:
-#   ContractedPower: cloud sends kW (e.g. "7"); LAN/entity uses W (7000).
-#     The Number entity divides by 1000 in source_to_native to render kW,
-#     so without this override the UI shows "0.007 kW" for a 7 kW contract.
+#   ContractedPower: cloud encodes the contract power as W/100 (e.g. "7" =
+#     700 W = 0.7 kW, confirmed against a live install where the V2C app
+#     showed 0.7 kW for cloud value "7"). The LAN /RealTimeData and the
+#     Number entity use W (700); the entity then divides by 1000 in
+#     source_to_native to render kW. Without this override the UI shows
+#     "0.007 kW" for a 0.7 kW contract.
 #   LightLED:        cloud sends a 0.0-1.0 fraction (e.g. "1.000000" = 100 %);
 #     LAN/entity uses 0-100 % integer (see local_api.py:43 + README "0-100 %").
 #     Without this override a LED set to 100 % via the V2C app renders as
 #     "1 %" in HA.
 _CLOUD_TO_LAN_MULTIPLIERS: dict[str, int] = {
-    "ContractedPower": 1000,
+    "ContractedPower": 100,
     "LightLED": 100,
 }
 

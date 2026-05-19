@@ -97,20 +97,26 @@ class TestNumberEntityCloudFallback:
         assert result["MaxIntensity"] == 32
 
     def test_contracted_power_from_cloud(self) -> None:
-        # Real cloud key is `contract_power` (NOT `contractedpower`).
-        # Cloud reports it in kW (e.g. "7") but the LAN /RealTimeData format
-        # — which the Number entity consumes via source_to_native = raw/1000 —
-        # uses W (7000). Without the kW→W override, the UI displays "0.007 kW".
+        # Cloud encodes contract_power as W/100, so "7" -> 700 W (= 0.7 kW).
+        # The Number entity uses W and divides by 1000 in source_to_native
+        # to render kW; without the x100 override the UI would show 0.007 kW.
+        # Verified against a live install where the V2C app displayed 0.7 kW
+        # for cloud value "7".
         runtime = _runtime_with_reported({"contract_power": "7"})
         result = _build_realtime_from_reported(runtime, "dev1")
-        assert result["ContractedPower"] == 7000
+        assert result["ContractedPower"] == 700
 
-    def test_contracted_power_decimal_kw(self) -> None:
-        # Edge case: contract not on an integer kW (e.g. 3.45 kW). Must still
-        # round-trip through the kW→W override.
+    def test_contracted_power_higher_value(self) -> None:
+        # 5 kW contract -> cloud encoded as "50" -> 5000 W -> entity shows 5.0 kW.
+        runtime = _runtime_with_reported({"contract_power": "50"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["ContractedPower"] == 5000
+
+    def test_contracted_power_decimal_input(self) -> None:
+        # Edge case: cloud may report fractional values (e.g. "3.45" -> 345 W).
         runtime = _runtime_with_reported({"contract_power": "3.45"})
         result = _build_realtime_from_reported(runtime, "dev1")
-        assert result["ContractedPower"] == 3450
+        assert result["ContractedPower"] == 345
 
 
 class TestVoltageInstallationMapping:
@@ -305,8 +311,8 @@ class TestFullPayloadFromRealDevice:
         # LightLED: cloud "1.000000" (= 100 % fraction) -> 100 in LAN format.
         assert result["LightLED"] == 100
         assert result["LogoLED"] == 1
-        # ContractedPower: cloud sends "7" (kW); LAN format uses W → 7000.
-        assert result["ContractedPower"] == 7000
+        # ContractedPower: cloud encodes as W/100, so "7" -> 700 W (= 0.7 kW).
+        assert result["ContractedPower"] == 700
 
         # Sensors needing string passthrough (previously broken in cloud-only)
         assert result["ID"] == "XQUXDU"

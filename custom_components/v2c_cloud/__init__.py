@@ -163,6 +163,7 @@ class V2CEntryRuntimeData:
     client: V2CClient
     coordinator: DataUpdateCoordinator
     local_coordinators: dict[str, DataUpdateCoordinator] = field(default_factory=dict)
+    cloud_only: bool = False
 
 
 async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
@@ -388,6 +389,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     hass.data[DOMAIN][entry.entry_id] = V2CEntryRuntimeData(
         client=client,
         coordinator=coordinator,
+        cloud_only=_is_cloud_only_device(entry.data),
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

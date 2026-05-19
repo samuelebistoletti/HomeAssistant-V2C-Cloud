@@ -153,6 +153,22 @@ _REPORTED_STRING_FIELDS: dict[str, str] = {
     "mac": "MAC",
 }
 
+# Keys (matching the LAN /RealTimeData payload) whose data is structurally
+# absent from the V2C Cloud /reported and /currentstatecharge payloads.
+# Entities backed by these keys cannot produce a useful value in cloud-only
+# mode — they should advertise themselves as unavailable so the UI shows
+# "Unavailable" rather than the misleading "Unknown" state.
+LAN_ONLY_KEYS: frozenset[str] = frozenset(
+    {
+        "ReadyState",
+        "SignalStatus",
+        "Timer",
+        "ChargeMode",
+        "DynamicPowerMode",
+        "PauseDynamic",
+    }
+)
+
 _INT_FIELDS = frozenset(
     {
         "ChargeState",

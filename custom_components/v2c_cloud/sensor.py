@@ -30,7 +30,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import CHARGE_STATE_LABELS, DOMAIN
 from .entity import build_device_info, coerce_bool
-from .local_api import async_get_or_create_local_coordinator
+from .local_api import LAN_ONLY_KEYS, async_get_or_create_local_coordinator
 
 if TYPE_CHECKING:
     from . import V2CEntryRuntimeData
@@ -417,6 +417,16 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
     def device_info(self) -> DeviceInfo:
         """Return registry information for the underlying charger."""
         return build_device_info(self._runtime_data.coordinator, self._device_id)
+
+    @property
+    def available(self) -> bool:
+        """Return False for LAN-only keys when the entry is cloud-only."""
+        if (
+            self._runtime_data.cloud_only
+            and self.entity_description.key in LAN_ONLY_KEYS
+        ):
+            return False
+        return self.coordinator.last_update_success
 
     @property
     def native_value(self) -> Any:

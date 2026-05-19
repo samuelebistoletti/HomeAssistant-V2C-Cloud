@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import DOMAIN
 from .entity import V2CEntity, _OptimisticHoldMixin, coerce_bool
 from .local_api import (
+    LAN_ONLY_KEYS,
     async_get_or_create_local_coordinator,
     async_request_local_refresh,
     async_write_keyword,
@@ -264,6 +265,10 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
     @property
     def available(self) -> bool:
         """Return True if the entity can be controlled."""
+        if self._runtime_data.cloud_only and any(
+            key in LAN_ONLY_KEYS for key in self._local_keys
+        ):
+            return False
         if self._local_coordinator is not None:
             return self._local_coordinator.last_update_success
         return self.coordinator.last_update_success

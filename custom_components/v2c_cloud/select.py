@@ -23,6 +23,7 @@ from .const import (
 )
 from .entity import V2CEntity, _OptimisticHoldMixin
 from .local_api import (
+    LAN_ONLY_KEYS,
     V2CLocalApiError,
     async_get_or_create_local_coordinator,
     async_write_keyword,
@@ -215,6 +216,12 @@ class V2CEnumSelect(_OptimisticHoldMixin, V2CEntity, SelectEntity):
     @property
     def available(self) -> bool:
         """Return True if the entity can be controlled."""
+        if (
+            self._runtime_data.cloud_only
+            and self._local_key is not None
+            and self._local_key in LAN_ONLY_KEYS
+        ):
+            return False
         if self._local_coordinator is not None:
             return self._local_coordinator.last_update_success
         return self.coordinator.last_update_success

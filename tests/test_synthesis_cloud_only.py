@@ -57,10 +57,23 @@ class TestNumberEntityCloudFallback:
     were Unknown in cloud-only mode because the cloud key wasn't in the synthesis
     map. Confirm each one now resolves."""
 
-    def test_light_led_from_cloud(self) -> None:
+    def test_light_led_from_cloud_full_brightness(self) -> None:
+        # Cloud serialises LightLED as a 0.0-1.0 fraction; "1.000000" = 100 %.
+        # The Number entity is defined on 0-100 %, so synthesis must scale
+        # by 100 to align with the LAN /RealTimeData convention.
         runtime = _runtime_with_reported({"light_led": "1.000000"})
         result = _build_realtime_from_reported(runtime, "dev1")
-        assert result["LightLED"] == 1
+        assert result["LightLED"] == 100
+
+    def test_light_led_from_cloud_mid_brightness(self) -> None:
+        runtime = _runtime_with_reported({"light_led": "0.500000"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["LightLED"] == 50
+
+    def test_light_led_from_cloud_off(self) -> None:
+        runtime = _runtime_with_reported({"light_led": "0.000000"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["LightLED"] == 0
 
     def test_min_intensity_from_cloud(self) -> None:
         runtime = _runtime_with_reported({"min_car_int": "6"})
@@ -289,7 +302,8 @@ class TestFullPayloadFromRealDevice:
         assert result["Intensity"] == 6  # from /reported (setpoint)
         assert result["MinIntensity"] == 6
         assert result["MaxIntensity"] == 32
-        assert result["LightLED"] == 1
+        # LightLED: cloud "1.000000" (= 100 % fraction) -> 100 in LAN format.
+        assert result["LightLED"] == 100
         assert result["LogoLED"] == 1
         # ContractedPower: cloud sends "7" (kW); LAN format uses W → 7000.
         assert result["ContractedPower"] == 7000

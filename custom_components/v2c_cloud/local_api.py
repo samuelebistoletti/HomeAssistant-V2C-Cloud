@@ -192,15 +192,23 @@ _INT_FIELDS = frozenset(
     }
 )
 
-# Fields where the cloud `/reported` payload uses kW but the LAN /RealTimeData
-# format (which the entity layer consumes) uses W. The synthesis loop must
-# multiply these by 1000 unconditionally — the dynamic kW/W scale detection
-# in _detect_cloud_scale does NOT apply here because:
-#   - ContractedPower is a contract value (always in kW in cloud), not a
-#     measurement, so it is decoupled from the rest of the payload's scale.
-#   - The entity-side `source_to_native` divides by 1000 to display kW; without
-#     this override the UI shows "0.007 kW" for a 7 kW contract.
-_KW_TO_W_OVERRIDES: frozenset[str] = frozenset({"ContractedPower"})
+# Local keys that need explicit multiplicative normalisation when synthesised
+# from the cloud /reported payload. The cloud and the LAN /RealTimeData
+# disagree on unit prefix for these fields; the entity layer is hard-coded to
+# the LAN convention, so the synthesis must rescale.
+#
+# Why each entry:
+#   ContractedPower: cloud sends kW (e.g. "7"); LAN/entity uses W (7000).
+#     The Number entity divides by 1000 in source_to_native to render kW,
+#     so without this override the UI shows "0.007 kW" for a 7 kW contract.
+#   LightLED:        cloud sends a 0.0-1.0 fraction (e.g. "1.000000" = 100 %);
+#     LAN/entity uses 0-100 % integer (see local_api.py:43 + README "0-100 %").
+#     Without this override a LED set to 100 % via the V2C app renders as
+#     "1 %" in HA.
+_CLOUD_TO_LAN_MULTIPLIERS: dict[str, int] = {
+    "ContractedPower": 1000,
+    "LightLED": 100,
+}
 
 
 def _detect_cloud_scale(reported: dict[str, object]) -> float:
@@ -253,8 +261,9 @@ def _build_realtime_from_reported(
             continue
         if needs_scale:
             value = value * scale
-        if local_key in _KW_TO_W_OVERRIDES:
-            value = value * 1000
+        multiplier = _CLOUD_TO_LAN_MULTIPLIERS.get(local_key)
+        if multiplier is not None:
+            value = value * multiplier
         result[local_key] = int(value) if local_key in _INT_FIELDS else round(value, 2)
 
     # Augment with currentstatecharge data for missing real-time fields
@@ -274,8 +283,9 @@ def _build_realtime_from_reported(
                 continue
             if needs_scale:
                 value = value * csc_scale
-            if local_key in _KW_TO_W_OVERRIDES:
-                value = value * 1000
+            multiplier = _CLOUD_TO_LAN_MULTIPLIERS.get(local_key)
+            if multiplier is not None:
+                value = value * multiplier
             result[local_key] = (
                 int(value) if local_key in _INT_FIELDS else round(value, 2)
             )

@@ -76,9 +76,8 @@ async def async_setup_entry(
                 name_key="installation_type",
                 unique_suffix="installation_type",
                 options_map=INSTALLATION_TYPES,
-                setter=lambda value,
-                _device_id=device_id: client.async_set_installation_type(
-                    _device_id, value
+                setter=lambda value, _device_id=device_id: (
+                    client.async_set_installation_type(_device_id, value)
                 ),
                 reported_keys=("inst_type", "installation_type"),
                 icon="mdi:home-lightning-bolt",

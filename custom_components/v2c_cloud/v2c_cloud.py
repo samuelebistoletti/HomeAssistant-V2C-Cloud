@@ -371,7 +371,7 @@ class V2CClient:
         data = await self._request(
             "GET",
             "/stadistic/global/me",
-            params=params if params else None,
+            params=params or None,
         )
         if isinstance(data, list):
             return data

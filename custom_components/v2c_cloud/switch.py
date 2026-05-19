@@ -178,8 +178,9 @@ async def async_setup_entry(
                     device_id,
                     name_key="rfid_reader",
                     unique_suffix="rfid_reader",
-                    setter=lambda state,
-                    _device_id=device_id: client.async_set_rfid_mode(_device_id, state),
+                    setter=lambda state, _device_id=device_id: (
+                        client.async_set_rfid_mode(_device_id, state)
+                    ),
                     reported_keys=("set_rfid", "rfid_enabled", "rfid"),
                     icon_on="mdi:card-account-details",
                     icon_off="mdi:card-off",
@@ -196,9 +197,8 @@ async def async_setup_entry(
                     device_id,
                     name_key="ocpp_enabled",
                     unique_suffix="ocpp_enabled",
-                    setter=lambda state,
-                    _device_id=device_id: client.async_set_ocpp_enabled(
-                        _device_id, state
+                    setter=lambda state, _device_id=device_id: (
+                        client.async_set_ocpp_enabled(_device_id, state)
                     ),
                     reported_keys=(
                         "ocpp",

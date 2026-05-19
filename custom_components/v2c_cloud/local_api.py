@@ -525,7 +525,7 @@ async def async_get_or_create_local_coordinator(
     # Detect cloud-only to use longer poll interval and log once
     entry_obj = runtime_data.coordinator.config_entry
     _entry_data = entry_obj.data
-    _options = entry_obj.options if entry_obj.options else {}
+    _options = entry_obj.options or {}
     _explicit_cloud = "fallback_ip" in _entry_data and (
         not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
     )

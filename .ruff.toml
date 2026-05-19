@@ -23,6 +23,11 @@ ignore = [
     "PLR0915", # Allow larger helper functions for aggregated state
     "D401", # Permit descriptive (non-imperative) docstrings
     "E501", # Defer line-length enforcement to formatter/docs
+    "PLW0108", # False positive on `lambda x, _dev=device_id: f(...)` — the
+               # `_dev=device_id` default-arg is an intentional Python idiom
+               # for late binding inside a for-loop (capture the current
+               # iteration's value, not the closure variable). Ruff 0.15
+               # tightened PLW0108 and now flags this pattern as "inline-able".
 ]
 
 # Relax the rule set for tests and scripts/ — these are not part of the shipped

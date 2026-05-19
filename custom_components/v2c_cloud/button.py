@@ -56,8 +56,8 @@ async def async_setup_entry(
                     device_id,
                     name_key="trigger_update",
                     unique_suffix="trigger_update",
-                    coroutine_factory=lambda _device_id=device_id: client.async_trigger_update(
-                        _device_id
+                    coroutine_factory=lambda _device_id=device_id: (
+                        client.async_trigger_update(_device_id)
                     ),
                     icon="mdi:update",
                     entity_category=EntityCategory.DIAGNOSTIC,

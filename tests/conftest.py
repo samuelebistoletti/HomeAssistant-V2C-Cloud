@@ -227,6 +227,7 @@ def _install_ha_stubs() -> None:
     # homeassistant.helpers.selector
     ha_selector = _mod("homeassistant.helpers.selector")
     if not hasattr(ha_selector, "SelectSelector"):
+
         class _SelectSelectorConfig(dict):
             def __init__(self, **kwargs: Any) -> None:
                 super().__init__(**kwargs)

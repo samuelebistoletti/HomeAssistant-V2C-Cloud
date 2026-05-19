@@ -48,6 +48,7 @@ def _infer_connection_type(entry_data: dict[str, Any]) -> str:
         return "cloud_only"
     return "local"
 
+
 _LOGGER = logging.getLogger(__name__)
 
 _LOCAL_PROBE_TIMEOUT = 10
@@ -428,9 +429,7 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
-                vol.Required(
-                    "connection_type", default=current_mode
-                ): SelectSelector(
+                vol.Required("connection_type", default=current_mode): SelectSelector(
                     SelectSelectorConfig(
                         options=["local", "cloud_only"],
                         translation_key="connection_type",

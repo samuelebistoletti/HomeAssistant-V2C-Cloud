@@ -23,7 +23,14 @@ class TestManifest:
         assert manifest["domain"] == "v2c_cloud"
 
     def test_version_format_semver(self, manifest) -> None:
-        assert re.match(r"^\d+\.\d+\.\d+$", manifest["version"])
+        # Accept stable (1.3.0) and prerelease (1.3.0-beta.1, 1.4.0-rc.2,
+        # 2.0.0-alpha, ...) semver. HACS treats anything with a hyphen suffix
+        # as a beta channel and the tag-and-release workflow auto-detects it
+        # and sets prerelease=true on the GitHub Release.
+        assert re.match(
+            r"^\d+\.\d+\.\d+(-(alpha|beta|rc|dev|pre|preview)(\.\d+)?)?$",
+            manifest["version"],
+        )
 
     def test_no_min_ha_version_in_manifest(self, manifest) -> None:
         # min_ha_version is a HACS-only extension; hassfest rejects it as an

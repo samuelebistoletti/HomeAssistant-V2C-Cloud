@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0-beta.1] - 2026-05-19
+
+Pre-release for early-adopter testing — same code as the unreleased 1.3.0
+candidate (see entry below), but published with `prerelease: true` so HACS
+only proposes the update to users who opted into "Show beta versions".
+
+This is a HACS-side gate; install via **Settings → Devices & Services →
+HACS → V2C Cloud → ⋮ → Redownload**, then pick `1.3.0-beta.1` from the
+version dropdown. Promotion to `1.3.0` stable will follow after a quiet
+period if no regressions are reported.
+
+See the full set of changes in the `[1.3.0]` section below.
+
 ## [1.3.0] - 2026-05-18
 
 ### Added

@@ -76,7 +76,7 @@ def _build_local_interval(
     back to ``DEFAULT_LOCAL_INTERVAL``. Always returns a ``timedelta``.
     """
     fip = entry_data.get("fallback_ip")
-    if "fallback_ip" in entry_data and (not fip or fip == "0.0.0.0"):  # noqa: S104 — sentinel, not bind
+    if "fallback_ip" in entry_data and (not fip or fip == "0.0.0.0"):  # noqa: S104 — sentinel, not bind  # nosec B104
         return CLOUD_ONLY_UPDATE_INTERVAL
     seconds = options.get(CONF_LOCAL_UPDATE_INTERVAL)
     if not isinstance(seconds, int) or seconds <= 0:
@@ -419,7 +419,7 @@ async def async_get_or_create_local_coordinator(
         entry_data = runtime_data.coordinator.config_entry.data
         if "fallback_ip" in entry_data:
             fip = entry_data["fallback_ip"]
-            if not fip or fip == "0.0.0.0":  # noqa: S104 — sentinel, not bind
+            if not fip or fip == "0.0.0.0":  # noqa: S104 — sentinel, not bind  # nosec B104
                 return _build_realtime_from_reported(runtime_data, device_id)
 
         static_ip = resolve_static_ip(runtime_data, device_id)
@@ -527,7 +527,7 @@ async def async_get_or_create_local_coordinator(
     _entry_data = entry_obj.data
     _options = entry_obj.options if entry_obj.options else {}
     _explicit_cloud = "fallback_ip" in _entry_data and (
-        not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"  # noqa: S104 — sentinel, not bind
+        not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
     )
     if not _explicit_cloud:
         _ip = resolve_static_ip(runtime_data, device_id)

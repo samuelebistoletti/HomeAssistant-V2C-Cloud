@@ -25,9 +25,16 @@ class TestManifest:
     def test_version_format_semver(self, manifest) -> None:
         assert re.match(r"^\d+\.\d+\.\d+$", manifest["version"])
 
-    def test_min_ha_version_present(self, manifest) -> None:
-        assert "min_ha_version" in manifest
-        assert manifest["min_ha_version"] == "2025.4.0"
+    def test_no_min_ha_version_in_manifest(self, manifest) -> None:
+        # min_ha_version is a HACS-only extension; hassfest rejects it as an
+        # unknown field. The HA minimum version lives in hacs.json instead.
+        assert "min_ha_version" not in manifest
+
+    def test_min_ha_version_in_hacs_json(self) -> None:
+        hacs_path = _PROJECT_ROOT / "hacs.json"
+        hacs = json.loads(hacs_path.read_text())
+        assert "homeassistant" in hacs
+        assert re.match(r"^\d{4}\.\d{1,2}\.\d+$", hacs["homeassistant"])
 
     def test_documentation_is_https(self, manifest) -> None:
         assert manifest["documentation"].startswith("https://")

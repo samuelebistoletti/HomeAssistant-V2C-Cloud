@@ -223,7 +223,7 @@ The suite (~386 tests as of 1.3.0) runs entirely without a live Home Assistant i
 - **Cloud endpoints 1.3.0** – every new client method asserts URL/method/query parameters (`tests/test_cloud_endpoints_1_3.py`)
 - **LAN-vs-cloud router** – fallback path, cloud-only skip, LAN failure paths (`tests/test_router_1_3.py`)
 - **Options flow** – `local_update_interval` validation, default resolution, cloud-only override (`tests/test_options_flow_interval.py`)
-- **Manifest & translation hygiene** – `min_ha_version`, version semver, `en/it/es` key parity (`tests/test_manifest_hygiene.py`)
+- **Manifest & translation hygiene** – manifest schema, version semver, HACS-side `homeassistant` floor, `en/it/es` key parity (`tests/test_manifest_hygiene.py`)
 
 ### Live smoke test (not run in CI)
 

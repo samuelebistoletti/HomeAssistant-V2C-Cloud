@@ -2,6 +2,9 @@ name: Tag and Release on manifest.json version change
 
 on:
   push:
+    # Only main: feature branches may bump manifest.json during review without
+    # accidentally creating a release tag from the feature branch HEAD.
+    branches: [main]
     paths:
       - 'custom_components/v2c_cloud/manifest.json'
 

@@ -424,7 +424,7 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
         # Cloud-only coordinators (no fallback_ip) keep their fixed cadence.
         fip = entry_data.get("fallback_ip")
         is_cloud_only = "fallback_ip" in entry_data and (
-            not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind
+            not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
         )
         if is_cloud_only:
             continue
@@ -516,7 +516,7 @@ def _is_cloud_only_device(entry_data: dict[str, Any]) -> bool:
     if "fallback_ip" not in entry_data:
         return False
     fip = entry_data.get("fallback_ip")
-    return not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind
+    return not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
 
 
 async def _async_route_local_or_cloud(  # noqa: PLR0913

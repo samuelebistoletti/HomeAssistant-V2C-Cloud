@@ -26,7 +26,7 @@ All notable changes to this project will be documented in this file.
 - **SSRF guard deduplicated** into `custom_components/v2c_cloud/_net.py::validate_private_ip`. Replaces four scattered copies with a single, tested helper covering both IP parse errors and policy violations (private + not loopback + not link-local + not unspecified).
 - **Local API constants consolidated in `const.py`**: `LOCAL_HTTP_TIMEOUT`, `LOCAL_MAX_RETRIES`, `LOCAL_RETRY_BACKOFF`, `LOCAL_WRITE_RETRY_DELAY`, `CLOUD_ONLY_UPDATE_INTERVAL`, and the new `DEFAULT/MIN/MAX_LOCAL_INTERVAL` bounds.
 - **`async_write_keyword` now validates the keyword** against a documented whitelist (`WRITEABLE_KEYWORDS`) to reduce the SSRF surface and prevent accidental misuse from automations.
-- **`manifest.json` declares `min_ha_version = 2025.4.0`**, matching `hacs.json`.
+- **HA minimum version**: kept in `hacs.json` (`"homeassistant": "2025.4.0"`). Initially also added to `manifest.json` as `min_ha_version`, but hassfest rejects that field as unknown — the HACS-side floor remains the source of truth.
 
 ### Fixed
 

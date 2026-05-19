@@ -1,7 +1,11 @@
 {
     "name": "samuelebistoletti/HomeAssistant-V2C-Cloud",
     "image": "mcr.microsoft.com/devcontainers/python:3.14",
+    "initializeCommand": "docker network inspect v2c-dev >/dev/null 2>&1 || docker network create v2c-dev && docker compose up -d homeassistant",
     "postCreateCommand": "scripts/setup",
+    "runArgs": [
+        "--network=v2c-dev"
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -40,6 +44,9 @@
                 "libturbojpeg0",
                 "libpcap-dev"
             ]
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "lts"
         }
     }
 }

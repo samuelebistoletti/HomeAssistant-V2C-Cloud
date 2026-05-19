@@ -9,6 +9,17 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"],
       "description": "Persistent knowledge graph for cross-session facts"
+    },
+    "Home Assistant": {
+      "command": "mcp-proxy",
+      "args": [
+        "--transport=streamablehttp",
+        "--stateless",
+        "http://homeassistant:8123/api/mcp"
+      ],
+      "env": {
+        "API_ACCESS_TOKEN": "${HASS_TOKEN}"
+      }
     }
   }
 }

@@ -64,6 +64,23 @@ The integration follows defensive logging conventions to avoid leaking credentia
 
 ---
 
+## Local Development Secrets
+
+The dev container reads every local-only secret from a single gitignored file at the repo root, `.env.dev`. None of these secrets are required to use the integration in production — they are bound to the developer's workstation, the dev Home Assistant container, and the dev V2C Cloud account.
+
+| Variable | Purpose | Consumer |
+| --- | --- | --- |
+| `GH_TOKEN` | GitHub CLI personal access token, persists `gh` auth across dev-container rebuilds. | The `gh` CLI auto-picks it up from the env. |
+| `V2C_CLOUD_API_KEY` | V2C Cloud API key used by the live smoke test. | `scripts/live_smoke_test.py`. |
+| `V2C_LOCAL_IP` | LAN IP of the dev Trydan charger, reachable from the dev-container host. | `scripts/live_smoke_test.py`. |
+| `HASS_TOKEN` | Long-lived access token for the companion `hass_core_dev` HA instance. | `mcp-proxy`, spawned by Claude Code through `.mcp.json` (`${HASS_TOKEN}` interpolation). |
+
+A committed template, `.env.dev.example`, documents each variable, where to obtain it, and how it is consumed. Contributors copy it to `.env.dev` and fill in their values once; `scripts/setup` then appends a single idempotent block to `~/.bashrc` that sources `.env.dev` with `set -a`, exporting every assignment into every interactive shell. The setup script never writes secrets to disk — it only reads `.env.dev` indirectly via the shell hook it emits.
+
+The legacy per-token files (`.gh-token`, `.v2c-token`, `.hass-token`) are no longer used. They remain in `.gitignore` so any leftover copies on existing machines stay out of git, but new setups should populate `.env.dev` directly.
+
+---
+
 ## Live Smoke Test Disclosure
 
 The repository ships `scripts/live_smoke_test.py` (added in 1.3.0). It is **not** run in CI and is gated behind the explicit `--confirm-restore` flag. The script:

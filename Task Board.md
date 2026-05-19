@@ -1,16 +1,19 @@
 # Task Board
 
 ## Today
-- [ ] Aspettare review utente su PR #12, poi merge → tag-and-release v1.3.0 auto-triggera
+- [ ] **Post-reload smoke test in HA**: reload the integration and confirm in cloud-only mode (a) the recovered entities show real values — LightLED slider, Min/MaxIntensity sliders, ContractedPower, device_identifier, firmware_version, wifi_ssid, wifi_ip; (b) the 6 LAN-only entities now read "Non disponibile" (ReadyState, SignalStatus, Timer×2, ChargeMode, DynamicPowerMode, PauseDynamic); (c) the connection_type toggle in the options flow works both directions
+- [ ] Decide whether to bundle today's afternoon fixes as `1.3.0-beta.2` or roll directly into `1.3.0` stable
+- [ ] Monitor `v1.3.0-beta.1` for community feedback / regression reports (HACS pre-release channel)
+- [ ] Verify GitHub Release `v1.3.0-beta.1` has both SBOM artifacts (SPDX + CycloneDX) attached
+- [ ] **Commit the devcontainer + MCP wiring + secrets-consolidation changes** (untracked: `.env.dev.example`; modified: `docker-compose.yml`, `.devcontainer.json`, `scripts/setup`, `.mcp.json`, `.gitignore`, `CONTRIBUTING.md`, `SECURITY.md`, `TECHNICAL_NOTES.md`, `CHANGELOG.md`)
+- [ ] **Rebuild the devcontainer** to validate end-to-end: `v2c-dev` network created, HA reachable at `http://homeassistant:8123`, `npx`/`mcp-proxy` on PATH, `HASS_TOKEN` exported, Claude Code's HA MCP server connects
 
 ## This Week
-- [ ] Verificare GitHub Release v1.3.0 post-merge (SBOM SPDX + CycloneDX allegati + ZIP)
-- [ ] Smoke test post-release con HACS reinstall in HA dev container (verifica options flow per local_update_interval e router LAN↔cloud)
+- [ ] Promote `1.3.0-beta.1` (or `-beta.2`) → `1.3.0` stable once smoke proves clean
 
 ## Backlog
 - [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826)
 - [ ] Future: implement V2C cloud webhooks (startCharge/endCharge) — quando V2C documenta meccanismo di firma/auth
-- [ ] Future: bump codecov-action a v6 (oggi pinnata a v5)
 - [ ] Future: refactor del service dispatcher in `__init__.py` (~640 righe ripetitive → ServiceSpec data-driven)
 - [ ] Future: split di `_async_update_data` (136 righe) in 3 helper
 
@@ -61,3 +64,18 @@
 - [x] Diagnose + fix GitHub Advanced Security review: 3 unpinned 3rd-party actions → SHA-pinned — 051926
 - [x] Lock tag-and-release.yaml to branches:[main] (prevent feature-branch auto-release) — 051926
 - [x] PR #12 all 5 CI gates green on HEAD 839ae24 — 051926
+- [x] Merge PR #12 → main (dddc1d9) — 051926
+- [x] Fix security.yaml concurrency conflict + auto-detect prerelease in tag-and-release.yaml — 051926
+- [x] Bump to 1.3.0-beta.1 (pre-release channel) + push tag v1.3.0-beta.1 — 051926
+- [x] Merge 12 Dependabot PRs (#13-#24): aioresponses, voluptuous, pip, hassfest, codecov, upload-artifact, setup-python, lock-threads, ruff+colorlog, pytest-asyncio, aiohttp, pyyaml — 051926
+- [x] i18n: translate `connection_type` radio (SelectSelector + selector blocks en/it/es), fix "Intensità LED" Italian name, clarify LAN→cloud fallback in description (7589b23) — 051926
+- [x] Phase A: `connection_type` toggle in options flow with mode-switch reload + 12 tests (e01163d + 187e2bb ruff format) — 051926
+- [x] Capture real `/device/reported` + `/device/currentstatecharge` payloads + exhaustive entity-vs-payload audit — 051926
+- [x] Phase B1: extend `_REPORTED_TO_REALTIME` with 9 numeric mappings + string passthrough (ID, FirmwareVersion, MAC) + parse `wifi_info` JSON for SSID/IP + 20 tests (93b91da) — 051926
+- [x] Phase B2: 6 LAN-only entities advertise `available=False` in cloud-only mode (V2CEntryRuntimeData.cloud_only + LAN_ONLY_KEYS frozenset) + 14 tests (b14a491) — 051926
+- [x] `.gh-token` / `.v2c-token` gitignored at repo root so they survive devcontainer rebuilds (fcbc404) — 051926
+- [x] Devcontainer wired to companion HA container via shared `v2c-dev` Docker network; `initializeCommand` auto-starts HA on dev-container open; `restart: "no"` (manual on host reboot) — 051926
+- [x] Devcontainer Node.js LTS feature + `mcp-proxy` install via `scripts/setup` — 051926
+- [x] `.mcp.json` HA server now points at `http://homeassistant:8123/api/mcp` with `${HASS_TOKEN}` env interpolation — 051926
+- [x] Unified dev secrets into `.env.dev` (gitignored) + annotated `.env.dev.example` template; legacy `.gh-token`/`.v2c-token`/`.hass-token` files retired — 051926
+- [x] Docs aligned (CONTRIBUTING/SECURITY/TECHNICAL_NOTES §8/CHANGELOG) — 051926

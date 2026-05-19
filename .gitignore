@@ -17,14 +17,20 @@ coverage.xml
 .ruff_cache
 .venv
 .env
+.env.dev
+# legacy per-token files (superseded by .env.dev) — still ignored if present
 .gh-token
+.v2c-token
+.hass-token
+
+# macOS Finder metadata
+.DS_Store
 
 # Claude Code
 .claude
 
-# Home Assistant configuration
-config/*
-!config/configuration.yaml
+# Home Assistant configuration — local dev HA state, never committed
+config/
 
 
 # Claudify — personal & runtime files

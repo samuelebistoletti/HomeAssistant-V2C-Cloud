@@ -127,7 +127,63 @@ Numeric query parameters are posted as strings (as per the public documentation)
    python -m pytest tests/ -v
    ```
 
-## 8. Testing
+## 8. Dev Environment & MCP Tooling
+
+### Devcontainer topology
+
+The `.devcontainer.json` provisions a single-container dev environment based on `mcr.microsoft.com/devcontainers/python:3.14`. It is augmented to coexist with a companion Home Assistant container defined in `docker-compose.yml`:
+
+- **`initializeCommand`** (runs on the host, before the dev container is built):
+  ```
+  docker network inspect v2c-dev >/dev/null 2>&1 || docker network create v2c-dev
+  docker compose up -d homeassistant
+  ```
+  This guarantees the shared `v2c-dev` user-defined bridge network exists and the Home Assistant service (`hass_core_dev`, image `ghcr.io/home-assistant/home-assistant:stable`) is running before VS Code starts the dev container.
+- **`runArgs: ["--network=v2c-dev"]`** attaches the dev container to that same network. Container DNS makes the HA service resolvable from inside as `http://homeassistant:8123` (via the network alias declared in `docker-compose.yml`).
+- **`restart: "no"`** on the HA service is intentional: after a host reboot the container stays off until the next dev-container open (which re-runs `initializeCommand`) or an explicit `docker compose up -d homeassistant`. Cloud and LAN smoke testing is always developer-initiated.
+- **Bind mounts**: `./config:/config` and `./custom_components:/config/custom_components`, so iterating on the integration is just edit-and-reload from the HA UI.
+- **Port 8123** is published on the host so the same instance is reachable at `http://localhost:8123` from the browser.
+
+### Tooling installed by `scripts/setup`
+
+In addition to the Python dependency lockfiles, the post-create script installs:
+
+- **Node.js LTS** (via the `ghcr.io/devcontainers/features/node:1` devcontainer feature) — provides `npx`, used by the `context7` and `memory` MCP servers in `.mcp.json`.
+- **`mcp-proxy`** (`uv tool install --force git+https://github.com/sparfenyuk/mcp-proxy`) — the Streamable-HTTP/SSE bridge that fronts Home Assistant's `/api/mcp` endpoint for Claude Code consumption. Installed into the user's `uv` tool prefix (`~/.local/bin`, on `PATH` by default).
+- A one-shot block appended to `~/.bashrc` that sources `.env.dev` with `set -a`, so every variable defined in that file is exported into every interactive shell.
+
+### Local secrets — `.env.dev`
+
+All dev secrets live in a single gitignored file at the repo root, `.env.dev`. The committed `.env.dev.example` documents every variable, where to obtain it, and the consumer:
+
+| Variable | Consumer |
+| --- | --- |
+| `GH_TOKEN` | `gh` CLI inside the dev container. |
+| `V2C_CLOUD_API_KEY` | `scripts/live_smoke_test.py`. |
+| `V2C_LOCAL_IP` | `scripts/live_smoke_test.py`. |
+| `HASS_TOKEN` | `mcp-proxy`, spawned by Claude Code through `.mcp.json` (`${HASS_TOKEN}` interpolation). |
+
+The setup flow is intentionally one-shot:
+
+```bash
+cp .env.dev.example .env.dev
+$EDITOR .env.dev   # fill in every value
+# (re)open the dev container — `scripts/setup` wires the shell hook
+```
+
+After editing `.env.dev`, open a new shell or run `source ~/.bashrc` and restart Claude Code so it picks up the updated env (the MCP servers read `${HASS_TOKEN}` at spawn time). The legacy per-token files (`.gh-token`, `.v2c-token`, `.hass-token`) are superseded — `scripts/setup` cleans up the old `HASS_TOKEN`-only block from `~/.bashrc` if it exists, and the files themselves are no longer read by any tooling.
+
+### `.mcp.json` MCP servers
+
+| Server | Command | Notes |
+| --- | --- | --- |
+| `context7` | `npx -y @upstash/context7-mcp@latest` | Live library documentation; no auth required. |
+| `memory` | `npx -y @modelcontextprotocol/server-memory` | Persistent knowledge graph; no auth required. |
+| `Home Assistant` | `mcp-proxy --transport=streamablehttp --stateless http://homeassistant:8123/api/mcp` | `API_ACCESS_TOKEN` env interpolated from `${HASS_TOKEN}`. The DNS name `homeassistant` resolves via the `v2c-dev` bridge network. |
+
+`HASS_TOKEN` is a **development-only** long-lived access token bound to the local dev container's HA instance. Like every other value in `.env.dev`, it is gitignored and local to the workstation.
+
+## 9. Testing
 
 ### Automated tests
 

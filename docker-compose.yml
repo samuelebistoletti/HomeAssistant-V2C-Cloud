@@ -2,7 +2,7 @@ services:
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: hass_core_dev
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8123:8123"
     volumes:
@@ -10,3 +10,12 @@ services:
       - ./custom_components:/config/custom_components
     environment:
       - TZ=Europe/Rome
+    networks:
+      v2c-dev:
+        aliases:
+          - homeassistant
+
+networks:
+  v2c-dev:
+    name: v2c-dev
+    external: true

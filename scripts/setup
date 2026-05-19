@@ -14,3 +14,50 @@ python3 -m pip install --requirement requirements.txt
 # VSCode.
 python3 -m pip install --requirement requirements_test.txt
 python3 -m pip install pytest-cov
+
+# MCP proxy (Streamable HTTP/SSE bridge) for Claude Code → Home Assistant /api/mcp.
+# Install uv if not already available (devcontainer feature or prior run).
+if ! command -v uv &>/dev/null; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+uv tool install --force git+https://github.com/sparfenyuk/mcp-proxy
+
+# Wire all dev secrets into interactive shells from a single file. `.env.dev`
+# is the sole source of truth (gitignored); see `.env.dev.example` for the
+# documented template. Consumers:
+#   - HASS_TOKEN  → interpolated by .mcp.json when Claude Code spawns mcp-proxy
+#   - GH_TOKEN    → picked up by the `gh` CLI automatically
+#   - V2C_*       → consumed by scripts/live_smoke_test.py
+bashrc="$HOME/.bashrc"
+env_file="/workspaces/HomeAssistant-V2C-Cloud/.env.dev"
+example_file="/workspaces/HomeAssistant-V2C-Cloud/.env.dev.example"
+marker="# >>> v2c-cloud dev secrets <<<"
+
+# Remove any superseded HASS_TOKEN-only block from earlier setup runs.
+if grep -qF "# >>> v2c-cloud HASS_TOKEN <<<" "$bashrc" 2>/dev/null; then
+  sed -i '/# >>> v2c-cloud HASS_TOKEN <<</,/# <<< v2c-cloud HASS_TOKEN >>>/d' "$bashrc"
+fi
+
+if ! grep -qF "$marker" "$bashrc" 2>/dev/null; then
+  cat >> "$bashrc" <<'EOF'
+
+# >>> v2c-cloud dev secrets <<<
+if [ -r /workspaces/HomeAssistant-V2C-Cloud/.env.dev ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . /workspaces/HomeAssistant-V2C-Cloud/.env.dev
+  set +a
+fi
+# <<< v2c-cloud dev secrets >>>
+EOF
+fi
+
+if [ ! -f "$env_file" ]; then
+  echo
+  echo "[setup] .env.dev not found."
+  echo "[setup] Copy .env.dev.example to .env.dev and fill in the secrets:"
+  echo "[setup]   cp .env.dev.example .env.dev"
+  echo "[setup] Then open a new terminal so the values are exported."
+  echo
+fi

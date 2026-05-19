@@ -14,16 +14,33 @@ All contributions are managed through GitHub. Issues and pull requests are prefe
 ## Getting Started
 
 1. Fork the repository and branch from `main`.
-2. If you use VS Code, the provided dev container spins up a standalone Home Assistant instance with the sample configuration (`config/configuration.yaml`).
-3. Install all development tools inside the container or your local environment:
+2. If you use VS Code, opening the workspace prompts you to reopen in the dev container. The `initializeCommand` runs on the host first and:
+   - creates the `v2c-dev` Docker network if missing,
+   - runs `docker compose up -d homeassistant` so the companion Home Assistant container (`hass_core_dev`, image `ghcr.io/home-assistant/home-assistant:stable`, with `config/configuration.yaml` and `custom_components/` bind-mounted) is up before the dev container is built.
+
+   The dev container is attached to the `v2c-dev` network via `runArgs`, so HA is reachable from inside as `http://homeassistant:8123`. From the host, the same instance is published on `http://localhost:8123` (port 8123 is the only exposed port). HA uses `restart: "no"` — after a host reboot the service stays off until the next time you open the dev container or run `docker compose up -d homeassistant` manually.
+3. **Set up local secrets in one go.** All dev secrets live in a single gitignored file at the repo root: `.env.dev`. The committed template `.env.dev.example` documents every variable, where to obtain it, and who consumes it. Before (re)opening the dev container:
    ```bash
-   pip install -r requirements.txt
-   pip install -r requirements_test.txt
+   cp .env.dev.example .env.dev
+   $EDITOR .env.dev   # fill in GH_TOKEN, V2C_CLOUD_API_KEY, V2C_LOCAL_IP, HASS_TOKEN
    ```
-4. Run the test suite to verify everything works:
+   `scripts/setup` appends an idempotent block to `~/.bashrc` that sources `.env.dev` with `set -a`, so every interactive shell gets the values exported automatically.
+4. `scripts/setup` (the `postCreateCommand`) is idempotent and runs automatically. It installs:
+   - `requirements.txt` + `requirements_test.txt` + `pytest-cov`,
+   - `mcp-proxy` via `uv tool install` (consumed by Claude Code's MCP wiring),
+   - the `.env.dev` shell hook described in step 3.
+
+   You can re-run it at any time with `./scripts/setup` from inside the dev container.
+5. Run the test suite to verify everything works:
    ```bash
    python -m pytest tests/ -v
    ```
+
+### MCP wiring
+
+The dev container includes Node.js LTS (for `npx`) and `mcp-proxy` (`uv tool install git+https://github.com/sparfenyuk/mcp-proxy`). `.mcp.json` (checked in) configures three MCP servers consumed by Claude Code running inside the container: `context7`, `memory`, and `Home Assistant` (the latter via `mcp-proxy → http://homeassistant:8123/api/mcp`).
+
+The Home Assistant MCP server reads its bearer from `${HASS_TOKEN}`, which Claude Code interpolates from its process env at spawn time. The env var comes from `.env.dev` (see step 3 above). After your first edit to `.env.dev`, open a new terminal — or run `source ~/.bashrc` — and restart Claude Code so it picks up the new env.
 
 ## Pull Request Checklist
 

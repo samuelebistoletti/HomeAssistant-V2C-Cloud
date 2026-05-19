@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Developer Experience
+
+- **Companion Home Assistant container reachable from the dev container.** `docker-compose.yml` attaches `hass_core_dev` to a new external `v2c-dev` user-defined bridge network with the `homeassistant` alias, and `.devcontainer.json` joins the dev container to the same network via `runArgs: ["--network=v2c-dev"]`. Inside the dev container HA resolves as `http://homeassistant:8123` (host browser keeps using `http://localhost:8123`). An `initializeCommand` creates the network and runs `docker compose up -d homeassistant` before the dev container is built, so the service is ready when VS Code finishes attaching. HA uses `restart: "no"`: developer-initiated, not auto-restarted on host reboot.
+- **Node.js LTS in the dev container** via the `ghcr.io/devcontainers/features/node:1` devcontainer feature, exposing `npx` for the `context7` and `memory` MCP servers configured in `.mcp.json`.
+- **`mcp-proxy` installed by `scripts/setup`** (`uv tool install --force git+https://github.com/sparfenyuk/mcp-proxy`). Provides the Streamable-HTTP/SSE bridge that fronts the Home Assistant `/api/mcp` endpoint for Claude Code.
+- **Unified dev-secrets file** at `.env.dev` (gitignored). Replaces the previous trio of single-token files (`.gh-token`, `.v2c-token`, `.hass-token`). The committed template `.env.dev.example` documents every variable — `GH_TOKEN`, `V2C_CLOUD_API_KEY`, `V2C_LOCAL_IP`, `HASS_TOKEN` — including where to obtain it and which tool consumes it. `scripts/setup` appends an idempotent block to `~/.bashrc` that sources `.env.dev` with `set -a`, so every variable is exported into every interactive shell on a single edit. Contributors fill in the file once at first checkout. The legacy `HASS_TOKEN`-only block in `~/.bashrc` is auto-removed by `scripts/setup` on subsequent runs.
+
 ### Added
 
 - **Connection type editable post-setup** — the options flow now exposes a `Local (Wi-Fi)` / `Cloud only (4G)` toggle. Switching modes triggers an automatic integration reload. In cloud-only mode the optional local fallback IP field is ignored (forced to the empty sentinel); switching to local mode clears the cloud-only sentinel and the stored fallback device id, then accepts a new local IP via the same form. Resolves the inability to change connection type after the initial setup.

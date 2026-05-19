@@ -13,9 +13,13 @@ on:
   # releases as well.
   workflow_call:
 
+# When invoked directly (push/PR/schedule), cancel earlier in-flight runs on
+# the same ref to save CI minutes. When invoked as a workflow_call (from
+# tag-and-release.yaml), use a unique group keyed on the calling workflow so
+# the standalone run does NOT cancel the reusable invocation (or vice versa).
 concurrency:
-  group: security-${{ github.ref }}
-  cancel-in-progress: true
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
 
 jobs:
   bandit:

@@ -224,6 +224,28 @@ def _install_ha_stubs() -> None:
     if not hasattr(ha_aiohttp, "async_get_clientsession"):
         ha_aiohttp.async_get_clientsession = MagicMock()
 
+    # homeassistant.helpers.selector
+    ha_selector = _mod("homeassistant.helpers.selector")
+    if not hasattr(ha_selector, "SelectSelector"):
+        class _SelectSelectorConfig(dict):
+            def __init__(self, **kwargs: Any) -> None:
+                super().__init__(**kwargs)
+
+        class _SelectSelectorMode:
+            LIST = "list"
+            DROPDOWN = "dropdown"
+
+        class _SelectSelector:
+            def __init__(self, config: Any) -> None:
+                self.config = config
+
+            def __call__(self, value: Any) -> Any:
+                return value
+
+        ha_selector.SelectSelector = _SelectSelector
+        ha_selector.SelectSelectorConfig = _SelectSelectorConfig
+        ha_selector.SelectSelectorMode = _SelectSelectorMode
+
     # homeassistant.helpers.event
     ha_event = _mod("homeassistant.helpers.event")
     if not hasattr(ha_event, "async_call_later"):

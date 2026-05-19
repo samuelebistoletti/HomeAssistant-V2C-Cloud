@@ -35,7 +35,7 @@
       },
       "connection_type": {
         "title": "Tipo de conexión",
-        "description": "Selecciona cómo se conecta tu cargador V2C a la red.\n\n**Local (Wi-Fi):** El cargador tiene una dirección IP local en tu red. Los datos del sensor se obtienen directamente del cargador con baja latencia.\n\n**Solo cloud (4G):** El cargador se conecta mediante datos móviles (4G) y no dispone de API local. Los datos del sensor se obtienen del API de V2C Cloud. Nota: el API cloud tiene un límite diario de peticiones (~850/día). La integración lo gestiona automáticamente, pero los intervalos de sondeo pueden aumentar al acercarse al límite.",
+        "description": "Selecciona cómo se conecta tu cargador V2C a la red.\n\n**Local (Wi-Fi):** El cargador tiene una dirección IP local en tu red. Los datos del sensor se obtienen directamente del cargador con baja latencia.\n\n**Solo cloud (4G):** El cargador se conecta mediante datos móviles (4G) y no dispone de API local. Los datos del sensor se obtienen del API de V2C Cloud. Nota: el API cloud tiene un límite diario de peticiones (~850/día). La integración lo gestiona automáticamente, pero los intervalos de sondeo pueden aumentar al acercarse al límite.\n\n**Respaldo automático:** Si configuras una IP de respaldo local en las opciones de la integración, los comandos de control preferirán la LAN. Cuando la IP de respaldo no esté accesible, la integración recurrirá automáticamente al API de V2C Cloud.",
         "data": {
           "connection_type": "Tipo de conexión"
         }
@@ -64,6 +64,14 @@
       "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP. Verifica la dirección y vuelve a intentarlo.",
       "no_device_id": "Conectado al cargador, pero no se pudo leer su identificador de dispositivo.",
       "invalid_interval": "El intervalo de refresco debe ser un entero entre 5 y 300 segundos."
+    }
+  },
+  "selector": {
+    "connection_type": {
+      "options": {
+        "local": "Local (Wi-Fi)",
+        "cloud_only": "Solo cloud (4G)"
+      }
     }
   },
   "entity": {

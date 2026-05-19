@@ -15,6 +15,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from ._net import validate_private_ip
 from .const import (
@@ -171,11 +176,12 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required("connection_type", default="local"): vol.In(
-                    {
-                        "local": "Local (Wi-Fi)",
-                        "cloud_only": "Cloud only (4G)",
-                    }
+                vol.Required("connection_type", default="local"): SelectSelector(
+                    SelectSelectorConfig(
+                        options=["local", "cloud_only"],
+                        translation_key="connection_type",
+                        mode=SelectSelectorMode.LIST,
+                    )
                 ),
             }
         )

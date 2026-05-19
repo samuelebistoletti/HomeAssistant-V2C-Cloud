@@ -35,7 +35,7 @@
       },
       "connection_type": {
         "title": "Tipo di connessione",
-        "description": "Seleziona come il tuo caricatore V2C si connette alla rete.\n\n**Locale (Wi-Fi):** Il caricatore ha un indirizzo IP locale sulla tua rete. I dati dei sensori vengono letti direttamente dal caricatore.\n\n**Solo cloud (4G):** Il caricatore si connette tramite rete mobile (4G) e non ha un'API locale. I dati dei sensori vengono letti dall'API V2C Cloud. Nota: l'API cloud ha un limite giornaliero di richieste (~850 richieste/giorno). L'integrazione lo gestisce automaticamente, ma gli intervalli di polling possono aumentare quando il limite è vicino.",
+        "description": "Seleziona come il tuo caricatore V2C si connette alla rete.\n\n**Locale (Wi-Fi):** Il caricatore ha un indirizzo IP locale sulla tua rete. I dati dei sensori vengono letti direttamente dal caricatore.\n\n**Solo cloud (4G):** Il caricatore si connette tramite rete mobile (4G) e non ha un'API locale. I dati dei sensori vengono letti dall'API V2C Cloud. Nota: l'API cloud ha un limite giornaliero di richieste (~850 richieste/giorno). L'integrazione lo gestisce automaticamente, ma gli intervalli di polling possono aumentare quando il limite è vicino.\n\n**Fallback automatico:** Se imposti un IP di fallback locale nelle opzioni dell'integrazione, i comandi di controllo preferiscono la LAN. Quando l'IP di fallback non è raggiungibile, l'integrazione passa automaticamente all'API V2C Cloud.",
         "data": {
           "connection_type": "Tipo di connessione"
         }
@@ -64,6 +64,14 @@
       "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",
       "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo.",
       "invalid_interval": "L'intervallo di refresh deve essere un intero tra 5 e 300 secondi."
+    }
+  },
+  "selector": {
+    "connection_type": {
+      "options": {
+        "local": "Locale (Wi-Fi)",
+        "cloud_only": "Solo cloud (4G)"
+      }
     }
   },
   "entity": {
@@ -183,7 +191,7 @@
         "name": "Potenza contrattuale"
       },
       "light_led": {
-        "name": "Intensità Light LED"
+        "name": "Intensità LED"
       }
     },
     "button": {

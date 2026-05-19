@@ -85,6 +85,10 @@ def _build_local_interval(
 
 
 # Mapping: cloud reported key (lowercase) → (local RealTimeData key, needs_scale)
+#
+# Sources confirmed against real `/device/reported` + `/device/currentstatecharge`
+# payloads on a Trydan XQUXDU running firmware 2.4.6 (see docs/cloud-payload-keys
+# for the dump used during the 2026-05-19 audit).
 _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "charge_state": ("ChargeState", False),
     "chargestate": ("ChargeState", False),
@@ -124,6 +128,29 @@ _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "dynamic": ("Dynamic", False),
     "photovoltaic_on": ("PhotovoltaicOn", False),
     "locked": ("Locked", False),
+    # 2026-05-19 — Number/Switch entities that read `local_key` failed in
+    # cloud-only mode because the corresponding cloud keys weren't in the
+    # synthesis map. Adding the cloud aliases verified against the real
+    # /reported payload.
+    "min_car_int": ("MinIntensity", False),
+    "min_car_int_fb": ("MinIntensity", False),
+    "max_car_int": ("MaxIntensity", False),
+    "max_car_int_fb": ("MaxIntensity", False),
+    "light_led": ("LightLED", False),
+    "logo_led": ("LogoLED", False),
+    "contract_power": ("ContractedPower", False),
+    "contractedpower": ("ContractedPower", False),
+    "contracted_power": ("ContractedPower", False),
+}
+
+# String-only fields (no float coercion).
+# These pass through unchanged when present in /reported.
+_REPORTED_STRING_FIELDS: dict[str, str] = {
+    "device_id": "ID",
+    "deviceid": "ID",
+    "version": "FirmwareVersion",
+    "firmware_version": "FirmwareVersion",
+    "mac": "MAC",
 }
 
 _INT_FIELDS = frozenset(
@@ -216,6 +243,33 @@ def _build_realtime_from_reported(
             result[local_key] = (
                 int(value) if local_key in _INT_FIELDS else round(value, 2)
             )
+
+    # String-only fields (device id, firmware version, MAC). Pass through
+    # without numeric coercion — the synthesis loop above silently drops
+    # these because float(str(...)) raises ValueError on non-numeric data.
+    for cloud_key, local_key in _REPORTED_STRING_FIELDS.items():
+        if local_key in result:
+            continue
+        raw = reported_lower.get(cloud_key)
+        if raw is None or raw == "":
+            continue
+        result[local_key] = str(raw)
+
+    # wifi_info is a JSON-encoded blob in /reported with the SSID + active
+    # IP nested inside. Extract them so the wifi sensors work in cloud-only.
+    wifi_raw = reported_lower.get("wifi_info")
+    if isinstance(wifi_raw, str) and wifi_raw:
+        try:
+            wifi = json.loads(wifi_raw)
+        except (ValueError, TypeError):
+            wifi = None
+        if isinstance(wifi, dict):
+            ssid = wifi.get("ssid")
+            if ssid and "SSID" not in result:
+                result["SSID"] = str(ssid)
+            ip = wifi.get("ip")
+            if ip and "IP" not in result:
+                result["IP"] = str(ip)
 
     result["_lower_index"] = {k.lower(): k for k in result if not k.startswith("_")}
     return result

@@ -7,12 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Connection type editable post-setup** — the options flow now exposes a `Local (Wi-Fi)` / `Cloud only (4G)` toggle. Switching modes triggers an automatic integration reload. In cloud-only mode the optional local fallback IP field is ignored (forced to the empty sentinel); switching to local mode clears the cloud-only sentinel and the stored fallback device id, then accepts a new local IP via the same form. Resolves the inability to change connection type after the initial setup.
+- **Cloud-only entity coverage expanded** — `_build_realtime_from_reported` (the cloud → synthetic LAN payload translator) now handles seven additional numeric `/reported` keys (`min_car_int`, `min_car_int_fb`, `max_car_int`, `max_car_int_fb`, `light_led`, `logo_led`, `contract_power` and its `contractedpower`/`contracted_power` aliases) and gains a string-field passthrough for device metadata (`device_id`/`deviceId` → `ID`, `version` → `FirmwareVersion`, `mac` → `MAC`). The cloud's `wifi_info` JSON blob is parsed inline so the SSID and active IP populate the corresponding sensors. Verified end-to-end against a real `/device/reported` + `/device/currentstatecharge` capture (firmware 2.4.6). The set of entities that show real data in cloud-only mode grows from ~12 to ~20+.
 
 ### Fixed
 
 - **Connection-type radio labels were not translated** — the initial config-flow step rendered "Local (Wi-Fi)" / "Cloud only (4G)" in English regardless of the active UI locale because the schema used a hard-coded `vol.In({label: ...})` dict. Migrated the schema to `SelectSelector(translation_key="connection_type")` and added a top-level `selector` block to `strings.json` and all translation files (en/it/es).
 - **Italian "Intensità Light LED"** entity name was mixed Italian/English. Renamed to "Intensità LED".
 - **Connection-type description** now explicitly states that, if an optional local fallback IP is configured and becomes unreachable, control commands automatically fall back to the V2C Cloud API.
+- **Number entities `MinIntensity` / `MaxIntensity` / `LightLED` / `ContractedPower` were Unknown in cloud-only mode** — they read via `local_key` but the cloud `/reported` keys (`min_car_int`, `max_car_int`, `light_led`, `contract_power`) were not in `_REPORTED_TO_REALTIME`. Each entity now resolves correctly in cloud-only mode.
+- **Sensors `device_identifier` / `firmware_version` / `wifi_ssid` / `wifi_ip` were Unknown in cloud-only mode** — the synthesis loop did `float(str(raw))` on every value and silently dropped non-numeric ones. Added a string-passthrough path plus inline parsing of the cloud's `wifi_info` JSON blob to populate `SSID` / `IP`.
 
 ## [1.3.0-beta.1] - 2026-05-19
 

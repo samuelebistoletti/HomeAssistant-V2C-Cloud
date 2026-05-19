@@ -85,11 +85,61 @@ class TestNumberEntityCloudFallback:
 
     def test_contracted_power_from_cloud(self) -> None:
         # Real cloud key is `contract_power` (NOT `contractedpower`).
-        # The bug pre-2026-05-19 was that the entity read `contractedpower`
-        # but the cloud key didn't match.
+        # Cloud reports it in kW (e.g. "7") but the LAN /RealTimeData format
+        # — which the Number entity consumes via source_to_native = raw/1000 —
+        # uses W (7000). Without the kW→W override, the UI displays "0.007 kW".
         runtime = _runtime_with_reported({"contract_power": "7"})
         result = _build_realtime_from_reported(runtime, "dev1")
-        assert result["ContractedPower"] == 7
+        assert result["ContractedPower"] == 7000
+
+    def test_contracted_power_decimal_kw(self) -> None:
+        # Edge case: contract not on an integer kW (e.g. 3.45 kW). Must still
+        # round-trip through the kW→W override.
+        runtime = _runtime_with_reported({"contract_power": "3.45"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["ContractedPower"] == 3450
+
+
+class TestVoltageInstallationMapping:
+    """The mains/installation voltage comes from `cp_level` in cloud payloads
+    (e.g. 248 V on a 230 V EU install). The cloud's `voltage` field carries
+    a small internal signal (e.g. 0.077350) that does NOT correspond to the
+    mains voltage, so it is intentionally NOT mapped — but it is still used
+    by `_detect_cloud_scale` as a magnitude heuristic for power fields."""
+
+    # A minimal /reported is required because _build_realtime_from_reported
+    # short-circuits on an empty reported dict (the synthesis pipeline is
+    # gated on /reported existing).
+    _PROBE_REPORTED: ClassVar[dict[str, Any]] = {"device_id": "dev1"}
+
+    def test_voltage_installation_from_cp_level(self) -> None:
+        runtime = _runtime_with_reported_and_csc(
+            self._PROBE_REPORTED, {"cp_level": "248.000000"}
+        )
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["VoltageInstallation"] == 248.0
+
+    def test_cloud_voltage_field_not_mapped(self) -> None:
+        # Regression: pre-fix the cloud `voltage` field (= 0.077350) was
+        # scaled × 1000 by _detect_cloud_scale and surfaced as 77.35 V — a
+        # spurious mains-voltage reading. After the fix this field MUST be
+        # ignored as a voltage source.
+        runtime = _runtime_with_reported_and_csc(
+            self._PROBE_REPORTED,
+            {"voltage": "0.077350"},
+        )
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert "VoltageInstallation" not in result
+
+    def test_cp_level_no_longer_emits_cplevel_key(self) -> None:
+        # Regression: cp_level used to map to a (unused) `CpLevel` key.
+        # After remapping to VoltageInstallation, the CpLevel key must
+        # not appear in the synthesised RealTimeData.
+        runtime = _runtime_with_reported_and_csc(
+            self._PROBE_REPORTED, {"cp_level": "248.0"}
+        )
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert "CpLevel" not in result
 
     def test_logo_led_from_cloud(self) -> None:
         runtime = _runtime_with_reported({"logo_led": "1"})
@@ -241,7 +291,8 @@ class TestFullPayloadFromRealDevice:
         assert result["MaxIntensity"] == 32
         assert result["LightLED"] == 1
         assert result["LogoLED"] == 1
-        assert result["ContractedPower"] == 7
+        # ContractedPower: cloud sends "7" (kW); LAN format uses W → 7000.
+        assert result["ContractedPower"] == 7000
 
         # Sensors needing string passthrough (previously broken in cloud-only)
         assert result["ID"] == "XQUXDU"
@@ -256,6 +307,9 @@ class TestFullPayloadFromRealDevice:
         assert result["ChargeState"] == 2  # from /csc
         assert result["ChargeTime"] == 26711  # seconds
         assert result["ChargeEnergy"] == 4.18
-        # Power values scaled from kW → W (csc voltage 0.0728 = kV → scale 1000)
+        # Power values scaled from kW → W (heuristic triggers because the
+        # cloud `voltage` field — not real voltage — has magnitude < 10).
         assert result["HousePower"] == 212.0
-        assert result["VoltageInstallation"] == 72.8
+        # VoltageInstallation now sourced from `cp_level` (actual mains
+        # voltage in V); the cloud `voltage` field is intentionally ignored.
+        assert result["VoltageInstallation"] == 248.0

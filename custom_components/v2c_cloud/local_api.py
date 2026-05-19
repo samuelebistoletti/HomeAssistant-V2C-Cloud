@@ -103,8 +103,12 @@ _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "seconds": ("ChargeTime", False),
     "chargetime": ("ChargeTime", False),
     "charge_time": ("ChargeTime", False),
-    "voltage": ("VoltageInstallation", True),
-    "voltageinstallation": ("VoltageInstallation", True),
+    # NOTE: cloud's `voltage` field in /currentstatecharge is NOT mains voltage —
+    # it carries a small internal signal (e.g. 0.077350 on a 230V EU install) that
+    # does not correspond to any user-visible electrical quantity. The actual mains
+    # / installation voltage is carried in `cp_level` (see below) and we map that
+    # to VoltageInstallation instead. `voltage` is intentionally NOT mapped here
+    # (but is still inspected by _detect_cloud_scale as a magnitude heuristic).
     "house_power": ("HousePower", True),
     "housepower": ("HousePower", True),
     "sun_power": ("FVPower", True),
@@ -121,7 +125,10 @@ _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "pause": ("Paused", False),
     "paused": ("Paused", False),
     "phases": ("Phases", False),
-    "cp_level": ("CpLevel", False),
+    # cp_level carries the actual installation/mains voltage in V (e.g. 248 on a
+    # 230V EU install). Maps to VoltageInstallation, the user-visible voltage
+    # sensor. Not scaled — cloud already reports it in V.
+    "cp_level": ("VoltageInstallation", False),
     "ready_state": ("ReadyState", False),
     "readystate": ("ReadyState", False),
     "timer": ("Timer", False),
@@ -177,7 +184,6 @@ _INT_FIELDS = frozenset(
         "Intensity",
         "Phases",
         "Paused",
-        "CpLevel",
         "ReadyState",
         "Timer",
         "Dynamic",
@@ -185,6 +191,16 @@ _INT_FIELDS = frozenset(
         "Locked",
     }
 )
+
+# Fields where the cloud `/reported` payload uses kW but the LAN /RealTimeData
+# format (which the entity layer consumes) uses W. The synthesis loop must
+# multiply these by 1000 unconditionally — the dynamic kW/W scale detection
+# in _detect_cloud_scale does NOT apply here because:
+#   - ContractedPower is a contract value (always in kW in cloud), not a
+#     measurement, so it is decoupled from the rest of the payload's scale.
+#   - The entity-side `source_to_native` divides by 1000 to display kW; without
+#     this override the UI shows "0.007 kW" for a 7 kW contract.
+_KW_TO_W_OVERRIDES: frozenset[str] = frozenset({"ContractedPower"})
 
 
 def _detect_cloud_scale(reported: dict[str, object]) -> float:
@@ -237,6 +253,8 @@ def _build_realtime_from_reported(
             continue
         if needs_scale:
             value = value * scale
+        if local_key in _KW_TO_W_OVERRIDES:
+            value = value * 1000
         result[local_key] = int(value) if local_key in _INT_FIELDS else round(value, 2)
 
     # Augment with currentstatecharge data for missing real-time fields
@@ -256,6 +274,8 @@ def _build_realtime_from_reported(
                 continue
             if needs_scale:
                 value = value * csc_scale
+            if local_key in _KW_TO_W_OVERRIDES:
+                value = value * 1000
             result[local_key] = (
                 int(value) if local_key in _INT_FIELDS else round(value, 2)
             )

@@ -121,7 +121,7 @@ class TestVoltageInstallationMapping:
 
     def test_cloud_voltage_field_not_mapped(self) -> None:
         # Regression: pre-fix the cloud `voltage` field (= 0.077350) was
-        # scaled × 1000 by _detect_cloud_scale and surfaced as 77.35 V — a
+        # scaled by 1000 in _detect_cloud_scale and surfaced as 77.35 V, a
         # spurious mains-voltage reading. After the fix this field MUST be
         # ignored as a voltage source.
         runtime = _runtime_with_reported_and_csc(

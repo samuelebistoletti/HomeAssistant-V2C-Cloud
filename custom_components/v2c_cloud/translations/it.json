@@ -7,9 +7,8 @@
     },
     "error": {
       "invalid_api_key": "La API key fornita non è valida.",
-      "unknown": "Si è verificato un errore imprevisto",
-      "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",
-      "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo."
+      "cannot_connect": "Impossibile raggiungere l'API V2C Cloud. Verifica la connessione a internet e riprova.",
+      "unknown": "Si è verificato un errore imprevisto"
     },
     "step": {
       "user": {
@@ -35,16 +34,9 @@
       },
       "connection_type": {
         "title": "Tipo di connessione",
-        "description": "Seleziona come il tuo caricatore V2C si connette alla rete.\n\n**Locale (Wi-Fi):** Il caricatore ha un indirizzo IP locale sulla tua rete. I dati dei sensori vengono letti direttamente dal caricatore.\n\n**Solo cloud (4G):** Il caricatore si connette tramite rete mobile (4G) e non ha un'API locale. I dati dei sensori vengono letti dall'API V2C Cloud. Nota: l'API cloud ha un limite giornaliero di richieste (~850 richieste/giorno). L'integrazione lo gestisce automaticamente, ma gli intervalli di polling possono aumentare quando il limite è vicino.\n\n**Fallback automatico:** Se imposti un IP di fallback locale nelle opzioni dell'integrazione, i comandi di controllo preferiscono la LAN. Quando l'IP di fallback non è raggiungibile, l'integrazione passa automaticamente all'API V2C Cloud.",
+        "description": "Seleziona come il tuo caricatore V2C si connette alla rete.\n\n**Locale (Wi-Fi):** Il caricatore ha un indirizzo IP locale sulla tua rete. I dati dei sensori vengono letti direttamente dal caricatore con bassa latenza. Gli IP dei singoli dispositivi vengono scoperti automaticamente dal cloud, quindi gli account con più caricatori funzionano subito.\n\n**Solo cloud (4G):** Il caricatore si connette tramite rete mobile (4G) e non ha un'API locale. I dati dei sensori vengono letti dall'API V2C Cloud. Nota: l'API cloud ha un limite giornaliero di richieste (~850 richieste/giorno). L'integrazione lo gestisce automaticamente, ma gli intervalli di polling possono aumentare quando il limite è vicino.\n\n**Routing LAN/cloud automatico:** In modalità Locale i comandi di controllo preferiscono la LAN; se il caricatore non è momentaneamente raggiungibile in LAN, l'integrazione effettua automaticamente il fallback all'API V2C Cloud. Gli ultimi IP noti vengono mantenuti in cache così che ogni caricatore resti indirizzabile anche durante un'interruzione del cloud.",
         "data": {
           "connection_type": "Tipo di connessione"
-        }
-      },
-      "fallback_ip": {
-        "title": "V2C Cloud — cloud non raggiungibile",
-        "description": "Le API V2C Cloud non sono al momento disponibili. Inserisci l'indirizzo IP locale del tuo caricatore in modo che l'integrazione possa comunque operare in locale. Quando il cloud tornerà disponibile verrà usata automaticamente la lista dei dispositivi cloud.",
-        "data": {
-          "fallback_ip": "Indirizzo IP locale del caricatore"
         }
       }
     }
@@ -53,17 +45,14 @@
     "step": {
       "init": {
         "title": "Opzioni V2C Cloud",
-        "description": "Scegli come si connette il caricatore, regola l'intervallo di polling LAN e (facoltativamente) imposta un IP locale di fallback.\n\n• **Tipo di connessione:** puoi passare in qualsiasi momento tra **Locale (Wi-Fi)** e **Solo cloud (4G)**. Il cambio ricarica l'integrazione.\n\n• **Intervallo di refresh locale:** ogni quanti secondi l'integrazione interroga il caricatore via LAN. Range 5-300, default 30. Valori inferiori a 15 s possono saturare una LAN lenta e non sono consigliati. I caricatori cloud-only (4G) ignorano questa impostazione.\n\n• **IP di fallback:** usato quando il cloud non è raggiungibile (modalità Locale) o ignorato completamente in modalità Solo cloud (4G).",
+        "description": "Scegli come si connette il caricatore e regola l'intervallo di polling LAN.\n\n• **Tipo di connessione:** puoi passare in qualsiasi momento tra **Locale (Wi-Fi)** e **Solo cloud (4G)**. Il cambio ricarica l'integrazione.\n\n• **Intervallo di refresh locale:** ogni quanti secondi l'integrazione interroga il caricatore via LAN. Range 5-300, default 30. Valori inferiori a 15 s possono saturare una LAN lenta e non sono consigliati. I caricatori cloud-only (4G) ignorano questa impostazione.\n\nGli IP LAN dei singoli dispositivi vengono scoperti automaticamente dal V2C Cloud e mantenuti in sincronia, quindi non serve configurarne nessuno manualmente.",
         "data": {
           "connection_type": "Tipo di connessione",
-          "fallback_ip": "Indirizzo IP locale di fallback (lascia vuoto per disabilitare)",
           "local_update_interval": "Intervallo refresh locale (secondi)"
         }
       }
     },
     "error": {
-      "cannot_connect_local": "Impossibile raggiungere il caricatore all'indirizzo IP indicato. Verifica l'indirizzo e riprova.",
-      "no_device_id": "Connesso al caricatore ma impossibile leggere l'ID dispositivo.",
       "invalid_interval": "L'intervallo di refresh deve essere un intero tra 5 e 300 secondi."
     }
   },

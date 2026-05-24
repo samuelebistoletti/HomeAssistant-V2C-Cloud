@@ -37,16 +37,26 @@ def _infer_connection_type(entry_data: dict[str, Any]) -> str:
     """
     Infer the declared connection mode from stored entry data.
 
-    cloud_only is encoded by the empty-string ``fallback_ip`` sentinel
-    (see ``_is_cloud_only_device`` in ``__init__.py``). Anything else is
-    treated as local (with or without an optional LAN fallback IP).
+    Cloud-only is encoded by ``entry_data['cloud_only'] is True``.
+    Anything else is treated as local.
     """
-    if "fallback_ip" not in entry_data:
-        return "local"
-    fip = entry_data.get("fallback_ip")
-    if not fip or fip == "0.0.0.0":  # noqa: S104 — sentinel, not bind  # nosec B104
-        return "cloud_only"
-    return "local"
+    return "cloud_only" if entry_data.get("cloud_only") else "local"
+
+
+def _normalise_pairings(raw: object) -> list[dict[str, str]]:
+    """Reduce a pairings list to the ``(deviceId, ip)`` records we persist."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        dev = item.get("deviceId") or item.get("device_id")
+        if not isinstance(dev, str) or not dev:
+            continue
+        ip_raw = item.get("ip") or item.get("static_ip") or ""
+        out.append({"deviceId": dev, "ip": str(ip_raw) if ip_raw else ""})
+    return out
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,7 +109,7 @@ async def _probe_local_api(
 class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for V2C Cloud."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialise flow state."""
@@ -117,7 +127,15 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Handle the initial step."""
+        """
+        Handle the initial step.
+
+        Requires the cloud to be reachable: the API key is validated and the
+        full pairings list (every charger linked to the account) is captured
+        for persistence as ``cached_pairings``. A user-typed fallback IP is
+        no longer collected — the per-device IP is sourced from the cloud's
+        ``/pairings/me`` response and kept in sync automatically.
+        """
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -127,9 +145,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except V2CAuthError:
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
-                # Cloud unreachable — save the key and ask for a fallback IP
-                self._api_key = api_key
-                return await self.async_step_fallback_ip()
+                errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected error while validating API key")
                 errors["base"] = "unknown"
@@ -167,27 +183,13 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(unique_suffix)
             self._abort_if_unique_id_configured()
 
-            if connection == "cloud_only":
-                # 4G/cloud-only: extract device ID from pairings
-                device_id = ""
-                if self._pairings:
-                    device_id = self._pairings[0].get("deviceId", "")
-                return self.async_create_entry(
-                    title="V2C Cloud",
-                    data={
-                        CONF_API_KEY: self._api_key,
-                        "initial_pairings": self._pairings,
-                        "fallback_ip": "",
-                        "fallback_device_id": device_id,
-                    },
-                )
-
-            # Local Wi-Fi: no fallback_ip key → standard local behavior
+            cached_pairings = _normalise_pairings(self._pairings)
             return self.async_create_entry(
                 title="V2C Cloud",
                 data={
                     CONF_API_KEY: self._api_key,
-                    "initial_pairings": self._pairings,
+                    "cached_pairings": cached_pairings,
+                    "cloud_only": connection == "cloud_only",
                 },
             )
 
@@ -206,43 +208,6 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="connection_type",
             data_schema=schema,
-        )
-
-    async def async_step_fallback_ip(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
-        """Ask for a fallback local IP when the cloud is unreachable."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            ip = user_input["fallback_ip"].strip()
-            device_id, error_key = await _probe_local_api(self.hass, ip)
-            if error_key:
-                errors["base"] = error_key
-            else:
-                unique_suffix = hashlib.pbkdf2_hmac(
-                    "sha256",
-                    self._api_key.encode(),
-                    b"v2c_cloud_unique_id",
-                    200_000,
-                ).hex()
-                await self.async_set_unique_id(unique_suffix)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title="V2C Cloud",
-                    data={
-                        CONF_API_KEY: self._api_key,
-                        "fallback_ip": ip,
-                        "fallback_device_id": device_id,
-                    },
-                )
-
-        schema = vol.Schema({vol.Required("fallback_ip"): str})
-        return self.async_show_form(
-            step_id="fallback_ip",
-            data_schema=schema,
-            errors=errors,
         )
 
     async def async_step_reconfigure(
@@ -323,13 +288,13 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 reauth_entry = self._get_reauth_entry()
+                updates: dict[str, Any] = {CONF_API_KEY: api_key}
+                if pairings:
+                    updates["cached_pairings"] = _normalise_pairings(pairings)
                 return self.async_update_reload_and_abort(
                     reauth_entry,
                     reason="reauth_successful",
-                    data_updates={
-                        CONF_API_KEY: api_key,
-                        "initial_pairings": pairings,
-                    },
+                    data_updates=updates,
                 )
 
         schema = vol.Schema(
@@ -346,7 +311,13 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class V2COptionsFlow(config_entries.OptionsFlow):
-    """Allow post-setup tweaks: fallback local IP + local refresh interval."""
+    """
+    Allow post-setup tweaks: connection type + local refresh interval.
+
+    The per-device LAN IP is auto-discovered from the cloud's
+    ``/pairings/me`` response and kept in sync via ``cached_pairings``;
+    no manual fallback IP is exposed to the user.
+    """
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialise options flow."""
@@ -356,10 +327,9 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Manage the connection type, fallback IP, and local refresh interval."""
+        """Manage the connection type and local refresh interval."""
         errors: dict[str, str] = {}
         current_data = self._config_entry.data
-        current_ip = current_data.get("fallback_ip", "")
         current_mode = _infer_connection_type(current_data)
         current_options = self._config_entry.options or {}
         current_interval = int(
@@ -368,7 +338,6 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             new_mode = user_input.get("connection_type", current_mode)
-            ip = user_input.get("fallback_ip", "").strip()
             interval_raw = user_input.get(CONF_LOCAL_UPDATE_INTERVAL, current_interval)
             try:
                 interval = int(interval_raw)
@@ -383,36 +352,18 @@ class V2COptionsFlow(config_entries.OptionsFlow):
             mode_changed = new_mode != current_mode
 
             if not errors:
-                if new_mode == "cloud_only":
-                    # Force the cloud-only sentinel; ignore any LAN IP the user
-                    # typed in the same form. We need a fallback_device_id so
-                    # the cloud-only flow can address the charger — pull it
-                    # from the live coordinator if it isn't already stored.
-                    new_data["fallback_ip"] = ""
-                    if not new_data.get("fallback_device_id"):
-                        device_id = self._pick_device_id_from_runtime()
-                        if device_id is None:
-                            errors["base"] = "no_device_id"
-                        else:
-                            new_data["fallback_device_id"] = device_id
-                # local mode — apply the user-provided fallback IP normally
-                elif ip:
-                    device_id, error_key = await _probe_local_api(self.hass, ip)
-                    if error_key:
-                        errors["base"] = error_key
-                    else:
-                        new_data["fallback_ip"] = ip
-                        new_data["fallback_device_id"] = device_id
-                else:
-                    new_data.pop("fallback_ip", None)
-                    new_data.pop("fallback_device_id", None)
+                new_data["cloud_only"] = new_mode == "cloud_only"
 
-            if not errors:
                 new_options = dict(current_options)
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
 
+                # Persist entry.data via async_update_entry; entry.options is
+                # written by the async_create_entry return below — passing
+                # ``data=new_options`` to async_create_entry is the canonical
+                # HA pattern to store options flow output. Passing ``data={}``
+                # here would OVERWRITE the options the user just set.
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data, options=new_options
+                    self._config_entry, data=new_data
                 )
 
                 if mode_changed:
@@ -425,7 +376,7 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                         )
                     )
 
-                return self.async_create_entry(title="", data={})
+                return self.async_create_entry(title="", data=new_options)
 
         schema = vol.Schema(
             {
@@ -436,7 +387,6 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
-                vol.Optional("fallback_ip", default=current_ip): str,
                 vol.Required(
                     CONF_LOCAL_UPDATE_INTERVAL,
                     default=current_interval,
@@ -451,19 +401,3 @@ class V2COptionsFlow(config_entries.OptionsFlow):
             data_schema=schema,
             errors=errors,
         )
-
-    def _pick_device_id_from_runtime(self) -> str | None:
-        """Return any known device_id for this entry, or None if unavailable."""
-        existing = self._config_entry.data.get("fallback_device_id")
-        if existing:
-            return existing
-        runtime = (
-            self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
-            if hasattr(self.hass, "data")
-            else None
-        )
-        coordinator = getattr(runtime, "coordinator", None) if runtime else None
-        data = getattr(coordinator, "data", None) if coordinator else None
-        if isinstance(data, dict) and data:
-            return next(iter(data.keys()))
-        return None

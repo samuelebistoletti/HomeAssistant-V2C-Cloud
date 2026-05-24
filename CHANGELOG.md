@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0-beta.2] - 2026-05-24
+
+Second pre-release for early-adopter testing. Builds on `1.3.0-beta.1`
+with a breaking config-entry schema change (auto-migrated), a fix for a
+silently-dropped option, the missing LAN read for `ChargeMode`, and a
+UI sweep that removes every reference to the now-retired user-typed
+fallback IP. HACS pre-release channel.
+
+### Changed (breaking — auto-migrated via config entry v1 → v2)
+
+- **Per-device LAN IPs are now auto-discovered and kept in sync with the V2C Cloud `/pairings/me` response** instead of requiring a single user-typed fallback. An account with N chargers is fully supported: every charger's IP is sourced from the cloud at runtime and a normalised snapshot is persisted on every successful refresh as `entry.data["cached_pairings"]`. During a cloud outage (rate limit, 403, transient network failure) every previously-seen charger remains addressable via its last-known IP — not just one. When the cloud returns online the cache is reconciled with the fresh response (added devices appear, removed devices disappear).
+- **Cloud-only mode is now encoded as `entry.data["cloud_only"]: bool`** instead of the empty-string `fallback_ip` sentinel. The options-flow toggle still switches between Local and Cloud-only and triggers a reload, but no longer exposes a fallback IP field.
+- **The first-setup `fallback_ip` step is gone.** Initial setup requires the cloud to be reachable to capture the pairings list; this is consistent with the integration's name ("V2C Cloud") and removes a single point of failure (one user-typed IP that could not represent multi-device accounts).
+- **Config entry `VERSION` bumped to 2.** `async_migrate_entry` translates legacy entries: the cloud-only sentinel (`fallback_ip == ""` / `"0.0.0.0"`) becomes `cloud_only: True`; a non-empty `fallback_ip` paired with `fallback_device_id` becomes a one-record `cached_pairings`; a non-empty `initial_pairings` snapshot wins over the single-device pair. Legacy keys are dropped from `entry.data`.
+
+### Fixed (LAN data accuracy)
+
+- **`ChargeMode` Select showed "Unknown" in LAN mode** — per the official V2C Datamanager doc (rev 04/05/26) and confirmed by live probe against firmware 2.4.6, `ChargeMode` is write-enabled but absent from `/RealTimeData`; the integration's `_READ_ONLY_KEYWORDS` augmentation set covered `LogoLED` + `LightLED` but missed `ChargeMode`. Added so the local coordinator now fetches `/read/ChargeMode` in parallel with the other read-only keys and the Select displays the live value.
+
+### Fixed (options flow)
+
+- **`Local refresh interval` option was not persisted** — the options flow saved the value via `async_update_entry(options=...)` but then returned `async_create_entry(title="", data={})`, and HA's OptionsFlow uses the `data` argument of `async_create_entry` to OVERWRITE `entry.options`. Result: the field always snapped back to 30 s after closing the form. Fix: pass the populated options dict to `async_create_entry(data=new_options)`. Regression test added.
+- **UI strings referencing the removed `fallback_ip` step / field were cleaned up** across `strings.json` and the en/it/es translations: the cold-start "cloud offline" step is gone, the options-flow field label is gone, the `connection_type` and `init` descriptions now mention auto-discovered per-device IPs and LAN→cloud automatic routing instead of a manually configured fallback.
+
 ### Developer Experience
 
 - **Companion Home Assistant container reachable from the dev container.** `docker-compose.yml` attaches `hass_core_dev` to a new external `v2c-dev` user-defined bridge network with the `homeassistant` alias, and `.devcontainer.json` joins the dev container to the same network via `runArgs: ["--network=v2c-dev"]`. Inside the dev container HA resolves as `http://homeassistant:8123` (host browser keeps using `http://localhost:8123`). An `initializeCommand` creates the network and runs `docker compose up -d homeassistant` before the dev container is built, so the service is ready when VS Code finishes attaching. HA uses `restart: "no"`: developer-initiated, not auto-restarted on host reboot.
@@ -13,7 +37,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Connection type editable post-setup** — the options flow now exposes a `Local (Wi-Fi)` / `Cloud only (4G)` toggle. Switching modes triggers an automatic integration reload. In cloud-only mode the optional local fallback IP field is ignored (forced to the empty sentinel); switching to local mode clears the cloud-only sentinel and the stored fallback device id, then accepts a new local IP via the same form. Resolves the inability to change connection type after the initial setup.
+- **Connection type editable post-setup** — the options flow exposes a `Local (Wi-Fi)` / `Cloud only (4G)` toggle. Switching modes triggers an automatic integration reload. Resolves the inability to change connection type after the initial setup.
 - **Cloud-only entity coverage expanded** — `_build_realtime_from_reported` (the cloud → synthetic LAN payload translator) now handles seven additional numeric `/reported` keys (`min_car_int`, `min_car_int_fb`, `max_car_int`, `max_car_int_fb`, `light_led`, `logo_led`, `contract_power` and its `contractedpower`/`contracted_power` aliases) and gains a string-field passthrough for device metadata (`device_id`/`deviceId` → `ID`, `version` → `FirmwareVersion`, `mac` → `MAC`). The cloud's `wifi_info` JSON blob is parsed inline so the SSID and active IP populate the corresponding sensors. Verified end-to-end against a real `/device/reported` + `/device/currentstatecharge` capture (firmware 2.4.6). The set of entities that show real data in cloud-only mode grows from ~12 to ~20+.
 - **LAN-only entities now correctly advertise as Unavailable** in cloud-only mode instead of showing the misleading "Unknown" state. The six structurally LAN-only keys (`ReadyState`, `SignalStatus`, `Timer`, `ChargeMode`, `DynamicPowerMode`, `PauseDynamic`) — none of which are present in the cloud `/reported` or `/currentstatecharge` payloads — are gated via `available=False` when the config entry is cloud-only. Applies to the sensor, switch, and select platforms.
 
@@ -21,7 +45,6 @@ All notable changes to this project will be documented in this file.
 
 - **Connection-type radio labels were not translated** — the initial config-flow step rendered "Local (Wi-Fi)" / "Cloud only (4G)" in English regardless of the active UI locale because the schema used a hard-coded `vol.In({label: ...})` dict. Migrated the schema to `SelectSelector(translation_key="connection_type")` and added a top-level `selector` block to `strings.json` and all translation files (en/it/es).
 - **Italian "Intensità Light LED"** entity name was mixed Italian/English. Renamed to "Intensità LED".
-- **Connection-type description** now explicitly states that, if an optional local fallback IP is configured and becomes unreachable, control commands automatically fall back to the V2C Cloud API.
 - **Number entities `MinIntensity` / `MaxIntensity` / `LightLED` / `ContractedPower` were Unknown in cloud-only mode** — they read via `local_key` but the cloud `/reported` keys (`min_car_int`, `max_car_int`, `light_led`, `contract_power`) were not in `_REPORTED_TO_REALTIME`. Each entity now resolves correctly in cloud-only mode.
 - **Sensors `device_identifier` / `firmware_version` / `wifi_ssid` / `wifi_ip` were Unknown in cloud-only mode** — the synthesis loop did `float(str(raw))` on every value and silently dropped non-numeric ones. Added a string-passthrough path plus inline parsing of the cloud's `wifi_info` JSON blob to populate `SSID` / `IP`.
 - **Cloud-only `VoltageInstallation` reported a spurious ~77 V instead of the actual mains voltage** — the synthesis path mapped the cloud `voltage` field (a small internal signal, e.g. `0.077350`) onto `VoltageInstallation` and then scaled it × 1000 via the kV detection heuristic. The cloud's real mains/installation voltage is carried by `cp_level` (e.g. `248` on a 230 V EU install); remapped `cp_level` → `VoltageInstallation` and dropped the misleading `voltage` mapping. The `_detect_cloud_scale` heuristic still inspects `voltage` as a magnitude signal but no longer surfaces it as a voltage reading.

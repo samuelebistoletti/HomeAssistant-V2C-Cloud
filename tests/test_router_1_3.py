@@ -22,29 +22,26 @@ from custom_components.v2c_cloud.local_api import (
 class TestIsCloudOnly:
     """Detection of the cloud-only signal in entry.data."""
 
-    def test_no_fallback_key_means_lan(self) -> None:
+    def test_no_cloud_only_key_means_lan(self) -> None:
         assert is_cloud_only_device({}) is False
 
-    def test_present_fallback_with_value_means_lan(self) -> None:
-        assert is_cloud_only_device({"fallback_ip": "192.168.1.20"}) is False
+    def test_cloud_only_false_means_lan(self) -> None:
+        assert is_cloud_only_device({"cloud_only": False}) is False
 
-    def test_empty_fallback_means_cloud_only(self) -> None:
-        assert is_cloud_only_device({"fallback_ip": ""}) is True
-
-    def test_unspecified_fallback_means_cloud_only(self) -> None:
-        assert is_cloud_only_device({"fallback_ip": "0.0.0.0"}) is True
+    def test_cloud_only_true(self) -> None:
+        assert is_cloud_only_device({"cloud_only": True}) is True
 
 
 @pytest.fixture
 def runtime_data() -> Any:
     """Minimal V2CEntryRuntimeData stand-in for the router."""
     rd = MagicMock()
-    rd.coordinator.config_entry.data = {"fallback_ip": "192.168.1.20"}
+    rd.coordinator.config_entry.data = {"cloud_only": False}
     return rd
 
 
 class TestRouterLanFirst:
-    """The router prefers the LAN path when a fallback_ip is present."""
+    """The router prefers the LAN path when cloud_only is False."""
 
     async def test_lan_success_skips_cloud(self, monkeypatch, runtime_data) -> None:
         lan_calls: list[Any] = []
@@ -66,7 +63,7 @@ class TestRouterLanFirst:
             keyword="Paused",
             value=0,
             cloud_call=cloud_call,
-            config_data={"fallback_ip": "192.168.1.20"},
+            config_data={"cloud_only": False},
         )
 
         assert lan_calls == [("Paused", 0)]
@@ -96,7 +93,7 @@ class TestRouterLanFirst:
             keyword="Locked",
             value=1,
             cloud_call=fake_cloud(),
-            config_data={"fallback_ip": "192.168.1.20"},
+            config_data={"cloud_only": False},
         )
 
         assert cloud_called == [True]
@@ -123,7 +120,7 @@ class TestRouterLanFirst:
             keyword="Paused",
             value=1,
             cloud_call=fake_cloud(),
-            config_data={"fallback_ip": ""},  # explicit cloud-only
+            config_data={"cloud_only": True},  # explicit cloud-only
         )
 
         assert lan_calls == []
@@ -148,7 +145,7 @@ class TestRouterNoCloudEndpoint:
                 keyword="LightLED",
                 value=75,
                 cloud_call=None,
-                config_data={"fallback_ip": ""},  # cloud-only
+                config_data={"cloud_only": True},  # cloud-only
             )
         msg = str(excinfo.value)
         assert "LightLED" in msg
@@ -174,7 +171,7 @@ class TestRouterNoCloudEndpoint:
             keyword="LightLED",
             value=42,
             cloud_call=None,
-            config_data={"fallback_ip": "192.168.1.20"},
+            config_data={"cloud_only": False},
         )
         assert lan_calls == [("LightLED", 42)]
 
@@ -200,5 +197,5 @@ class TestRouterNoCloudEndpoint:
                 keyword="ContractedPower",
                 value=5000,
                 cloud_call=None,
-                config_data={"fallback_ip": "192.168.1.20"},
+                config_data={"cloud_only": False},
             )

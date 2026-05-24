@@ -24,24 +24,16 @@
       },
       "connection_type": {
         "title": "Connection type",
-        "description": "Select how your V2C charger connects to the network.\n\n**Local (Wi-Fi):** The charger has a local IP address on your network. Sensor data is fetched directly from the charger with low latency.\n\n**Cloud only (4G):** The charger connects via mobile data (4G) and has no local API. Sensor data is fetched from the V2C Cloud API. Note: the cloud API has a daily request limit (~850 requests/day). The integration manages this automatically, but polling intervals may increase when the limit is approached.\n\n**Automatic fallback:** If you set an optional local fallback IP in the integration options, control commands prefer LAN. When the LAN fallback IP becomes unreachable, the integration automatically falls back to the V2C Cloud API.",
+        "description": "Select how your V2C charger connects to the network.\n\n**Local (Wi-Fi):** The charger has a local IP address on your network. Sensor data is fetched directly from the charger with low latency. Per-device IPs are discovered automatically from the cloud, so multi-charger accounts work out of the box.\n\n**Cloud only (4G):** The charger connects via mobile data (4G) and has no local API. Sensor data is fetched from the V2C Cloud API. Note: the cloud API has a daily request limit (~850 requests/day). The integration manages this automatically, but polling intervals may increase when the limit is approached.\n\n**Automatic LAN-cloud routing:** In Local mode, control commands prefer the LAN; if the charger is temporarily unreachable on the LAN, the integration falls back to the V2C Cloud API automatically. The last-known IPs are cached so every charger stays addressable during a cloud outage too.",
         "data": {
           "connection_type": "Connection type"
-        }
-      },
-      "fallback_ip": {
-        "title": "V2C Cloud — cloud offline",
-        "description": "The V2C Cloud API is currently unreachable. Enter the local IP address of your charger so the integration can still operate locally. When the cloud becomes available again its device list will be used automatically.",
-        "data": {
-          "fallback_ip": "Charger local IP address"
         }
       }
     },
     "error": {
       "invalid_api_key": "The provided API key is not valid.",
-      "unknown": "[%key:common::config_flow::error::unknown%]",
-      "cannot_connect_local": "Could not reach the charger at that IP address. Check the address and try again.",
-      "no_device_id": "Connected to the charger but could not read its device ID."
+      "cannot_connect": "Could not reach the V2C Cloud API. Check your internet connection and try again.",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
@@ -53,17 +45,14 @@
     "step": {
       "init": {
         "title": "V2C Cloud options",
-        "description": "Choose how the charger connects, tune the LAN polling interval, and (optionally) set a local fallback IP.\n\n• **Connection type:** switch between **Local (Wi-Fi)** and **Cloud only (4G)** at any time. Changing this reloads the integration.\n\n• **Local refresh interval:** how often the integration polls the charger over LAN, in seconds. Range 5-300, default 30. Values below 15 s can saturate a slow LAN and are not recommended. Cloud-only (4G) chargers ignore this setting.\n\n• **Fallback IP:** used when the cloud is unreachable (Local mode) or ignored entirely in Cloud only (4G) mode.",
+        "description": "Choose how the charger connects and tune the LAN polling interval.\n\n• **Connection type:** switch between **Local (Wi-Fi)** and **Cloud only (4G)** at any time. Changing this reloads the integration.\n\n• **Local refresh interval:** how often the integration polls the charger over LAN, in seconds. Range 5-300, default 30. Values below 15 s can saturate a slow LAN and are not recommended. Cloud-only (4G) chargers ignore this setting.\n\nPer-device LAN IPs are discovered from the V2C Cloud automatically and kept in sync, so no manual IP needs to be configured.",
         "data": {
           "connection_type": "Connection type",
-          "fallback_ip": "Local fallback IP address (leave empty to disable)",
           "local_update_interval": "Local refresh interval (seconds)"
         }
       }
     },
     "error": {
-      "cannot_connect_local": "Could not reach the charger at that IP address. Check the address and try again.",
-      "no_device_id": "Connected to the charger but could not read its device ID.",
       "invalid_interval": "Refresh interval must be an integer between 5 and 300 seconds."
     }
   },

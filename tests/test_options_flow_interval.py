@@ -32,16 +32,16 @@ class TestBuildLocalInterval:
     def test_cloud_only_overrides_user_option(self) -> None:
         """A device flagged as cloud-only always uses CLOUD_ONLY_UPDATE_INTERVAL."""
         td = _build_local_interval(
-            {"fallback_ip": ""}, {CONF_LOCAL_UPDATE_INTERVAL: 10}
+            {"cloud_only": True}, {CONF_LOCAL_UPDATE_INTERVAL: 10}
         )
         # CLOUD_ONLY_UPDATE_INTERVAL is 120s
         assert td.total_seconds() == 120
 
-    def test_cloud_only_with_placeholder_ip_treated_as_cloud(self) -> None:
+    def test_local_with_cloud_only_false(self) -> None:
         td = _build_local_interval(
-            {"fallback_ip": "0.0.0.0"}, {CONF_LOCAL_UPDATE_INTERVAL: 5}
+            {"cloud_only": False}, {CONF_LOCAL_UPDATE_INTERVAL: 5}
         )
-        assert td.total_seconds() == 120
+        assert td.total_seconds() == 5
 
     def test_invalid_option_falls_back_to_default(self) -> None:
         td = _build_local_interval({}, {CONF_LOCAL_UPDATE_INTERVAL: "not-int"})
@@ -74,7 +74,7 @@ class TestOptionsListenerApplyInterval:
     def entry(self) -> Any:
         e = MagicMock()
         e.entry_id = "abc"
-        e.data = {"fallback_ip": "192.168.1.20"}
+        e.data = {"cloud_only": False}
         e.options = {CONF_LOCAL_UPDATE_INTERVAL: 60}
         return e
 
@@ -106,8 +106,8 @@ class TestOptionsListenerApplyInterval:
             _async_options_updated,
         )
 
-        # Cloud-only device: fallback_ip empty
-        entry.data = {"fallback_ip": ""}
+        # Cloud-only device
+        entry.data = {"cloud_only": True}
         coord = MagicMock()
         coord.update_interval = timedelta(seconds=120)
         runtime = V2CEntryRuntimeData(

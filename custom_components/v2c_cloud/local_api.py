@@ -40,8 +40,11 @@ _HTTP_ERROR_THRESHOLD = 400
 
 # Keywords writable via /write/ but absent from /RealTimeData.
 # Must be read individually via GET /read/<KeyWord>.
-# LightLED and LogoLED are LED intensity (0-100%) and need explicit /read/.
-_READ_ONLY_KEYWORDS: tuple[str, ...] = ("LogoLED", "LightLED")
+# Per V2C Datamanager doc + live verification on FW 2.4.6 (10.35.0.50):
+#   /RealTimeData omits ChargeMode, LightLED, LogoLED — all three return a
+#   plain numeric value via /read/<KeyWord> and feed the corresponding
+#   Select / Number / Switch entity.
+_READ_ONLY_KEYWORDS: tuple[str, ...] = ("LogoLED", "LightLED", "ChargeMode")
 
 # Whitelist of keywords accepted by /write/. The list mirrors the keys
 # documented as "WRITE ENABLED = Y" in the Trydan Datamanager spec.
@@ -71,12 +74,12 @@ def _build_local_interval(
     """
     Resolve the effective local poll interval from entry options.
 
-    Cloud-only devices (no ``fallback_ip``) keep ``CLOUD_ONLY_UPDATE_INTERVAL``;
-    LAN devices honour ``options[CONF_LOCAL_UPDATE_INTERVAL]`` when set, falling
-    back to ``DEFAULT_LOCAL_INTERVAL``. Always returns a ``timedelta``.
+    Cloud-only entries (``entry_data['cloud_only'] is True``) keep
+    ``CLOUD_ONLY_UPDATE_INTERVAL``; LAN entries honour
+    ``options[CONF_LOCAL_UPDATE_INTERVAL]`` when set, falling back to
+    ``DEFAULT_LOCAL_INTERVAL``. Always returns a ``timedelta``.
     """
-    fip = entry_data.get("fallback_ip")
-    if "fallback_ip" in entry_data and (not fip or fip == "0.0.0.0"):  # noqa: S104 — sentinel, not bind  # nosec B104
+    if entry_data.get("cloud_only"):
         return CLOUD_ONLY_UPDATE_INTERVAL
     seconds = options.get(CONF_LOCAL_UPDATE_INTERVAL)
     if not isinstance(seconds, int) or seconds <= 0:
@@ -510,10 +513,7 @@ async def async_write_keyword(  # noqa: PLR0913
 
 def is_cloud_only_device(entry_data: dict[str, Any]) -> bool:
     """Return True when the entry is configured as cloud-only (no LAN)."""
-    if "fallback_ip" not in entry_data:
-        return False
-    fip = entry_data.get("fallback_ip")
-    return not fip or fip == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
+    return bool(entry_data.get("cloud_only"))
 
 
 def config_data_for(runtime_data: V2CEntryRuntimeData) -> dict[str, Any]:
@@ -612,14 +612,12 @@ async def async_get_or_create_local_coordinator(
 
     async def _async_fetch_local_data() -> dict[str, Any]:
         nonlocal failure_count
-        # Cloud-only shortcut: if the config entry explicitly has an empty
-        # or placeholder fallback_ip, this is a known cloud-only device
-        # (e.g. 4G Trydan with no local API). Skip local fetch entirely.
+        # Cloud-only shortcut: explicit ``cloud_only`` marker on the entry
+        # means the device has no LAN reachability (e.g. 4G Trydan).
+        # Skip the local fetch entirely.
         entry_data = runtime_data.coordinator.config_entry.data
-        if "fallback_ip" in entry_data:
-            fip = entry_data["fallback_ip"]
-            if not fip or fip == "0.0.0.0":  # noqa: S104 — sentinel, not bind  # nosec B104
-                return _build_realtime_from_reported(runtime_data, device_id)
+        if entry_data.get("cloud_only"):
+            return _build_realtime_from_reported(runtime_data, device_id)
 
         static_ip = resolve_static_ip(runtime_data, device_id)
         if not static_ip:
@@ -725,9 +723,7 @@ async def async_get_or_create_local_coordinator(
     entry_obj = runtime_data.coordinator.config_entry
     _entry_data = entry_obj.data
     _options = entry_obj.options or {}
-    _explicit_cloud = "fallback_ip" in _entry_data and (
-        not _entry_data["fallback_ip"] or _entry_data["fallback_ip"] == "0.0.0.0"  # noqa: S104 — sentinel, not bind  # nosec B104
-    )
+    _explicit_cloud = bool(_entry_data.get("cloud_only"))
     if not _explicit_cloud:
         _ip = resolve_static_ip(runtime_data, device_id)
         _is_safe, _ = validate_private_ip(_ip) if _ip else (False, None)

@@ -7,9 +7,8 @@
     },
     "error": {
       "invalid_api_key": "La clave API proporcionada no es válida.",
-      "unknown": "Se produjo un error inesperado",
-      "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP. Verifica la dirección y vuelve a intentarlo.",
-      "no_device_id": "Conectado al cargador, pero no se pudo leer su identificador de dispositivo."
+      "cannot_connect": "No se pudo contactar con el API de V2C Cloud. Comprueba tu conexión a internet y vuelve a intentarlo.",
+      "unknown": "Se produjo un error inesperado"
     },
     "step": {
       "user": {
@@ -35,16 +34,9 @@
       },
       "connection_type": {
         "title": "Tipo de conexión",
-        "description": "Selecciona cómo se conecta tu cargador V2C a la red.\n\n**Local (Wi-Fi):** El cargador tiene una dirección IP local en tu red. Los datos del sensor se obtienen directamente del cargador con baja latencia.\n\n**Solo cloud (4G):** El cargador se conecta mediante datos móviles (4G) y no dispone de API local. Los datos del sensor se obtienen del API de V2C Cloud. Nota: el API cloud tiene un límite diario de peticiones (~850/día). La integración lo gestiona automáticamente, pero los intervalos de sondeo pueden aumentar al acercarse al límite.\n\n**Respaldo automático:** Si configuras una IP de respaldo local en las opciones de la integración, los comandos de control preferirán la LAN. Cuando la IP de respaldo no esté accesible, la integración recurrirá automáticamente al API de V2C Cloud.",
+        "description": "Selecciona cómo se conecta tu cargador V2C a la red.\n\n**Local (Wi-Fi):** El cargador tiene una dirección IP local en tu red. Los datos del sensor se obtienen directamente del cargador con baja latencia. Las IP por dispositivo se descubren automáticamente desde el cloud, así que las cuentas con varios cargadores funcionan al instante.\n\n**Solo cloud (4G):** El cargador se conecta mediante datos móviles (4G) y no dispone de API local. Los datos del sensor se obtienen del API de V2C Cloud. Nota: el API cloud tiene un límite diario de peticiones (~850/día). La integración lo gestiona automáticamente, pero los intervalos de sondeo pueden aumentar al acercarse al límite.\n\n**Enrutado LAN/cloud automático:** En modo Local los comandos de control prefieren la LAN; si el cargador no es accesible momentáneamente por LAN, la integración recurre automáticamente al API de V2C Cloud. Las últimas IP conocidas se mantienen en caché para que cada cargador siga siendo accesible incluso durante una caída del cloud.",
         "data": {
           "connection_type": "Tipo de conexión"
-        }
-      },
-      "fallback_ip": {
-        "title": "V2C Cloud — cloud no disponible",
-        "description": "El API de V2C Cloud no es accesible en este momento. Introduce la dirección IP local del cargador para que la integración pueda seguir operando localmente. Cuando el cloud vuelva a estar disponible, su lista de dispositivos se usará automáticamente.",
-        "data": {
-          "fallback_ip": "Dirección IP local del cargador"
         }
       }
     }
@@ -53,17 +45,14 @@
     "step": {
       "init": {
         "title": "Opciones V2C Cloud",
-        "description": "Elige cómo se conecta el cargador, ajusta el intervalo de sondeo LAN y (opcionalmente) configura una IP local de respaldo.\n\n• **Tipo de conexión:** puedes cambiar en cualquier momento entre **Local (Wi-Fi)** y **Solo cloud (4G)**. El cambio recarga la integración.\n\n• **Intervalo de refresco local:** con qué frecuencia la integración consulta el cargador por LAN, en segundos. Rango 5-300, predeterminado 30. Valores inferiores a 15 s pueden saturar una LAN lenta y no se recomiendan. Los cargadores solo cloud (4G) ignoran esta opción.\n\n• **IP de respaldo:** usada cuando el cloud no está disponible (modo Local) o ignorada por completo en modo Solo cloud (4G).",
+        "description": "Elige cómo se conecta el cargador y ajusta el intervalo de sondeo LAN.\n\n• **Tipo de conexión:** puedes cambiar en cualquier momento entre **Local (Wi-Fi)** y **Solo cloud (4G)**. El cambio recarga la integración.\n\n• **Intervalo de refresco local:** con qué frecuencia la integración consulta el cargador por LAN, en segundos. Rango 5-300, predeterminado 30. Valores inferiores a 15 s pueden saturar una LAN lenta y no se recomiendan. Los cargadores solo cloud (4G) ignoran esta opción.\n\nLas IP LAN por dispositivo se descubren automáticamente desde el V2C Cloud y se mantienen sincronizadas, por lo que no es necesario configurar ninguna IP manualmente.",
         "data": {
           "connection_type": "Tipo de conexión",
-          "fallback_ip": "Dirección IP local de respaldo (vacío para deshabilitar)",
           "local_update_interval": "Intervalo de refresco local (segundos)"
         }
       }
     },
     "error": {
-      "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP. Verifica la dirección y vuelve a intentarlo.",
-      "no_device_id": "Conectado al cargador, pero no se pudo leer su identificador de dispositivo.",
       "invalid_interval": "El intervalo de refresco debe ser un entero entre 5 y 300 segundos."
     }
   },

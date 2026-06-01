@@ -6,6 +6,11 @@ from datetime import timedelta
 
 DOMAIN = "v2c_cloud"
 
+# Config-entry schema version. Bump in lockstep with a new migration in
+# async_migrate_entry; both config_flow.VERSION and the migration target
+# read this single source of truth.
+SCHEMA_VERSION = 2
+
 CONF_API_KEY = "api_key"
 CONF_LOCAL_UPDATE_INTERVAL = "local_update_interval"
 

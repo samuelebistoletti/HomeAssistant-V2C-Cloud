@@ -22,6 +22,7 @@ from homeassistant.helpers.selector import (
 )
 
 from ._net import validate_private_ip
+from ._pairings import _normalise_pairings
 from .const import (
     CONF_API_KEY,
     CONF_LOCAL_UPDATE_INTERVAL,
@@ -29,6 +30,7 @@ from .const import (
     DOMAIN,
     MAX_LOCAL_INTERVAL,
     MIN_LOCAL_INTERVAL,
+    SCHEMA_VERSION,
 )
 from .v2c_cloud import V2CAuthError, V2CClient, V2CRequestError
 
@@ -41,22 +43,6 @@ def _infer_connection_type(entry_data: dict[str, Any]) -> str:
     Anything else is treated as local.
     """
     return "cloud_only" if entry_data.get("cloud_only") else "local"
-
-
-def _normalise_pairings(raw: object) -> list[dict[str, str]]:
-    """Reduce a pairings list to the ``(deviceId, ip)`` records we persist."""
-    if not isinstance(raw, list):
-        return []
-    out: list[dict[str, str]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        dev = item.get("deviceId") or item.get("device_id")
-        if not isinstance(dev, str) or not dev:
-            continue
-        ip_raw = item.get("ip") or item.get("static_ip") or ""
-        out.append({"deviceId": dev, "ip": str(ip_raw) if ip_raw else ""})
-    return out
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -109,7 +95,7 @@ async def _probe_local_api(
 class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for V2C Cloud."""
 
-    VERSION = 2
+    VERSION = SCHEMA_VERSION
 
     def __init__(self) -> None:
         """Initialise flow state."""
@@ -146,8 +132,14 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_api_key"
             except V2CRequestError:
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error while validating API key")
+            except Exception as err:  # noqa: BLE001 — last-resort guard for the flow
+                # Use error+type instead of exception() to avoid logging
+                # exception args (a future API-key-bearing exception message
+                # would otherwise land in the traceback).
+                _LOGGER.error(  # noqa: TRY400 — type-only on purpose (see comment)
+                    "Unexpected error while validating API key: %s",
+                    type(err).__name__,
+                )
                 errors["base"] = "unknown"
             else:
                 self._api_key = api_key
@@ -234,8 +226,11 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     reconfigure_entry,
                     data_updates={CONF_API_KEY: api_key},
                 )
-            except Exception:
-                _LOGGER.exception("Unexpected error while validating API key")
+            except Exception as err:  # noqa: BLE001 — last-resort guard for the flow
+                _LOGGER.error(  # noqa: TRY400 — type-only on purpose (see comment)
+                    "Unexpected error while validating API key: %s",
+                    type(err).__name__,
+                )
                 errors["base"] = "unknown"
             else:
                 return self.async_update_reload_and_abort(
@@ -282,8 +277,11 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.warning(
                     "V2C Cloud unavailable during reauth; saving new API key without cloud validation"
                 )
-            except Exception:
-                _LOGGER.exception("Unexpected error while validating API key")
+            except Exception as err:  # noqa: BLE001 — last-resort guard for the flow
+                _LOGGER.error(  # noqa: TRY400 — type-only on purpose (see comment)
+                    "Unexpected error while validating API key: %s",
+                    type(err).__name__,
+                )
                 errors["base"] = "unknown"
 
             if not errors:

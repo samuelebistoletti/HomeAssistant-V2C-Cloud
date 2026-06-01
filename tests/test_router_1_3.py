@@ -8,7 +8,7 @@ the same routing logic as service handlers.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -41,9 +41,17 @@ def runtime_data() -> Any:
 
 
 class TestRouterLanFirst:
-    """The router prefers the LAN path when cloud_only is False."""
+    """The router prefers the LAN path when cloud_only is False.
 
-    async def test_lan_success_skips_cloud(self, monkeypatch, runtime_data) -> None:
+    ``cloud_call`` is a zero-arg factory: when LAN succeeds, the factory
+    is never invoked and no awaitable is constructed. That eliminates the
+    "coroutine was never awaited" warning that previously polluted logs
+    on every successful LAN write.
+    """
+
+    async def test_lan_success_does_not_invoke_cloud_factory(
+        self, monkeypatch, runtime_data
+    ) -> None:
         lan_calls: list[Any] = []
 
         async def fake_write(hass, rd, device_id, kw, val, *, refresh_local=True):
@@ -53,8 +61,15 @@ class TestRouterLanFirst:
             "custom_components.v2c_cloud.local_api.async_write_keyword", fake_write
         )
 
-        cloud_mock = AsyncMock()
-        cloud_call = cloud_mock(MagicMock())  # awaitable not yet awaited
+        factory_invocations = 0
+
+        async def cloud_coro() -> None:
+            raise AssertionError("cloud factory must not run when LAN succeeds")
+
+        def cloud_factory():
+            nonlocal factory_invocations
+            factory_invocations += 1
+            return cloud_coro()
 
         await async_route_local_or_cloud(
             MagicMock(),
@@ -62,14 +77,14 @@ class TestRouterLanFirst:
             "DEV1",
             keyword="Paused",
             value=0,
-            cloud_call=cloud_call,
+            cloud_call=cloud_factory,
             config_data={"cloud_only": False},
         )
 
         assert lan_calls == [("Paused", 0)]
-        # The cloud coroutine was created but should NOT have been awaited again.
-        # Close it explicitly to avoid the "never awaited" warning.
-        cloud_call.close()
+        # The whole point: the factory was never called, so no orphan
+        # coroutine to clean up and no "never awaited" warning.
+        assert factory_invocations == 0
 
     async def test_lan_failure_falls_back_to_cloud(
         self, monkeypatch, runtime_data
@@ -92,7 +107,7 @@ class TestRouterLanFirst:
             "DEV1",
             keyword="Locked",
             value=1,
-            cloud_call=fake_cloud(),
+            cloud_call=lambda: fake_cloud(),
             config_data={"cloud_only": False},
         )
 
@@ -119,7 +134,7 @@ class TestRouterLanFirst:
             "DEV2",
             keyword="Paused",
             value=1,
-            cloud_call=fake_cloud(),
+            cloud_call=lambda: fake_cloud(),
             config_data={"cloud_only": True},  # explicit cloud-only
         )
 

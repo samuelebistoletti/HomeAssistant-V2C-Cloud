@@ -78,8 +78,8 @@ async def async_setup_entry(
                             _device_id,
                             keyword="Intensity",
                             value=api_value,
-                            cloud_call=client.async_cloud_set_intensity(
-                                _device_id, int(api_value)
+                            cloud_call=lambda _did=_device_id, _v=int(api_value): (
+                                client.async_cloud_set_intensity(_did, _v)
                             ),
                         )
                     ),
@@ -113,8 +113,8 @@ async def async_setup_entry(
                             _device_id,
                             keyword="MinIntensity",
                             value=api_value,
-                            cloud_call=client.async_cloud_set_min_car_intensity(
-                                _device_id, int(api_value)
+                            cloud_call=lambda _did=_device_id, _v=int(api_value): (
+                                client.async_cloud_set_min_car_intensity(_did, _v)
                             ),
                         )
                     ),
@@ -179,8 +179,8 @@ async def async_setup_entry(
                             _device_id,
                             keyword="MaxIntensity",
                             value=api_value,
-                            cloud_call=client.async_cloud_set_max_car_intensity(
-                                _device_id, int(api_value)
+                            cloud_call=lambda _did=_device_id, _v=int(api_value): (
+                                client.async_cloud_set_max_car_intensity(_did, _v)
                             ),
                         )
                     ),

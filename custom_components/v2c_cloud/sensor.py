@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -381,10 +382,18 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
 
-    for device_id in devices:
-        coordinator = await async_get_or_create_local_coordinator(
-            hass, runtime_data, device_id
+    # First-refresh per device hits /RealTimeData + /read/<kw> over LAN
+    # with retry/backoff inside async_get_or_create_local_coordinator.
+    # On a multi-charger account a serial loop multiplied N-way; gather
+    # so the slowest device — not the sum — bounds setup time.
+    device_ids = list(devices)
+    coordinators = await asyncio.gather(
+        *(
+            async_get_or_create_local_coordinator(hass, runtime_data, device_id)
+            for device_id in device_ids
         )
+    )
+    for device_id, coordinator in zip(device_ids, coordinators, strict=True):
         entities.extend(
             V2CLocalRealtimeSensor(runtime_data, coordinator, device_id, description)
             for description in REALTIME_SENSOR_DESCRIPTIONS

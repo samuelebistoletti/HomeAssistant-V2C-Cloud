@@ -61,8 +61,8 @@ async def async_setup_entry(
                             _device_id,
                             keyword="Dynamic",
                             value=1 if state else 0,
-                            cloud_call=client.async_cloud_set_dynamic(
-                                _device_id, bool(state)
+                            cloud_call=lambda _did=_device_id, _s=bool(state): (
+                                client.async_cloud_set_dynamic(_did, _s)
                             ),
                         )
                     ),
@@ -112,8 +112,8 @@ async def async_setup_entry(
                             _device_id,
                             keyword="Locked",
                             value=1 if state else 0,
-                            cloud_call=client.async_cloud_set_locked(
-                                _device_id, bool(state)
+                            cloud_call=lambda _did=_device_id, _s=bool(state): (
+                                client.async_cloud_set_locked(_did, _s)
                             ),
                         )
                     ),
@@ -140,10 +140,10 @@ async def async_setup_entry(
                             _device_id,
                             keyword="Paused",
                             value=1 if state else 0,
-                            cloud_call=(
-                                client.async_cloud_pause_charge(_device_id)
-                                if state
-                                else client.async_cloud_start_charge(_device_id)
+                            cloud_call=lambda _did=_device_id, _s=bool(state): (
+                                client.async_cloud_pause_charge(_did)
+                                if _s
+                                else client.async_cloud_start_charge(_did)
                             ),
                         )
                     ),
@@ -194,8 +194,8 @@ async def async_setup_entry(
                             _device_id,
                             keyword="LogoLED",
                             value=1 if state else 0,
-                            cloud_call=client.async_cloud_set_logo_led(
-                                _device_id, bool(state)
+                            cloud_call=lambda _did=_device_id, _s=bool(state): (
+                                client.async_cloud_set_logo_led(_did, _s)
                             ),
                         )
                     ),

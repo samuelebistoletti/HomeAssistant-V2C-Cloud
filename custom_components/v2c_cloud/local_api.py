@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
@@ -528,22 +529,25 @@ async def async_route_local_or_cloud(  # noqa: PLR0913
     *,
     keyword: str,
     value: float | str | bool,
-    cloud_call: Any | None,
+    cloud_call: Callable[[], Awaitable[Any]] | None,
     config_data: dict[str, Any] | None = None,
 ) -> None:
     """
     Send a control command via LAN when possible, otherwise via cloud.
 
-    ``cloud_call`` is an awaitable returned by a V2CClient method (the cloud
-    fallback), OR ``None`` for keywords that have no V2C Cloud endpoint —
-    e.g. ``LightLED`` and ``ContractedPower``, which are LAN-write-only.
-    The router prefers LAN: it tries ``async_write_keyword`` first, and only
-    falls back to the awaitable cloud call when the LAN write raises
+    ``cloud_call`` is a zero-argument factory that returns the awaitable
+    cloud-fallback coroutine when invoked, OR ``None`` for keywords that
+    have no V2C Cloud endpoint — e.g. ``LightLED`` and ``ContractedPower``,
+    which are LAN-write-only. The factory shape (rather than passing a
+    pre-constructed coroutine) avoids the ``RuntimeWarning: coroutine
+    was never awaited`` that otherwise pollutes logs on the LAN-success
+    happy path. The router prefers LAN: it tries ``async_write_keyword``
+    first, and only invokes the factory when the LAN write raises
     ``V2CLocalApiError`` (no IP, SSRF, timeout, HTTP error...). For
-    explicitly cloud-only devices (4G), the LAN attempt is skipped entirely;
-    if ``cloud_call`` is ``None`` in cloud-only mode the function raises a
-    ``HomeAssistantError`` with a user-facing message stating that the
-    control cannot be operated remotely.
+    explicitly cloud-only devices (4G), the LAN attempt is skipped
+    entirely; if ``cloud_call`` is ``None`` in cloud-only mode the
+    function raises a ``HomeAssistantError`` with a user-facing message
+    stating that the control cannot be operated remotely.
 
     Lazy import of v2c_cloud exception classes keeps local_api.py importable
     by v2c_cloud.py (no cycle).
@@ -585,7 +589,7 @@ async def async_route_local_or_cloud(  # noqa: PLR0913
         )
 
     try:
-        await cloud_call
+        await cloud_call()
     except V2CAuthError as err:
         raise ConfigEntryAuthFailed(
             "Authentication failed during cloud control call"

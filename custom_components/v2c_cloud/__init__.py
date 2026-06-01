@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -26,6 +26,11 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
+from ._pairings import (
+    _normalise_pairings,
+    _pairings_changed,
+    _persist_pairings_if_changed,
+)
 from .const import (
     ATTR_AMPS,
     ATTR_DATE_END,
@@ -71,6 +76,7 @@ from .const import (
     MIN_UPDATE_INTERVAL,
     RATE_LIMIT_COMMAND_RESERVE,
     RATE_LIMIT_LOW_THRESHOLD,
+    SCHEMA_VERSION,
     SERVICE_ADD_RFID_CARD,
     SERVICE_CREATE_POWER_PROFILE,
     SERVICE_DELETE_POWER_PROFILE,
@@ -123,6 +129,19 @@ from .v2c_cloud import (
     async_gather_devices_state,
 )
 
+# Re-exports of pairings helpers so existing tests and external callers
+# can keep importing them from ``v2c_cloud.__init__``. The single source
+# of truth lives in ``_pairings.py``.
+__all__ = [
+    "_normalise_pairings",
+    "_pairings_changed",
+    "_persist_pairings_if_changed",
+    "async_migrate_entry",
+    "async_setup",
+    "async_setup_entry",
+    "async_unload_entry",
+]
+
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
@@ -135,63 +154,6 @@ PLATFORMS: list[Platform] = [
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-
-
-def _normalise_pairings(raw: object) -> list[dict[str, str]]:
-    """Reduce a pairings list to the ``(deviceId, ip)`` records we cache."""
-    if not isinstance(raw, list):
-        return []
-    out: list[dict[str, str]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        dev = item.get("deviceId") or item.get("device_id")
-        if not isinstance(dev, str) or not dev:
-            continue
-        ip_raw = item.get("ip") or item.get("static_ip") or ""
-        out.append({"deviceId": dev, "ip": str(ip_raw) if ip_raw else ""})
-    return out
-
-
-def _pairings_changed(
-    a: list[dict[str, str]],
-    b: list[dict[str, str]],
-) -> bool:
-    """Return True when two normalised pairing lists differ as sets."""
-    set_a = {(p["deviceId"], p["ip"]) for p in a}
-    set_b = {(p["deviceId"], p["ip"]) for p in b}
-    return set_a != set_b
-
-
-def _persist_pairings_if_changed(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    latest_pairings: list[dict[str, object]] | None,
-) -> None:
-    """
-    Update ``entry.data['cached_pairings']`` when the cloud list changes.
-
-    The cloud (``/pairings/me``) is the source of truth for the
-    ``(deviceId, ip)`` map. We persist a normalised snapshot so that if
-    the cloud is unreachable on the next startup or refresh, the
-    integration can address every charger by its last-known IP without
-    relying on a single user-typed fallback.
-
-    A no-op when the snapshot matches the cache or when the latest
-    payload is empty / unparseable.
-    """
-    if not latest_pairings:
-        return
-    normalised = _normalise_pairings(latest_pairings)
-    if not normalised:
-        return
-    current_raw = entry.data.get("cached_pairings", [])
-    current = current_raw if isinstance(current_raw, list) else []
-    if not _pairings_changed(current, normalised):
-        return
-    new_data = dict(entry.data)
-    new_data["cached_pairings"] = normalised
-    hass.config_entries.async_update_entry(entry, data=new_data)
 
 
 def _build_synthetic_fallback(
@@ -229,49 +191,95 @@ def _build_synthetic_fallback(
     return {"pairings": pairings, "devices": devices}
 
 
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+def _migrate_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
     """
-    Migrate a v1 entry to the v2 schema.
+    Translate a v1 ``entry.data`` dict to the v2 schema.
+
+    Pure helper so a future v3 migration can compose: v1->v2 here, then
+    v2->v3 from a separate function, wired through MIGRATIONS below.
 
     v1 stored:
-      - ``fallback_ip`` (absent=LAN, ""=cloud-only sentinel, "x.x.x.x"=single cold-start fallback)
+      - ``fallback_ip`` (absent=LAN, ""/"0.0.0.0"=cloud-only sentinel,
+        "x.x.x.x"=single cold-start fallback)
       - ``fallback_device_id`` (paired with the single fallback IP)
       - ``initial_pairings`` (transient snapshot from first cloud fetch)
 
     v2 stores:
       - ``cloud_only`` (bool, explicit marker)
       - ``cached_pairings`` (list of ``{deviceId, ip}`` records continuously
-        refreshed from ``/pairings/me`` so every charger remains addressable
-        during a cloud outage — no manual fallback IP)
+        refreshed from ``/pairings/me``)
+      - ``fallback_ip`` (vestigial sentinel `""` left in place so a HACS
+        downgrade to <1.3 reads it as the cloud-only sentinel instead of
+        crashing on `KeyError`). Pruned by a future v3 migration.
     """
-    if entry.version >= 2:  # noqa: PLR2004 — schema version literal
-        return True
+    new = dict(data)
+    legacy_ip = new.pop("fallback_ip", None)
+    legacy_device_id = new.pop("fallback_device_id", None)
+    legacy_pairings = new.pop("initial_pairings", None)
 
-    data = dict(entry.data)
-    legacy_ip = data.pop("fallback_ip", None)
-    legacy_device_id = data.pop("fallback_device_id", None)
-    legacy_pairings = data.pop("initial_pairings", None)
-
-    # cloud_only used to be encoded as fallback_ip == "" / "0.0.0.0".
     cloud_only = False
     if isinstance(legacy_ip, str):
         cloud_only = legacy_ip in ("", "0.0.0.0")  # noqa: S104 — sentinel  # nosec B104
-    data["cloud_only"] = cloud_only
+    new["cloud_only"] = cloud_only
 
-    # Carry over the best snapshot of (deviceId, ip) records we can build.
     cached: list[dict[str, str]] = []
     if isinstance(legacy_pairings, list) and legacy_pairings:
         cached = _normalise_pairings(legacy_pairings)
     elif isinstance(legacy_device_id, str) and legacy_device_id:
         ip = legacy_ip if (isinstance(legacy_ip, str) and not cloud_only) else ""
         cached = [{"deviceId": legacy_device_id, "ip": ip}]
-    data["cached_pairings"] = cached
+    elif isinstance(legacy_ip, str) and legacy_ip and not cloud_only:
+        _LOGGER.warning(
+            "Legacy fallback_ip %s had no associated deviceId during migration; "
+            "the cloud will repopulate cached_pairings on first refresh.",
+            legacy_ip,
+        )
+    new["cached_pairings"] = cached
 
-    hass.config_entries.async_update_entry(entry, data=data, version=2)
+    # Vestigial sentinel: leave fallback_ip = "" in every v2 entry so a HACS
+    # rollback to <1.3 reads it as the cloud-only sentinel rather than
+    # crashing on `entry.data["fallback_ip"]`. Pruned by a future v3
+    # migration once we no longer support downgrading.
+    new["fallback_ip"] = ""
+
+    return new
+
+
+# Migration registry. Each entry maps a `from_version` to the function
+# that produces the next version's data. async_migrate_entry composes
+# them so a future v3 only needs to register `(2, 3): _migrate_v2_to_v3`.
+_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    1: _migrate_v1_to_v2,
+}
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a config entry forward through the registered schema steps."""
+    if entry.version >= SCHEMA_VERSION:
+        return True
+
+    data = dict(entry.data)
+    version = entry.version
+    while version < SCHEMA_VERSION:
+        migrate = _MIGRATIONS.get(version)
+        if migrate is None:
+            _LOGGER.error(
+                "No migration registered from V2C config entry v%s to v%s",
+                version,
+                version + 1,
+            )
+            return False
+        data = migrate(data)
+        version += 1
+
+    hass.config_entries.async_update_entry(entry, data=data, version=SCHEMA_VERSION)
+    cached = data.get("cached_pairings") or []
+    cached_count = len(cached) if isinstance(cached, list) else 0
     _LOGGER.info(
-        "Migrated V2C config entry to v2: cloud_only=%s, cached_pairings=%s device(s)",
-        cloud_only,
-        len(cached),
+        "Migrated V2C config entry to v%s: cloud_only=%s, cached_pairings=%s device(s)",
+        SCHEMA_VERSION,
+        data.get("cloud_only"),
+        cached_count,
     )
     return True
 
@@ -301,10 +309,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     session = async_get_clientsession(hass)
     client = V2CClient(session, api_key)
 
-    cached_pairings_raw = entry.data.get("cached_pairings")
-    cached_pairings: list[dict[str, str]] = (
-        cached_pairings_raw if isinstance(cached_pairings_raw, list) else []
-    )
+    # Normalise defensively: persisted entry.data could be malformed (a
+    # stale partial migration, manual edit, or a buggy upstream cloud
+    # response). _normalise_pairings drops entries without a string
+    # deviceId and trims the list to _MAX_CACHED_PAIRINGS so a tampered
+    # store never crashes async_setup_entry on `p["deviceId"]`.
+    cached_pairings = _normalise_pairings(entry.data.get("cached_pairings"))
     if cached_pairings:
         client.preload_pairings(
             [
@@ -392,8 +402,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
             if coordinator.data is not None:
                 return coordinator.data
-            cached = entry.data.get("cached_pairings") or []
-            if isinstance(cached, list) and cached:
+            cached = _normalise_pairings(entry.data.get("cached_pairings"))
+            if cached:
                 _LOGGER.warning(
                     "V2C Cloud rate-limited at startup; using cached pairings (%s device(s))",
                     len(cached),
@@ -401,8 +411,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                 return _build_synthetic_fallback(cached)
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
-            cached = entry.data.get("cached_pairings") or []
-            if isinstance(cached, list) and cached:
+            cached = _normalise_pairings(entry.data.get("cached_pairings"))
+            if cached:
                 # Pairings inaccessible (e.g. 403) but other cloud endpoints may still
                 # work. Reuse the persisted (deviceId, ip) map so every known
                 # charger remains addressable until the cloud comes back.
@@ -441,8 +451,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
             if coordinator.data is not None:
                 return coordinator.data
-            cached = entry.data.get("cached_pairings") or []
-            if isinstance(cached, list) and cached:
+            cached = _normalise_pairings(entry.data.get("cached_pairings"))
+            if cached:
                 _LOGGER.warning(
                     "V2C Cloud rate-limited at startup; using cached pairings (%s device(s))",
                     len(cached),
@@ -456,8 +466,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
                     "V2C Cloud device fetch failed; keeping previous data: %s", err
                 )
                 return coordinator.data
-            cached = entry.data.get("cached_pairings") or []
-            if isinstance(cached, list) and cached:
+            cached = _normalise_pairings(entry.data.get("cached_pairings"))
+            if cached:
                 _LOGGER.warning(
                     "V2C Cloud unavailable at first refresh; using cached pairings (%s device(s)): %s",
                     len(cached),
@@ -539,6 +549,12 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     Today the only option that may change live is ``CONF_LOCAL_UPDATE_INTERVAL``.
     We update every per-device local coordinator in place so the new cadence
     takes effect on the next scheduled refresh — no reload needed.
+
+    Note: when the user toggles ``connection_type`` in the options flow,
+    a full reload is scheduled (see ``V2COptionsFlow.async_step_init``)
+    and supersedes the interval update applied here. The listener still
+    runs on the mode-change path, but its work is discarded by the
+    subsequent reload — harmless and not worth gating.
     """
     runtime_data: V2CEntryRuntimeData | None = hass.data.get(DOMAIN, {}).get(
         entry.entry_id
@@ -646,6 +662,14 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         return
 
     async def _async_get_entry_for_device(device_id: str) -> V2CEntryRuntimeData:
+        # O(E) entries, each with O(1) dict membership on
+        # coordinator.data['devices']. For the typical single-entry user
+        # this is microseconds per service call. We deliberately do not
+        # cache a global ``{device_id: entry}`` index: the source of
+        # truth (coordinator.data) is already a dict and a separate
+        # cache would have to be invalidated on every coordinator
+        # refresh, trading one O(1) lookup for one O(1) lookup plus a
+        # write listener.
         for data in _iter_entries(hass):
             coordinator = data.coordinator
             devices: dict[str, object] | None = None
@@ -1322,7 +1346,7 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
             device_id,
             keyword="Paused",
             value=0,
-            cloud_call=entry_data.client.async_cloud_start_charge(device_id),
+            cloud_call=lambda: entry_data.client.async_cloud_start_charge(device_id),
         )
         await entry_data.coordinator.async_request_refresh()
 
@@ -1342,7 +1366,7 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
             device_id,
             keyword="Paused",
             value=1,
-            cloud_call=entry_data.client.async_cloud_pause_charge(device_id),
+            cloud_call=lambda: entry_data.client.async_cloud_pause_charge(device_id),
         )
         await entry_data.coordinator.async_request_refresh()
 
@@ -1363,7 +1387,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
             device_id,
             keyword="Intensity",
             value=amps,
-            cloud_call=entry_data.client.async_cloud_set_intensity(device_id, amps),
+            cloud_call=lambda: entry_data.client.async_cloud_set_intensity(
+                device_id, amps
+            ),
         )
         await entry_data.coordinator.async_request_refresh()
 
@@ -1392,7 +1418,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
             device_id,
             keyword="Locked",
             value=1 if locked else 0,
-            cloud_call=entry_data.client.async_cloud_set_locked(device_id, locked),
+            cloud_call=lambda: entry_data.client.async_cloud_set_locked(
+                device_id, locked
+            ),
         )
         await entry_data.coordinator.async_request_refresh()
 
@@ -1418,7 +1446,9 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
             device_id,
             keyword="Dynamic",
             value=1 if enabled else 0,
-            cloud_call=entry_data.client.async_cloud_set_dynamic(device_id, enabled),
+            cloud_call=lambda: entry_data.client.async_cloud_set_dynamic(
+                device_id, enabled
+            ),
         )
         await entry_data.coordinator.async_request_refresh()
 

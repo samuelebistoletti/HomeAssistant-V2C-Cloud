@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0-beta.3] - 2026-06-01
+
+Third pre-release. Pure hardening pass on top of `1.3.0-beta.2` from a
+full `/review` (security + performance + architecture). No behaviour
+changes that a user can observe in the happy path: every cloud read /
+LAN write / entity available state stays identical to beta.2. The
+deltas all sit one level deeper — schema-migration safety, persistence
+robustness, internal API shape, and log hygiene. HACS pre-release
+channel.
+
+### Hardening (post-review pass against `1.3.0-beta.2`)
+
+- **HACS downgrade safety net.** v2 entries now leave a vestigial `fallback_ip: ""` key in `entry.data`. If a user rolls back from `1.3.x` to `1.2.x` via HACS, the old code path reads it as the legacy cloud-only sentinel rather than crashing on `KeyError`. Rolling back is still a degraded path (multi-device support and `cached_pairings` are gone), and not officially supported — see the warning below — but it no longer prevents Home Assistant from loading.
+- **`_normalise_pairings` deduplicated.** The previously-duplicated helper (one copy in `config_flow.py`, one in `__init__.py`) now lives in a single `_pairings.py` module imported by both. Eliminates the drift risk where a future cloud-response shape change would only be applied along one persistence path.
+- **`async_migrate_entry` is now version-aware via a `_MIGRATIONS` registry.** Adding a future v3 schema only requires registering a `(2, 3): _migrate_v2_to_v3` pure function; the migration loop walks the registry until the entry is current.
+- **`SCHEMA_VERSION = 2` is the single source of truth** for both `config_flow.VERSION` and the migration target (was previously hardcoded as `2` in three places).
+- **Defensive bounds on `cached_pairings`.** Persisted lists are capped at 64 records during normalisation, and `async_setup_entry` now passes the raw entry data through `_normalise_pairings` so a malformed snapshot (`[{}]`, `[{"deviceId": None}]`, a non-list value) no longer prevents the integration from loading.
+- **Legacy `fallback_ip` without a `fallback_device_id` is logged.** If a v1 entry had a real IP that could not be migrated to a `(deviceId, ip)` record, the warning surfaces the dropped IP so a subsequent cold-start failure is diagnosable.
+- **LAN-vs-cloud router takes a `cloud_call` factory** (`Callable[[], Awaitable]`) instead of a pre-constructed coroutine. On the LAN-success happy path the cloud awaitable is no longer created, which eliminates the `RuntimeWarning: coroutine was never awaited` pollution from `__init__.py`, `number.py`, and `switch.py` setters.
+- **Parallel local-coordinator first-refresh in the `sensor` platform.** Setup time on multi-charger accounts is now bounded by the slowest device's LAN response rather than the sum of all devices' responses.
+- **`config_flow.py` no longer surfaces exception args in the unknown-error branch.** `_LOGGER.exception(...)` was replaced with `_LOGGER.error("…: %s", type(err).__name__)` so a future exception class change cannot accidentally leak the API key into a traceback.
+
+### Warning
+
+- **Rolling back from `1.3.x` to `1.2.x` via HACS is not supported.** The v2 entry schema drops `fallback_device_id` and `initial_pairings`, and persists multi-device IPs only in `cached_pairings` (a key `1.2.x` does not understand). The vestigial `fallback_ip: ""` sentinel introduced in this release prevents the older code path from crashing, but the rollback degrades a multi-device account to cloud-only mode and silently loses any LAN data. Re-setup the integration after a downgrade.
+
 ## [1.3.0-beta.2] - 2026-05-24
 
 Second pre-release for early-adopter testing. Builds on `1.3.0-beta.1`

@@ -333,7 +333,10 @@ class TestMigration:
         assert kwargs["version"] == 2
         assert new_data["cloud_only"] is False
         assert new_data["cached_pairings"] == []
-        assert "fallback_ip" not in new_data
+        # Vestigial sentinel: leave fallback_ip = "" so a HACS rollback to
+        # <1.3 reads it as the cloud-only sentinel rather than crashing on
+        # `entry.data["fallback_ip"]`.
+        assert new_data["fallback_ip"] == ""
         assert "fallback_device_id" not in new_data
         assert "initial_pairings" not in new_data
 
@@ -413,6 +416,78 @@ class TestMigration:
         result = await async_migrate_entry(hass, entry)
         assert result is True
         hass.config_entries.async_update_entry.assert_not_called()
+
+    async def test_migrate_fallback_ip_none_is_treated_as_local(self) -> None:
+        """Explicit fallback_ip=None (not absent) must not match the
+        cloud-only sentinel (which is the empty string)."""
+        from custom_components.v2c_cloud.__init__ import async_migrate_entry
+
+        entry = MagicMock()
+        entry.version = 1
+        entry.data = {"api_key": "K", "fallback_ip": None}
+        hass = MagicMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        await async_migrate_entry(hass, entry)
+        new_data = hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert new_data["cloud_only"] is False
+        assert new_data["cached_pairings"] == []
+        assert new_data["fallback_ip"] == ""
+
+    async def test_migrate_empty_initial_pairings_list_falls_through(self) -> None:
+        """``initial_pairings: []`` (present but empty) must not short-circuit
+        the fallback-IP branch — the migration still uses the legacy IP."""
+        from custom_components.v2c_cloud.__init__ import async_migrate_entry
+
+        entry = MagicMock()
+        entry.version = 1
+        entry.data = {
+            "api_key": "K",
+            "initial_pairings": [],
+            "fallback_ip": "192.168.1.50",
+            "fallback_device_id": "DEV1",
+        }
+        hass = MagicMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        await async_migrate_entry(hass, entry)
+        new_data = hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert new_data["cached_pairings"] == [
+            {"deviceId": "DEV1", "ip": "192.168.1.50"}
+        ]
+
+    async def test_migrate_fallback_ip_without_device_id_warns(self, caplog) -> None:
+        """A v1 entry with a real fallback_ip but no fallback_device_id
+        must surface a warning so the dropped IP is diagnosable."""
+        import logging as _logging
+
+        from custom_components.v2c_cloud.__init__ import async_migrate_entry
+
+        entry = MagicMock()
+        entry.version = 1
+        entry.data = {"api_key": "K", "fallback_ip": "192.168.1.99"}
+        hass = MagicMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        with caplog.at_level(_logging.WARNING, logger="custom_components.v2c_cloud"):
+            await async_migrate_entry(hass, entry)
+        assert any("192.168.1.99" in r.message for r in caplog.records)
+
+    async def test_migrate_uses_schema_version_constant(self) -> None:
+        """The migration target follows ``const.SCHEMA_VERSION``; it does not
+        hardcode a literal."""
+        from custom_components.v2c_cloud import const
+        from custom_components.v2c_cloud.__init__ import async_migrate_entry
+
+        entry = MagicMock()
+        entry.version = 1
+        entry.data = {"api_key": "K"}
+        hass = MagicMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        await async_migrate_entry(hass, entry)
+        kwargs = hass.config_entries.async_update_entry.call_args.kwargs
+        assert kwargs["version"] == const.SCHEMA_VERSION
 
 
 class TestPairingsPersistence:
@@ -503,3 +578,103 @@ class TestPairingsPersistence:
         _persist_pairings_if_changed(hass, entry, [])
         _persist_pairings_if_changed(hass, entry, None)
         hass.config_entries.async_update_entry.assert_not_called()
+
+    def test_normalise_pairings_does_not_mutate_input(self) -> None:
+        """``_normalise_pairings`` is a pure function: it never edits the
+        input list or its members. Locks the contract the running
+        coordinator and ``_persist_pairings_if_changed`` rely on."""
+        from custom_components.v2c_cloud.__init__ import _normalise_pairings
+
+        raw_items = [
+            {"deviceId": "A", "ip": "1.1.1.1", "extra": "untouched"},
+            {"deviceId": "B", "ip": "1.1.1.2"},
+        ]
+        original_snapshot = [dict(item) for item in raw_items]
+        raw = list(raw_items)
+
+        normalised = _normalise_pairings(raw)
+
+        # Input list identity + length preserved
+        assert raw is not normalised
+        assert len(raw) == len(raw_items)
+        # Every input dict still has its original keys + values
+        for original, current in zip(original_snapshot, raw, strict=True):
+            assert current == original
+        # Output dicts are fresh allocations (no shared identity with input)
+        for input_item, output_item in zip(raw, normalised, strict=True):
+            assert input_item is not output_item
+
+    def test_normalise_pairings_caps_at_max(self) -> None:
+        """The persisted list is bounded so a tampered store or a runaway
+        cloud response cannot grow ``cached_pairings`` without limit."""
+        from custom_components.v2c_cloud.__init__ import _normalise_pairings
+        from custom_components.v2c_cloud._pairings import _MAX_CACHED_PAIRINGS
+
+        raw = [
+            {"deviceId": f"DEV{i:04d}", "ip": f"10.0.{i // 256}.{i % 256}"}
+            for i in range(_MAX_CACHED_PAIRINGS + 10)
+        ]
+        normalised = _normalise_pairings(raw)
+        assert len(normalised) == _MAX_CACHED_PAIRINGS
+
+
+class TestSetupRobustness:
+    """``async_setup_entry`` must not crash on malformed cached_pairings.
+
+    Persisted ``entry.data`` can land in odd shapes after a partial
+    migration, a manual edit, or a buggy upstream cloud response. The
+    integration normalises defensively rather than indexing the raw data.
+    """
+
+    async def test_malformed_cached_pairings_does_not_crash(self) -> None:
+        from custom_components.v2c_cloud.__init__ import async_setup_entry
+
+        hass = _make_hass()
+        entry = MagicMock()
+        entry.entry_id = ENTRY_ID
+        entry.version = 2
+        # Every shape below is illegal: missing deviceId, None deviceId,
+        # bare string, integer, etc. The integration must drop them and
+        # still load.
+        entry.data = {
+            "api_key": API_KEY,
+            "cloud_only": False,
+            "cached_pairings": [
+                {},
+                {"deviceId": None, "ip": "1.1.1.1"},
+                {"ip": "1.1.1.2"},
+                "not-a-dict",
+                42,
+                {"deviceId": "GOOD", "ip": "10.0.0.5"},
+            ],
+        }
+        client = _make_client()
+
+        with _patch_setup(client):
+            result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        # Only the well-formed record was preloaded.
+        preload_arg = client.preload_pairings.call_args.args[0]
+        assert preload_arg == [{"deviceId": "GOOD", "ip": "10.0.0.5"}]
+
+    async def test_non_list_cached_pairings_does_not_crash(self) -> None:
+        from custom_components.v2c_cloud.__init__ import async_setup_entry
+
+        hass = _make_hass()
+        entry = MagicMock()
+        entry.entry_id = ENTRY_ID
+        entry.version = 2
+        entry.data = {
+            "api_key": API_KEY,
+            "cloud_only": False,
+            "cached_pairings": "should-have-been-a-list",
+        }
+        client = _make_client()
+
+        with _patch_setup(client):
+            result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        # Nothing to preload.
+        client.preload_pairings.assert_not_called()

@@ -1,21 +1,19 @@
 # Task Board
 
 ## Today
-- [ ] **Post-reload smoke test in HA**: reload the integration and confirm in cloud-only mode (a) the recovered entities show real values — LightLED slider, Min/MaxIntensity sliders, ContractedPower, device_identifier, firmware_version, wifi_ssid, wifi_ip; (b) the 6 LAN-only entities now read "Non disponibile" (ReadyState, SignalStatus, Timer×2, ChargeMode, DynamicPowerMode, PauseDynamic); (c) the connection_type toggle in the options flow works both directions
-- [ ] Decide whether to bundle today's afternoon fixes as `1.3.0-beta.2` or roll directly into `1.3.0` stable
-- [ ] Monitor `v1.3.0-beta.1` for community feedback / regression reports (HACS pre-release channel)
-- [ ] Verify GitHub Release `v1.3.0-beta.1` has both SBOM artifacts (SPDX + CycloneDX) attached
-- [ ] **Commit the devcontainer + MCP wiring + secrets-consolidation changes** (untracked: `.env.dev.example`; modified: `docker-compose.yml`, `.devcontainer.json`, `scripts/setup`, `.mcp.json`, `.gitignore`, `CONTRIBUTING.md`, `SECURITY.md`, `TECHNICAL_NOTES.md`, `CHANGELOG.md`)
-- [ ] **Rebuild the devcontainer** to validate end-to-end: `v2c-dev` network created, HA reachable at `http://homeassistant:8123`, `npx`/`mcp-proxy` on PATH, `HASS_TOKEN` exported, Claude Code's HA MCP server connects
+- [ ] Tag + push `v1.3.0-beta.3` (post commit + push del lavoro corrente).
+- [ ] Verificare SBOM (SPDX + CycloneDX) allegati alle release GitHub `v1.3.0-beta.1` / `-beta.2` / `-beta.3`.
+- [ ] **User: testare in HA UI** in cloud-only mode (4G). Slider Intensity / Min/MaxIntensity / Dynamic / Locked / Paused / LogoLED → riflesso V2C app; LightLED + ContractedPower → error toast.
 
 ## This Week
-- [ ] Promote `1.3.0-beta.1` (or `-beta.2`) → `1.3.0` stable once smoke proves clean
+- [ ] Raccogliere feedback comunitario su `v1.3.0-beta.x` (HACS pre-release channel).
+- [ ] Decidere promozione `1.3.0-beta.3` → `1.3.0` stable.
 
 ## Backlog
-- [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826)
-- [ ] Future: implement V2C cloud webhooks (startCharge/endCharge) — quando V2C documenta meccanismo di firma/auth
-- [ ] Future: refactor del service dispatcher in `__init__.py` (~640 righe ripetitive → ServiceSpec data-driven)
-- [ ] Future: split di `_async_update_data` (136 righe) in 3 helper
+- [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826).
+- [ ] Future: implement V2C cloud webhooks (startCharge/endCharge) — quando V2C documenta meccanismo di firma/auth.
+- [ ] Future: refactor del service dispatcher in `__init__.py` (~640 righe ripetitive → ServiceSpec data-driven).
+- [ ] Future: split di `_async_update_data` (136 righe) in 3 helper.
 
 ## Done
 - [x] Set up project with Claudify (`/start`) — 031726
@@ -41,8 +39,7 @@
 - [x] Remove orphaned cannot_connect key from strings + translations — 032426
 - [x] Release 1.1.6: CHANGELOG, manifest, commit+push — 032426
 - [x] Comprehensive code review + security audit (3 Explore agents + Plan agent) — 051826
-- [x] Add 10 new cloud client methods (startcharge, pausecharge, intensity, locked, dynamic, chargefvmode, max_car_int, min_car_int, denka, connected) — 051826
-- [x] Add 10 new HA services + smart LAN-vs-cloud router — 051826
+- [x] Add 10 new cloud client methods + 10 new HA services + smart LAN-vs-cloud router — 051826
 - [x] Add ChargeMode select + LightLED number entities — 051826
 - [x] Add user-configurable local_update_interval (5-300 s, default 30) — 051826
 - [x] Extract SSRF guard into shared _net.py helper — 051826
@@ -67,15 +64,36 @@
 - [x] Merge PR #12 → main (dddc1d9) — 051926
 - [x] Fix security.yaml concurrency conflict + auto-detect prerelease in tag-and-release.yaml — 051926
 - [x] Bump to 1.3.0-beta.1 (pre-release channel) + push tag v1.3.0-beta.1 — 051926
-- [x] Merge 12 Dependabot PRs (#13-#24): aioresponses, voluptuous, pip, hassfest, codecov, upload-artifact, setup-python, lock-threads, ruff+colorlog, pytest-asyncio, aiohttp, pyyaml — 051926
-- [x] i18n: translate `connection_type` radio (SelectSelector + selector blocks en/it/es), fix "Intensità LED" Italian name, clarify LAN→cloud fallback in description (7589b23) — 051926
-- [x] Phase A: `connection_type` toggle in options flow with mode-switch reload + 12 tests (e01163d + 187e2bb ruff format) — 051926
+- [x] Merge 12 Dependabot PRs (#13-#24) — 051926
+- [x] i18n: translate `connection_type` radio + fix "Intensità LED" Italian + clarify LAN→cloud description (7589b23) — 051926
+- [x] Phase A: `connection_type` toggle in options flow with mode-switch reload + 12 tests — 051926
 - [x] Capture real `/device/reported` + `/device/currentstatecharge` payloads + exhaustive entity-vs-payload audit — 051926
-- [x] Phase B1: extend `_REPORTED_TO_REALTIME` with 9 numeric mappings + string passthrough (ID, FirmwareVersion, MAC) + parse `wifi_info` JSON for SSID/IP + 20 tests (93b91da) — 051926
-- [x] Phase B2: 6 LAN-only entities advertise `available=False` in cloud-only mode (V2CEntryRuntimeData.cloud_only + LAN_ONLY_KEYS frozenset) + 14 tests (b14a491) — 051926
-- [x] `.gh-token` / `.v2c-token` gitignored at repo root so they survive devcontainer rebuilds (fcbc404) — 051926
-- [x] Devcontainer wired to companion HA container via shared `v2c-dev` Docker network; `initializeCommand` auto-starts HA on dev-container open; `restart: "no"` (manual on host reboot) — 051926
-- [x] Devcontainer Node.js LTS feature + `mcp-proxy` install via `scripts/setup` — 051926
-- [x] `.mcp.json` HA server now points at `http://homeassistant:8123/api/mcp` with `${HASS_TOKEN}` env interpolation — 051926
-- [x] Unified dev secrets into `.env.dev` (gitignored) + annotated `.env.dev.example` template; legacy `.gh-token`/`.v2c-token`/`.hass-token` files retired — 051926
-- [x] Docs aligned (CONTRIBUTING/SECURITY/TECHNICAL_NOTES §8/CHANGELOG) — 051926
+- [x] Phase B1: extend `_REPORTED_TO_REALTIME` + string passthrough + `wifi_info` JSON parse + 20 tests (93b91da) — 051926
+- [x] Phase B2: 6 LAN-only entities advertise `available=False` in cloud-only mode + 14 tests (b14a491) — 051926
+- [x] Dev-env: companion HA container on `v2c-dev` Docker network with `restart: "no"`, Node.js LTS, `mcp-proxy`, unified `.env.dev` secrets — 051926/052126
+- [x] Docs aligned (CONTRIBUTING/SECURITY/TECHNICAL_NOTES §8/CHANGELOG `[Unreleased] → Developer Experience`) — 051926
+- [x] Commit + push dev-env / MCP / secrets-consolidation work (020ceb9) — 052126
+- [x] Rebuild devcontainer; HA MCP server reachable from inside (GetDateTime round-trip OK); v2c integration configured + 37 entities reading via `_build_realtime_from_reported` — 052126
+- [x] Full HA-vs-cloud audit (25 mappings cross-referenced live): only LightLED + ContractedPower + VoltageInstallation diverged — 052126
+- [x] Fix VoltageInstallation: drop cloud `voltage` field; remap `cp_level → VoltageInstallation` (9e74e9a) — 052126
+- [x] Fix ContractedPower: cloud encodes as W/100, multiplier corrected ×1000 → ×100 (7c935dd → 85b0fcc) — 052126
+- [x] Fix LightLED: cloud serialises as 0-1 fraction; ×100 multiplier (7c935dd) — 052126
+- [x] CI fix: drop ambiguous × character in test comment (RUF003) (6b05ff7) — 052126
+- [x] Probe undocumented cloud endpoints: only `/device/logo_led` returns HTTP 200 — 052126
+- [x] Smart router promoted from private `__init__._async_route_local_or_cloud` to public `local_api.async_route_local_or_cloud`, with `cloud_call=None` support — 052126
+- [x] Convert all 13 writeable entity setters to use the router; add `async_cloud_set_logo_led` (5a8e8d4) — 052126
+- [x] Add 10 new tests (router cloud_call=None + LightLED + voltage regression); full suite 446 → 456 — 052126
+- [x] Update `PreToolUse:Bash` hook to allow `.env*.{example,sample,template,dist}` template files — 052126
+- [x] Exclude `/config` directory from git entirely — 052126
+- [x] feat(config-entry)! multi-device auto-discovery + cleanup of fallback_ip (f457e1f); schema v1→v2; 456 → 466 test — 052426
+- [x] /review pass (security + perf + architecture) su 8 commit `v1.3.0-beta.1..HEAD`; 3 HIGH + 5 MEDIUM + 5 LOW findings — 060126
+- [x] Extract `_pairings.py` (single source per `_normalise_pairings`/`_pairings_changed`/`_persist_pairings_if_changed`) + cap `_MAX_CACHED_PAIRINGS=64` + doc "pure" — 060126
+- [x] `SCHEMA_VERSION=2` const in `const.py`; `config_flow.VERSION` e migration target ne dipendono — 060126
+- [x] Migration registry `_MIGRATIONS = {1: _migrate_v1_to_v2}` + loop versionato + sentinel vestigiale `fallback_ip=""` per HACS downgrade safety + warning su `fallback_ip` orfani — 060126
+- [x] Setup hardened contro `cached_pairings` malformati (normalise raw on read) + 2 nuovi test (`TestSetupRobustness`) — 060126
+- [x] Router refactor: `cloud_call: Callable[[], Awaitable]` factory (era pre-costruita coroutine); 12 caller siti riavvolti con lambda; test aggiornati — 060126
+- [x] `_LOGGER.exception → _LOGGER.error(type)` in 3 siti config_flow per evitare leak api_key in traceback (+ `# noqa: TRY400`) — 060126
+- [x] Parallel `asyncio.gather` per first-refresh LAN coordinator in sensor.py — 060126
+- [x] CHANGELOG `[Unreleased]` → `1.3.0-beta.3` (2026-06-01) con sezione Hardening + Warning HACS downgrade — 060126
+- [x] Manifest bump 1.3.0-beta.2 → 1.3.0-beta.3 — 060126
+- [x] 466 → 474 test verdi; ruff lint + format puliti — 060126

@@ -207,7 +207,7 @@ pip install -r requirements_test.txt
 python -m pytest tests/ -v
 ```
 
-The suite (~386 tests as of 1.3.0) runs entirely without a live Home Assistant instance or a real charger. It covers:
+The suite (~470 tests as of 1.3.0) runs entirely without a live Home Assistant instance or a real charger. It covers:
 
 - **HTTP client** – cloud API calls, authentication, retry and rate-limit handling, pairings cache
 - **Device state gathering** – `async_gather_devices_state`, per-device fetch parallelism, fallback to previous data on transient errors

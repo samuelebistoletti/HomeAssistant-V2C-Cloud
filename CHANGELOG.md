@@ -4,135 +4,89 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.3.0-beta.3] - 2026-06-01
+## [1.3.0] - 2026-06-09
 
-Third pre-release. Pure hardening pass on top of `1.3.0-beta.2` from a
-full `/review` (security + performance + architecture). No behaviour
-changes that a user can observe in the happy path: every cloud read /
-LAN write / entity available state stays identical to beta.2. The
-deltas all sit one level deeper — schema-migration safety, persistence
-robustness, internal API shape, and log hygiene. HACS pre-release
-channel.
+Stable release. Promotes the `1.3.0` line to general availability after the
+public beta window (`beta.1` 2026-05-19 → `beta.3` 2026-06-01) closed with no
+regressions reported. **No code changes relative to `1.3.0-beta.3`.**
 
-### Hardening (post-review pass against `1.3.0-beta.2`)
+This is the cumulative `1.2.x` → `1.3.0` change set, developed and validated
+across the three pre-releases listed below. The integration gains full V2C
+Cloud endpoint coverage, automatic multi-charger discovery, a LAN-vs-cloud
+control router, and substantially better cloud-only (4G) behaviour.
 
-- **HACS downgrade safety net.** v2 entries now leave a vestigial `fallback_ip: ""` key in `entry.data`. If a user rolls back from `1.3.x` to `1.2.x` via HACS, the old code path reads it as the legacy cloud-only sentinel rather than crashing on `KeyError`. Rolling back is still a degraded path (multi-device support and `cached_pairings` are gone), and not officially supported — see the warning below — but it no longer prevents Home Assistant from loading.
-- **`_normalise_pairings` deduplicated.** The previously-duplicated helper (one copy in `config_flow.py`, one in `__init__.py`) now lives in a single `_pairings.py` module imported by both. Eliminates the drift risk where a future cloud-response shape change would only be applied along one persistence path.
-- **`async_migrate_entry` is now version-aware via a `_MIGRATIONS` registry.** Adding a future v3 schema only requires registering a `(2, 3): _migrate_v2_to_v3` pure function; the migration loop walks the registry until the entry is current.
-- **`SCHEMA_VERSION = 2` is the single source of truth** for both `config_flow.VERSION` and the migration target (was previously hardcoded as `2` in three places).
-- **Defensive bounds on `cached_pairings`.** Persisted lists are capped at 64 records during normalisation, and `async_setup_entry` now passes the raw entry data through `_normalise_pairings` so a malformed snapshot (`[{}]`, `[{"deviceId": None}]`, a non-list value) no longer prevents the integration from loading.
-- **Legacy `fallback_ip` without a `fallback_device_id` is logged.** If a v1 entry had a real IP that could not be migrated to a `(deviceId, ip)` record, the warning surfaces the dropped IP so a subsequent cold-start failure is diagnosable.
-- **LAN-vs-cloud router takes a `cloud_call` factory** (`Callable[[], Awaitable]`) instead of a pre-constructed coroutine. On the LAN-success happy path the cloud awaitable is no longer created, which eliminates the `RuntimeWarning: coroutine was never awaited` pollution from `__init__.py`, `number.py`, and `switch.py` setters.
-- **Parallel local-coordinator first-refresh in the `sensor` platform.** Setup time on multi-charger accounts is now bounded by the slowest device's LAN response rather than the sum of all devices' responses.
-- **`config_flow.py` no longer surfaces exception args in the unknown-error branch.** `_LOGGER.exception(...)` was replaced with `_LOGGER.error("…: %s", type(err).__name__)` so a future exception class change cannot accidentally leak the API key into a traceback.
-
-### Warning
-
-- **Rolling back from `1.3.x` to `1.2.x` via HACS is not supported.** The v2 entry schema drops `fallback_device_id` and `initial_pairings`, and persists multi-device IPs only in `cached_pairings` (a key `1.2.x` does not understand). The vestigial `fallback_ip: ""` sentinel introduced in this release prevents the older code path from crashing, but the rollback degrades a multi-device account to cloud-only mode and silently loses any LAN data. Re-setup the integration after a downgrade.
-
-## [1.3.0-beta.2] - 2026-05-24
-
-Second pre-release for early-adopter testing. Builds on `1.3.0-beta.1`
-with a breaking config-entry schema change (auto-migrated), a fix for a
-silently-dropped option, the missing LAN read for `ChargeMode`, and a
-UI sweep that removes every reference to the now-retired user-typed
-fallback IP. HACS pre-release channel.
-
-### Changed (breaking — auto-migrated via config entry v1 → v2)
-
-- **Per-device LAN IPs are now auto-discovered and kept in sync with the V2C Cloud `/pairings/me` response** instead of requiring a single user-typed fallback. An account with N chargers is fully supported: every charger's IP is sourced from the cloud at runtime and a normalised snapshot is persisted on every successful refresh as `entry.data["cached_pairings"]`. During a cloud outage (rate limit, 403, transient network failure) every previously-seen charger remains addressable via its last-known IP — not just one. When the cloud returns online the cache is reconciled with the fresh response (added devices appear, removed devices disappear).
-- **Cloud-only mode is now encoded as `entry.data["cloud_only"]: bool`** instead of the empty-string `fallback_ip` sentinel. The options-flow toggle still switches between Local and Cloud-only and triggers a reload, but no longer exposes a fallback IP field.
-- **The first-setup `fallback_ip` step is gone.** Initial setup requires the cloud to be reachable to capture the pairings list; this is consistent with the integration's name ("V2C Cloud") and removes a single point of failure (one user-typed IP that could not represent multi-device accounts).
-- **Config entry `VERSION` bumped to 2.** `async_migrate_entry` translates legacy entries: the cloud-only sentinel (`fallback_ip == ""` / `"0.0.0.0"`) becomes `cloud_only: True`; a non-empty `fallback_ip` paired with `fallback_device_id` becomes a one-record `cached_pairings`; a non-empty `initial_pairings` snapshot wins over the single-device pair. Legacy keys are dropped from `entry.data`.
-
-### Fixed (LAN data accuracy)
-
-- **`ChargeMode` Select showed "Unknown" in LAN mode** — per the official V2C Datamanager doc (rev 04/05/26) and confirmed by live probe against firmware 2.4.6, `ChargeMode` is write-enabled but absent from `/RealTimeData`; the integration's `_READ_ONLY_KEYWORDS` augmentation set covered `LogoLED` + `LightLED` but missed `ChargeMode`. Added so the local coordinator now fetches `/read/ChargeMode` in parallel with the other read-only keys and the Select displays the live value.
-
-### Fixed (options flow)
-
-- **`Local refresh interval` option was not persisted** — the options flow saved the value via `async_update_entry(options=...)` but then returned `async_create_entry(title="", data={})`, and HA's OptionsFlow uses the `data` argument of `async_create_entry` to OVERWRITE `entry.options`. Result: the field always snapped back to 30 s after closing the form. Fix: pass the populated options dict to `async_create_entry(data=new_options)`. Regression test added.
-- **UI strings referencing the removed `fallback_ip` step / field were cleaned up** across `strings.json` and the en/it/es translations: the cold-start "cloud offline" step is gone, the options-flow field label is gone, the `connection_type` and `init` descriptions now mention auto-discovered per-device IPs and LAN→cloud automatic routing instead of a manually configured fallback.
-
-### Developer Experience
-
-- **Companion Home Assistant container reachable from the dev container.** `docker-compose.yml` attaches `hass_core_dev` to a new external `v2c-dev` user-defined bridge network with the `homeassistant` alias, and `.devcontainer.json` joins the dev container to the same network via `runArgs: ["--network=v2c-dev"]`. Inside the dev container HA resolves as `http://homeassistant:8123` (host browser keeps using `http://localhost:8123`). An `initializeCommand` creates the network and runs `docker compose up -d homeassistant` before the dev container is built, so the service is ready when VS Code finishes attaching. HA uses `restart: "no"`: developer-initiated, not auto-restarted on host reboot.
-- **Node.js LTS in the dev container** via the `ghcr.io/devcontainers/features/node:1` devcontainer feature, exposing `npx` for the `context7` and `memory` MCP servers configured in `.mcp.json`.
-- **`mcp-proxy` installed by `scripts/setup`** (`uv tool install --force git+https://github.com/sparfenyuk/mcp-proxy`). Provides the Streamable-HTTP/SSE bridge that fronts the Home Assistant `/api/mcp` endpoint for Claude Code.
-- **Unified dev-secrets file** at `.env.dev` (gitignored). Replaces the previous trio of single-token files (`.gh-token`, `.v2c-token`, `.hass-token`). The committed template `.env.dev.example` documents every variable — `GH_TOKEN`, `V2C_CLOUD_API_KEY`, `V2C_LOCAL_IP`, `HASS_TOKEN` — including where to obtain it and which tool consumes it. `scripts/setup` appends an idempotent block to `~/.bashrc` that sources `.env.dev` with `set -a`, so every variable is exported into every interactive shell on a single edit. Contributors fill in the file once at first checkout. The legacy `HASS_TOKEN`-only block in `~/.bashrc` is auto-removed by `scripts/setup` on subsequent runs.
+> **Breaking (auto-migrated):** the config entry schema is upgraded from v1 to
+> v2 on first load — no user action required. Rolling **back** to `1.2.x` is
+> not supported; see _Upgrade / downgrade notes_ below.
 
 ### Added
 
-- **Connection type editable post-setup** — the options flow exposes a `Local (Wi-Fi)` / `Cloud only (4G)` toggle. Switching modes triggers an automatic integration reload. Resolves the inability to change connection type after the initial setup.
-- **Cloud-only entity coverage expanded** — `_build_realtime_from_reported` (the cloud → synthetic LAN payload translator) now handles seven additional numeric `/reported` keys (`min_car_int`, `min_car_int_fb`, `max_car_int`, `max_car_int_fb`, `light_led`, `logo_led`, `contract_power` and its `contractedpower`/`contracted_power` aliases) and gains a string-field passthrough for device metadata (`device_id`/`deviceId` → `ID`, `version` → `FirmwareVersion`, `mac` → `MAC`). The cloud's `wifi_info` JSON blob is parsed inline so the SSID and active IP populate the corresponding sensors. Verified end-to-end against a real `/device/reported` + `/device/currentstatecharge` capture (firmware 2.4.6). The set of entities that show real data in cloud-only mode grows from ~12 to ~20+.
-- **LAN-only entities now correctly advertise as Unavailable** in cloud-only mode instead of showing the misleading "Unknown" state. The six structurally LAN-only keys (`ReadyState`, `SignalStatus`, `Timer`, `ChargeMode`, `DynamicPowerMode`, `PauseDynamic`) — none of which are present in the cloud `/reported` or `/currentstatecharge` payloads — are gated via `available=False` when the config entry is cloud-only. Applies to the sensor, switch, and select platforms.
-
-### Fixed
-
-- **Connection-type radio labels were not translated** — the initial config-flow step rendered "Local (Wi-Fi)" / "Cloud only (4G)" in English regardless of the active UI locale because the schema used a hard-coded `vol.In({label: ...})` dict. Migrated the schema to `SelectSelector(translation_key="connection_type")` and added a top-level `selector` block to `strings.json` and all translation files (en/it/es).
-- **Italian "Intensità Light LED"** entity name was mixed Italian/English. Renamed to "Intensità LED".
-- **Number entities `MinIntensity` / `MaxIntensity` / `LightLED` / `ContractedPower` were Unknown in cloud-only mode** — they read via `local_key` but the cloud `/reported` keys (`min_car_int`, `max_car_int`, `light_led`, `contract_power`) were not in `_REPORTED_TO_REALTIME`. Each entity now resolves correctly in cloud-only mode.
-- **Sensors `device_identifier` / `firmware_version` / `wifi_ssid` / `wifi_ip` were Unknown in cloud-only mode** — the synthesis loop did `float(str(raw))` on every value and silently dropped non-numeric ones. Added a string-passthrough path plus inline parsing of the cloud's `wifi_info` JSON blob to populate `SSID` / `IP`.
-- **Cloud-only `VoltageInstallation` reported a spurious ~77 V instead of the actual mains voltage** — the synthesis path mapped the cloud `voltage` field (a small internal signal, e.g. `0.077350`) onto `VoltageInstallation` and then scaled it × 1000 via the kV detection heuristic. The cloud's real mains/installation voltage is carried by `cp_level` (e.g. `248` on a 230 V EU install); remapped `cp_level` → `VoltageInstallation` and dropped the misleading `voltage` mapping. The `_detect_cloud_scale` heuristic still inspects `voltage` as a magnitude signal but no longer surfaces it as a voltage reading.
-- **Cloud-only `ContractedPower` displayed the wrong value (off by 100x)** — the cloud encodes `contract_power` as W/100 (e.g. `"7"` = 700 W = 0.7 kW, confirmed against a live install where the V2C app showed 0.7 kW for cloud value `"7"`), but the Number entity layer divides the raw value by 1000 to render kW (LAN format is W). Added a `_CLOUD_TO_LAN_MULTIPLIERS` table that multiplies `ContractedPower` by 100 during synthesis, so cloud `"7"` becomes `700` in the synthetic /RealTimeData and the entity renders the expected `0.7 kW`.
-- **Cloud-only `LightLED` displayed `1` for a LED set to 100 % via the V2C app** — the cloud serialises `light_led` as a 0.0-1.0 fraction (`"1.000000"` = 100 %), but both the LAN `/write/LightLED` keyword and the Number entity use the 0-100 % integer convention. Added a × 100 multiplier in `_CLOUD_TO_LAN_MULTIPLIERS` so `1.000000` is surfaced as `100 %`, `0.500000` as `50 %`, etc.
-- **Number/Switch/Select writes silently dropped in cloud-only mode (4G)** — every Number entity setter (`Intensity`, `MinIntensity`, `MaxIntensity`, `ContractedPower`, `LightLED`), every Switch (`Dynamic`, `Locked`, `Paused`, `LogoLED`, `Timer`, `PauseDynamic`), and two Selects (`ChargeMode`, `DynamicPowerMode`) previously called `async_write_keyword` directly, so the LAN write step raised `V2CLocalApiError` for cloud-only devices and no cloud fallback ever fired. Promoted `_async_route_local_or_cloud` + `_is_cloud_only_device` from private `__init__.py` helpers to public `local_api.py` (`async_route_local_or_cloud`, `is_cloud_only_device`) and wired every entity setter through the router. For controls without a V2C Cloud endpoint (`LightLED`, `ContractedPower`, `Timer`, `PauseDynamic`, `ChargeMode`, `DynamicPowerMode`), the setter passes `cloud_call=None` and the router raises a clear, user-facing `HomeAssistantError` in cloud-only mode instead of silently losing the write. Discovered an undocumented `/device/logo_led` cloud endpoint via direct probe and exposed it as `async_cloud_set_logo_led`, so the LogoLED switch is now controllable from cloud-only mode too.
-
-## [1.3.0-beta.1] - 2026-05-19
-
-Pre-release for early-adopter testing — same code as the unreleased 1.3.0
-candidate (see entry below), but published with `prerelease: true` so HACS
-only proposes the update to users who opted into "Show beta versions".
-
-This is a HACS-side gate; install via **Settings → Devices & Services →
-HACS → V2C Cloud → ⋮ → Redownload**, then pick `1.3.0-beta.1` from the
-version dropdown. Promotion to `1.3.0` stable will follow after a quiet
-period if no regressions are reported.
-
-See the full set of changes in the `[1.3.0]` section below.
-
-## [1.3.0] - 2026-05-18
-
-### Added
-
-- **Full V2C Cloud endpoint coverage** – 10 new client methods cover every previously missing public endpoint: `start_charge`, `pause_charge`, `intensity`, `locked`, `dynamic`, `chargefvmode`, `max_car_int`, `min_car_int`, `denka/max_power`, and `GET /device/connected`. Each endpoint is exercised by dedicated tests in `tests/test_cloud_endpoints_1_3.py`.
-- **10 new Home Assistant services**: `start_charge`, `pause_charge`, `set_charge_intensity`, `set_locked`, `set_dynamic`, `set_fv_mode`, `set_max_car_intensity`, `set_min_car_intensity`, `set_denka_max_power`, `get_connected_status`. The first five use the new LAN-vs-cloud router (see below); the photovoltaic and Denka calls are cloud-only.
-- **Smart LAN-vs-cloud router** (`_async_route_local_or_cloud` in `__init__.py`). For control commands shared between LAN (`/write/`) and cloud, the integration prefers the LAN path when a `fallback_ip` is configured, and transparently falls back to the cloud endpoint when LAN is unreachable or the device is cloud-only (4G).
-- **`ChargeMode` select entity** (LAN write to the `ChargeMode` keyword: monophasic / threephasic / mixed).
-- **`LightLED` number entity** (LAN write to the `LightLED` keyword, 0-100 %).
-- **User-configurable local refresh interval** (5-300 s, default 30 s) exposed via the Reconfigure dialog (`CONF_LOCAL_UPDATE_INTERVAL`). Cloud-only (4G) devices keep their fixed cadence and ignore the option. Changes apply live via an entry update listener — no integration reload required.
+- **Full V2C Cloud endpoint coverage** – 10 new client methods cover every previously missing public endpoint: `start_charge`, `pause_charge`, `intensity`, `locked`, `dynamic`, `chargefvmode`, `max_car_int`, `min_car_int`, `denka/max_power`, and `GET /device/connected`. Each is exercised by dedicated tests in `tests/test_cloud_endpoints_1_3.py`.
+- **10 new Home Assistant services**: `start_charge`, `pause_charge`, `set_charge_intensity`, `set_locked`, `set_dynamic`, `set_fv_mode`, `set_max_car_intensity`, `set_min_car_intensity`, `set_denka_max_power`, `get_connected_status`. The first five use the LAN-vs-cloud router; the photovoltaic and Denka calls are cloud-only.
+- **Automatic multi-charger discovery** – an account with N chargers is fully supported. Every charger's LAN IP is sourced from the cloud `/pairings/me` response at runtime and a normalised snapshot is persisted on every successful refresh (`entry.data["cached_pairings"]`). During a cloud outage every previously-seen charger stays addressable via its last-known IP; when the cloud returns, the cache is reconciled (added devices appear, removed devices disappear). Replaces the single user-typed fallback IP.
+- **Smart LAN-vs-cloud router** (`local_api.async_route_local_or_cloud`) – control commands shared between LAN (`/write/`) and cloud (`/device/*`) prefer the LAN path and transparently fall back to the cloud endpoint when LAN is unreachable or the device is cloud-only. Covers start/pause charge, intensity, locked, dynamic. Controls with no cloud endpoint (`LightLED`, `ContractedPower`, `Timer`, `PauseDynamic`, `ChargeMode`, `DynamicPowerMode`) raise a clear, user-facing `HomeAssistantError` in cloud-only mode instead of silently dropping the write.
+- **Editable connection type** – an options-flow `Local (Wi-Fi)` / `Cloud only (4G)` toggle switches modes post-setup and triggers an automatic integration reload.
+- **`ChargeMode` select** (monophasic / threephasic / mixed) and **`LightLED` number** (0-100 %) entities.
+- **User-configurable local refresh interval** (5-300 s, default 30 s) via the Reconfigure dialog (`CONF_LOCAL_UPDATE_INTERVAL`). Cloud-only (4G) devices keep their fixed cadence and ignore the option. Applied live via an entry update listener — no reload required.
+- **Expanded cloud-only entity coverage** – `_build_realtime_from_reported` synthesises a LAN-shaped payload from the cloud `/reported` document, including seven additional numeric keys plus device metadata (ID, firmware, MAC, SSID, IP via the `wifi_info` blob). The set of entities showing real data in cloud-only mode grows from ~12 to ~20+. Structurally LAN-only entities (`ReadyState`, `SignalStatus`, `Timer`, `ChargeMode`, `DynamicPowerMode`, `PauseDynamic`) now correctly advertise as **Unavailable** in cloud-only mode instead of the misleading "Unknown".
+- **Discovered `/device/logo_led` cloud endpoint** (undocumented, live on firmware 2.4.6) – the LogoLED switch is now controllable from cloud-only mode via `async_cloud_set_logo_led`.
 - **Spanish UI translation** – the previously incomplete Spanish support is now a full `translations/es.json` (235 keys), at parity with `en.json` and `it.json`.
 - **Live smoke-test script** (`scripts/live_smoke_test.py`) – exercises every read endpoint and issues safe no-op writes against a real Trydan plus the V2C Cloud, then verifies snapshot/restore. Requires the explicit `--confirm-restore` flag and is never run in CI.
-- **CI matrix on Python 3.12, 3.13 and 3.14**, ruff lint gate, coverage reporting via Codecov, and a new `.coveragerc`.
-- **`.github/dependabot.yml`** — weekly grouped updates for both GitHub Actions and pip dependencies, with timezone-aware schedules.
-- **`concurrency:` blocks** added to every push/PR workflow (`tests`, `security`, `hacs`, `hassfest`, `codeql`, `tag-and-release`). Saves CI minutes and avoids the "outdated result wins" race when developers push twice in a row.
-- **Pip caching** (`actions/setup-python@v5` with `cache: pip`) on every Python step.
-- **`tag-and-release.yaml` hardened** — the release pipeline now gates on the full Python matrix (3.12/3.13/3.14), ruff lint, hassfest and HACS validation in addition to the existing test + security checks. A manifest with a broken schema, a lint regression, or a HACS misconfiguration can no longer reach a published release.
-- **52 new unit tests** total across 4 new test files (`test_cloud_endpoints_1_3`, `test_router_1_3`, `test_options_flow_interval`, `test_manifest_hygiene`) plus the two previously skipped pre-existing failures (`test_gather` and `test_init::test_rate_limit_doubles_coordinator_interval`) are now fixed and re-enabled.
+- **CI / supply-chain hardening** – Python 3.12/3.13/3.14 matrix, ruff lint + format gates, Codecov coverage reporting (`.coveragerc`), `concurrency:` blocks on every workflow, pip caching, `.github/dependabot.yml` (weekly grouped Actions + pip updates), SBOM (SPDX-JSON + CycloneDX-JSON via `anchore/sbom-action`) attached to every release, and a reusable `security.yaml` (`workflow_call`) so the release pipeline gates on the exact same SAST / dependency-audit / secret-scan jobs as PRs.
 
 ### Changed
 
-- **SSRF guard deduplicated** into `custom_components/v2c_cloud/_net.py::validate_private_ip`. Replaces four scattered copies with a single, tested helper covering both IP parse errors and policy violations (private + not loopback + not link-local + not unspecified).
+- **Config entry schema v1 → v2 (auto-migrated).** `async_migrate_entry` is version-aware via a `_MIGRATIONS` registry; `SCHEMA_VERSION = 2` in `const.py` is the single source of truth for both `config_flow.VERSION` and the migration target. Legacy entries are translated: the cloud-only sentinel (`fallback_ip == ""` / `"0.0.0.0"`) becomes `cloud_only: True`; a non-empty `fallback_ip` paired with `fallback_device_id` becomes a one-record `cached_pairings`; an `initial_pairings` snapshot wins over the single-device pair. Legacy keys are dropped from `entry.data`.
+- **Cloud-only mode is encoded as `entry.data["cloud_only"]: bool`** instead of the empty-string `fallback_ip` sentinel. The first-setup fallback-IP step is gone — initial setup now requires the cloud to be reachable to capture the pairings list, consistent with the integration's name and removing a single point of failure.
+- **SSRF guard deduplicated** into `custom_components/v2c_cloud/_net.py::validate_private_ip` (private + not loopback + not link-local + not unspecified), replacing four scattered copies with a single tested helper.
+- **`async_write_keyword` validates the keyword** against a documented `WRITEABLE_KEYWORDS` whitelist to reduce the LAN write/SSRF surface and prevent accidental misuse from automations.
 - **Local API constants consolidated in `const.py`**: `LOCAL_HTTP_TIMEOUT`, `LOCAL_MAX_RETRIES`, `LOCAL_RETRY_BACKOFF`, `LOCAL_WRITE_RETRY_DELAY`, `CLOUD_ONLY_UPDATE_INTERVAL`, and the new `DEFAULT/MIN/MAX_LOCAL_INTERVAL` bounds.
-- **`async_write_keyword` now validates the keyword** against a documented whitelist (`WRITEABLE_KEYWORDS`) to reduce the SSRF surface and prevent accidental misuse from automations.
-- **HA minimum version**: kept in `hacs.json` (`"homeassistant": "2025.4.0"`). Initially also added to `manifest.json` as `min_ha_version`, but hassfest rejects that field as unknown — the HACS-side floor remains the source of truth.
+- **HA minimum version** stays in `hacs.json` (`"homeassistant": "2025.4.0"`) — hassfest rejects `min_ha_version` in `manifest.json` as an unknown field.
 
 ### Fixed
 
-- **`requirements.txt`**: `pyyaml` is now version-pinned (`>=6.0,<7`).
-- **`requirements_test.txt`**: all packages now have upper bounds for reproducible CI builds.
-- **`.ruff.toml`**: `target-version` aligned with the CI Python version (`py312`). Test/script directories have a targeted `per-file-ignores` so the strict `select = ALL` no longer drowns the lint output in test-only noise.
-- **Devcontainer**: image bumped to `mcr.microsoft.com/devcontainers/python:3.14` (matches the latest CI matrix entry). `scripts/setup` now installs `requirements_test.txt` and `pytest-cov` as well, so pytest discovery works in VSCode out-of-the-box. VSCode pytest settings (`python.testing.pytestEnabled`, `pytestArgs`) added to `.devcontainer.json`.
-- **`hacs.yaml` + `hassfest.yaml` triggers**: now scoped to `branches: [main]` on push so feature branches no longer spawn redundant runs. Daily cron retained.
-- **CI hardening**: `persist-credentials: false` on every checkout that does not push back to the repo. Bandit artifact retention pinned to 30 days. `pip-audit` calls now use `--strict` so unknown vulnerabilities also fail the job.
-- **Ruff format gate in CI**: the entire codebase has been mass-formatted with `ruff format` and both `ruff check` and `ruff format --check` now gate every PR and release. Future contributions must keep the tree formatted.
-- **SBOM generated on every release**: `tag-and-release.yaml` now produces both SPDX-JSON and CycloneDX-JSON Software Bill of Materials via `anchore/sbom-action@v0` and attaches them to the GitHub Release as `v2c_cloud-<version>.spdx.json` / `.cyclonedx.json`. Downstream consumers and security scanners can pick whichever standard they prefer.
-- **Reusable security pipeline**: `security.yaml` now exposes a `workflow_call` trigger so `tag-and-release.yaml` reuses the exact same SAST/audit/secret-scan jobs via `uses: ./.github/workflows/security.yaml`. Single source of truth — adding a scanner to `security.yaml` automatically gates releases too.
+- **`ChargeMode` Select showed "Unknown" in LAN mode** – it is write-enabled but absent from `/RealTimeData`; the integration's read-only-keyword augmentation covered `LogoLED` + `LightLED` but missed `ChargeMode`. The local coordinator now also fetches `/read/ChargeMode` in parallel and the Select displays the live value.
+- **`Local refresh interval` option was not persisted** – the options flow returned `async_create_entry(title="", data={})`, and HA uses that `data` argument to overwrite `entry.options`, so the field always snapped back to 30 s. Fix: pass the populated options dict to `async_create_entry(data=new_options)`.
+- **Connection-type radio labels were not translated** – the schema used a hard-coded `vol.In({label: ...})` dict. Migrated to `SelectSelector(translation_key="connection_type")` with a top-level `selector` block in `strings.json` and all translation files. Italian "Intensità Light LED" renamed to "Intensità LED".
+- **Cloud-only data accuracy** (validated end-to-end against a live firmware-2.4.6 `/device/reported` + `/device/currentstatecharge` capture):
+  - `VoltageInstallation` reported a spurious ~77 V – the cloud `voltage` field is a small internal signal; the real mains/installation voltage is carried by `cp_level` (e.g. `248` on a 230 V EU install). Remapped `cp_level → VoltageInstallation` and dropped the misleading `voltage` mapping.
+  - `ContractedPower` was off by 100× – the cloud encodes `contract_power` as W/100 (`"7"` = 700 W = 0.7 kW), but the Number entity divides by 1000 to render kW. Added a `_CLOUD_TO_LAN_MULTIPLIERS` table that multiplies `ContractedPower` by 100 during synthesis.
+  - `LightLED` showed `1` for a LED set to 100 % – the cloud serialises `light_led` as a 0.0-1.0 fraction; the LAN keyword and entity use 0-100 % integers. Added a × 100 multiplier.
+  - Number / Switch / Select **writes were silently dropped in cloud-only (4G)** – every setter called `async_write_keyword` directly, so the LAN write raised `V2CLocalApiError` and no cloud fallback fired. Every setter now routes through `async_route_local_or_cloud`.
+  - `device_identifier` / `firmware_version` / `wifi_ssid` / `wifi_ip` sensors were "Unknown" – the synthesis loop coerced every value via `float(str(raw))` and silently dropped non-numeric ones. Added a string-passthrough path plus inline parsing of the cloud's `wifi_info` JSON blob.
+- **UI strings referencing the removed `fallback_ip` step / field** were cleaned up across `strings.json` and the en/it/es translations; the `connection_type` and `init` descriptions now mention auto-discovered per-device IPs and automatic LAN→cloud routing.
+- **`requirements.txt`**: `pyyaml` is now version-pinned (`>=6.0,<7`). **`requirements_test.txt`**: all packages have upper bounds for reproducible CI builds.
+- **`.ruff.toml`**: `target-version` aligned with CI (`py312`); test/script directories get a targeted `per-file-ignores` so the strict `select = ALL` rule set no longer drowns the lint output. The whole tree is `ruff format`-clean and both `ruff check` and `ruff format --check` gate every PR and release.
+- **CI hardening**: `persist-credentials: false` on every read-only checkout; `pip-audit --strict`; bandit artifact retention pinned to 30 days; `hacs.yaml` + `hassfest.yaml` push triggers scoped to `branches: [main]` (daily cron retained).
+
+### Hardening (post-beta review pass)
+
+- **`_normalise_pairings` deduplicated** into a single `_pairings.py` module imported by both `config_flow.py` and `__init__.py`, eliminating drift between the two persistence paths. Persisted lists are capped at 64 records during normalisation, and `async_setup_entry` now passes the raw entry data through `_normalise_pairings` so a malformed snapshot (`[{}]`, `[{"deviceId": None}]`, a non-list value) no longer prevents the integration from loading.
+- **LAN-vs-cloud router takes a `cloud_call` factory** (`Callable[[], Awaitable]`) instead of a pre-constructed coroutine. On the LAN-success happy path the cloud awaitable is no longer created, eliminating the `RuntimeWarning: coroutine was never awaited` pollution.
+- **Parallel local-coordinator first-refresh** in the `sensor` platform – setup time on multi-charger accounts is bounded by the slowest device's LAN response rather than the sum of all devices'.
+- **`config_flow.py` no longer surfaces exception args** in the unknown-error branch (`_LOGGER.exception(...)` → `_LOGGER.error("…: %s", type(err).__name__)`) so a future exception-class change cannot leak the API key into a traceback.
+- **Legacy `fallback_ip` without a `fallback_device_id` is logged** during migration so a dropped IP that could not be turned into a `(deviceId, ip)` record is diagnosable.
 
 ### Security
 
-- **Tighter local-write surface**: writes are now rejected unless the keyword is in the documented Trydan write-list, the resolved IP parses cleanly *and* satisfies the private/non-loopback/non-link-local/non-unspecified policy.
-- Audit of credential masking, SSRF guards and `eval/exec/pickle/yaml.unsafe_load` use confirmed clean — no new findings.
+- **Tighter local-write surface** – writes are rejected unless the keyword is in the documented Trydan write-list and the resolved IP parses cleanly *and* satisfies the private / non-loopback / non-link-local / non-unspecified policy.
+- Audit of credential masking, SSRF guards and `eval`/`exec`/`pickle`/`yaml.unsafe_load` use confirmed clean — no new findings.
+
+### Upgrade / downgrade notes
+
+- **Rolling back from `1.3.x` to `1.2.x` via HACS is not supported.** The v2 schema drops `fallback_device_id` / `initial_pairings` and persists multi-device IPs only in `cached_pairings` (a key `1.2.x` does not understand). v2 entries leave a vestigial `fallback_ip: ""` sentinel so the older code path loads instead of crashing on `KeyError`, but a rollback degrades a multi-device account to cloud-only mode and silently loses LAN data. Re-setup the integration after a downgrade.
+
+## [1.3.0-beta.3] - 2026-06-01
+
+Pre-release on the HACS beta channel. Post-`beta.2` hardening pass from a full security + performance + architecture review — schema-migration safety, pairings-persistence robustness, internal API shape, and log hygiene — with no user-observable behaviour change in the happy path. Folded into [1.3.0].
+
+## [1.3.0-beta.2] - 2026-05-24
+
+Pre-release on the HACS beta channel. Added the breaking multi-device auto-discovery schema (config entry v1 → v2), the editable connection-type toggle, the expanded cloud-only entity coverage, and the cloud-only data-accuracy fixes (VoltageInstallation / ContractedPower / LightLED / routed writes). Folded into [1.3.0].
+
+## [1.3.0-beta.1] - 2026-05-19
+
+First pre-release of the `1.3.0` line on the HACS beta channel — full V2C Cloud endpoint coverage, the LAN-vs-cloud router, and the CI / supply-chain hardening. Published with `prerelease: true` so HACS only proposed it to users who opted into "Show beta versions". Folded into [1.3.0].
 
 ## [1.1.6] - 2026-03-24
 
@@ -259,7 +213,7 @@ See the full set of changes in the `[1.3.0]` section below.
 ## [1.0.5] - 2025-11-10
 
 ### Added
-- `v2c_cloud.set_installation_voltage` service that writes to the local `/write/VoltageInstallation` endpoint so automations can adjust the parameter explicitly, now validated between 100 V and 450 V.
+- `v2c_cloud.set_installation_voltage` service that writes to the local `/write/VoltageInstallation` endpoint so automations can adjust the parameter explicitly, now validated between 100 V and 450 V.
 
 ### Removed
 - The "Installation voltage" number entity; use the new service action instead, consistent with other write-only operations such as RFID management.

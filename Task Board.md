@@ -1,8 +1,10 @@
 # Task Board
 
 ## Today
-- [ ] Tag + push `v1.3.0-beta.3` (post commit + push del lavoro corrente).
-- [ ] Verificare SBOM (SPDX + CycloneDX) allegati alle release GitHub `v1.3.0-beta.1` / `-beta.2` / `-beta.3`.
+- [~] **Release 1.3.0 stabile** — manifest bump + CHANGELOG consolidato + README. Commit `c311e27` pushato su main → tag-and-release run 27232896425 in corso (auto-crea tag `v1.3.0` + Release + SBOM). Monitorare esito.
+- [x] Fix CI failure `Security/pip-audit` (CVE aiohttp test-only, ignorati su test-deps step) — 060926
+- [x] Fix CI failure `Close inactive issues` (lock-threads v6.0.2 + stale v10.3.0) — 060926
+- [ ] Verificare SBOM (SPDX + CycloneDX) sulla release `v1.3.0` una volta pubblicata (e su `v1.3.0-beta.1`; beta.2/beta.3 mai taggati → nessun artifact).
 - [ ] **User: testare in HA UI** in cloud-only mode (4G). Slider Intensity / Min/MaxIntensity / Dynamic / Locked / Paused / LogoLED → riflesso V2C app; LightLED + ContractedPower → error toast.
 
 ## This Week

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-09
+
+Maintenance release. No functional change to the integration — runtime code,
+entities and the config-entry schema are identical to `1.3.0`. Dependency and
+CI-tooling updates only.
+
+### Changed
+
+- **`ruff` 0.15.13 → 0.15.16** (`requirements.txt`, Dependabot #26) — lint + format gates re-verified clean against the bumped pin.
+- **`softprops/action-gh-release` v2.5.0 → v3.0.0** in `tag-and-release.yaml` (Dependabot #29). v3.0.0 moves the action runtime from Node 20 to Node 24 (no input/API changes); this clears the Node 20 deprecation ahead of the 2026-06-16 GitHub Actions enforcement, matching the `actions/stale` v10 bump shipped in `1.3.0`.
+
 ## [1.3.0] - 2026-06-09
 
 Stable release. Promotes the `1.3.0` line to general availability after the

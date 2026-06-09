@@ -190,7 +190,7 @@ jobs:
 
       - name: Create GitHub Release
         if: env.EXISTS == 'false'
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}

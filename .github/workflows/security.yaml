@@ -81,8 +81,21 @@ jobs:
       - name: Audit runtime dependencies
         run: pip-audit -r requirements.txt --format=columns --strict
 
+      # Test dependencies are NOT shipped to users: the integration declares
+      # `"requirements": []` in manifest.json — aiohttp is provided by Home
+      # Assistant core at runtime, not by this package. aiohttp is pinned to
+      # <3.14 here ONLY for the test harness, because aioresponses 0.7.8 (its
+      # latest release) has an ABI break with aiohttp 3.14+ (missing
+      # `stream_writer` kwarg — see requirements_test.txt). That pin reintroduces
+      # CVE-2026-34993 and CVE-2026-47265 (both fixed in aiohttp 3.14.0), so they
+      # are ignored on the test-deps audit until aioresponses ships a 3.14-compatible
+      # release. End users are unaffected (HA core provides a patched aiohttp).
+      # The runtime audit above stays --strict with zero ignores.
       - name: Audit test dependencies
-        run: pip-audit -r requirements_test.txt --format=columns --strict
+        run: |
+          pip-audit -r requirements_test.txt --format=columns --strict \
+            --ignore-vuln CVE-2026-34993 \
+            --ignore-vuln CVE-2026-47265
 
   gitleaks:
     name: Secret scanning (gitleaks)

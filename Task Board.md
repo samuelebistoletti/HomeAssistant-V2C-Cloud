@@ -1,15 +1,13 @@
 # Task Board
 
 ## Today
-- [~] **Release 1.3.0 stabile** — manifest bump + CHANGELOG consolidato + README. Commit `c311e27` pushato su main → tag-and-release run 27232896425 in corso (auto-crea tag `v1.3.0` + Release + SBOM). Monitorare esito.
-- [x] Fix CI failure `Security/pip-audit` (CVE aiohttp test-only, ignorati su test-deps step) — 060926
-- [x] Fix CI failure `Close inactive issues` (lock-threads v6.0.2 + stale v10.3.0) — 060926
-- [ ] Verificare SBOM (SPDX + CycloneDX) sulla release `v1.3.0` una volta pubblicata (e su `v1.3.0-beta.1`; beta.2/beta.3 mai taggati → nessun artifact).
 - [ ] **User: testare in HA UI** in cloud-only mode (4G). Slider Intensity / Min/MaxIntensity / Dynamic / Locked / Paused / LogoLED → riflesso V2C app; LightLED + ContractedPower → error toast.
+- [ ] Triage di eventuale feedback comunitario su v1.3.0 / v1.3.1.
+- [ ] (se nessuna issue in arrivo) valutare un refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data`.
 
 ## This Week
-- [ ] Raccogliere feedback comunitario su `v1.3.0-beta.x` (HACS pre-release channel).
-- [ ] Decidere promozione `1.3.0-beta.3` → `1.3.0` stable.
+- [ ] Raccogliere feedback comunitario su `v1.3.0` stable.
+- [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.3.0 è stable.
 
 ## Backlog
 - [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826).
@@ -18,6 +16,11 @@
 - [ ] Future: split di `_async_update_data` (136 righe) in 3 helper.
 
 ## Done
+- [x] **Release v1.3.1** — merge Dependabot #26 (ruff 0.15.16) + #29 (action-gh-release v2.5.0→v3.0.0 Node24); fix commento `# v2`→`# v3.0.0`; manifest 1.3.1 + CHANGELOG `[1.3.1]`; commit `765774b`; release+SBOM pubblicati (prerelease:false); 0 PR aperte — 060926
+- [x] **Release v1.3.0 STABLE** — manifest bump, CHANGELOG consolidato `[1.3.0]`, README; commit `c311e27`; tag-and-release auto-pubblica tag+Release+SBOM (prerelease:false); 9/9 gate verdi — 060926
+- [x] Fix CI failure `Security/pip-audit` (CVE aiohttp test-only → --ignore-vuln su test-deps step) — 060926
+- [x] Fix CI failure `Close inactive issues` (lock-threads v6.0.0→v6.0.2 #55 + stale v9→v10.3.0 Node24); verificato via workflow_dispatch — 060926
+- [x] Verificata SBOM (SPDX 52KB + CycloneDX 28KB) allegata a release v1.3.0 — 060926
 - [x] Set up project with Claudify (`/start`) — 031726
 - [x] Full /review pass + all fixes (critical/high/medium/low) across 9 files — 031826
 - [x] System audit (grade A, 9/9 checks passed) — 031826

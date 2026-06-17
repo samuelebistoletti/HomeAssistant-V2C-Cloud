@@ -4,12 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.3.2] - 2026-06-17
+## [1.3.3] - 2026-06-17
 
 Maintenance release. No functional change to the integration — runtime code,
 entities and the config-entry schema are identical to `1.3.1`. Dependency,
-test-tooling and CI-action updates only. Full suite (474 tests) plus the ruff
-lint + format gates re-verified green against every bumped pin.
+test-tooling and CI-action updates only. Full suite (474 tests), the ruff
+lint + format gates and the pip-audit dependency audit re-verified green
+against every bumped pin.
+
+> Supersedes the unreleased `1.3.2` commit: its release pipeline failed on the
+> `security` gate (a fresh batch of aiohttp test-only advisories landed) before
+> any tag or artifact was published. This release folds in that audit fix.
 
 ### Changed
 
@@ -23,7 +28,7 @@ lint + format gates re-verified green against every bumped pin.
 
 ### Security
 
-- **aiohttp test-only advisories `GHSA-jg22-mg44-37j8` (CVE-2026-34993) and `GHSA-hg6j-4rv6-33pg` (CVE-2026-47265)** remain present in the **test** dependency `aiohttp` (`requirements_test.txt`), which stays pinned `<3.14`. The upgrade to aiohttp 3.14 (Dependabot #31) was verified to break the entire test suite — `aioresponses` 0.7.8 (its latest release) does not pass the `stream_writer` kwarg that aiohttp 3.14 made mandatory. **End users are unaffected:** the integration ships `"requirements": []`; the patched aiohttp is provided by Home Assistant core at runtime. The two CVEs stay scoped to the test harness and ignored on the test-deps audit until `aioresponses` ships a 3.14-compatible release.
+- **11 aiohttp advisories now affect the pinned test dependency** `aiohttp<3.14` (`requirements_test.txt`): the original CVE-2026-34993 / CVE-2026-47265 plus a fresh batch (CVE-2026-50269 and CVE-2026-54273…54280), every one fixed only in aiohttp 3.14.0/3.14.1. The upgrade to aiohttp 3.14 (Dependabot #31) was verified to break the entire test suite — `aioresponses` 0.7.8 (its latest release) does not pass the `stream_writer` kwarg that aiohttp 3.14 made mandatory. **End users are unaffected:** the integration ships `"requirements": []`; the patched aiohttp is provided by Home Assistant core at runtime. The advisories are scoped to the test harness — the `security.yaml` test-deps audit now ignores all 11 (runtime audit stays `--strict` with zero ignores), and the matching Dependabot alerts are dismissed as `tolerable_risk` — until `aioresponses` ships a 3.14-compatible release. The durable fix (migrating off `aioresponses`) is tracked in the backlog.
 
 ## [1.3.1] - 2026-06-09
 

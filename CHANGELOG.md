@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-06-17
+
+Maintenance release. No functional change to the integration — runtime code,
+entities and the config-entry schema are identical to `1.3.1`. Dependency,
+test-tooling and CI-action updates only. Full suite (474 tests) plus the ruff
+lint + format gates re-verified green against every bumped pin.
+
+### Changed
+
+- **`ruff` 0.15.16 → 0.15.17** (`requirements.txt`, Dependabot #30) — lint + format gates re-verified clean.
+- **`pip` >=26.1.1 → >=26.1.2** (`requirements.txt`, Dependabot #35).
+- **`pytest` >=9.0.3 → >=9.1.0** (`requirements_test.txt`, Dependabot #33, upper bound `<10` retained).
+- **`pytest-asyncio` >=1.3.0 → >=1.4.0** (`requirements_test.txt`, Dependabot #32, upper bound `<2` retained).
+- **`codecov/codecov-action` v6.0.1 → v7.0.0** (Dependabot #37) — removes an internal license-compliance workflow; no input/output changes for callers.
+- **`gitleaks/gitleaks-action` v2 → v3.0.0** (Dependabot #34) — runtime Node 20 → Node 24, no input/output/behaviour changes; clears the Node 20 deprecation ahead of GitHub's 2026-09-16 runner removal.
+- **`home-assistant/actions/hassfest`** pinned SHA refreshed to upstream `master` (Dependabot #36).
+
+### Security
+
+- **aiohttp test-only advisories `GHSA-jg22-mg44-37j8` (CVE-2026-34993) and `GHSA-hg6j-4rv6-33pg` (CVE-2026-47265)** remain present in the **test** dependency `aiohttp` (`requirements_test.txt`), which stays pinned `<3.14`. The upgrade to aiohttp 3.14 (Dependabot #31) was verified to break the entire test suite — `aioresponses` 0.7.8 (its latest release) does not pass the `stream_writer` kwarg that aiohttp 3.14 made mandatory. **End users are unaffected:** the integration ships `"requirements": []`; the patched aiohttp is provided by Home Assistant core at runtime. The two CVEs stay scoped to the test harness and ignored on the test-deps audit until `aioresponses` ships a 3.14-compatible release.
+
 ## [1.3.1] - 2026-06-09
 
 Maintenance release. No functional change to the integration — runtime code,

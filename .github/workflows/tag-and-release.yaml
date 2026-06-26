@@ -162,32 +162,6 @@ jobs:
           cd "${{ github.workspace }}/custom_components/v2c_cloud"
           zip v2c_cloud.zip -r ./
 
-      # Generate a Software Bill of Materials in both SPDX-JSON and CycloneDX
-      # formats so downstream consumers (HACS users, security scanners) can
-      # consume whichever standard they prefer. The action scans the integration
-      # source tree directly, including the dependency manifest files.
-      - name: Generate SBOM (SPDX-JSON)
-        if: env.EXISTS == 'false'
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-        with:
-          path: ${{ github.workspace }}
-          format: spdx-json
-          artifact-name: v2c_cloud-${{ env.VERSION }}.spdx.json
-          output-file: ${{ github.workspace }}/v2c_cloud-${{ env.VERSION }}.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-
-      - name: Generate SBOM (CycloneDX-JSON)
-        if: env.EXISTS == 'false'
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-        with:
-          path: ${{ github.workspace }}
-          format: cyclonedx-json
-          artifact-name: v2c_cloud-${{ env.VERSION }}.cyclonedx.json
-          output-file: ${{ github.workspace }}/v2c_cloud-${{ env.VERSION }}.cyclonedx.json
-          upload-artifact: false
-          upload-release-assets: false
-
       - name: Create GitHub Release
         if: env.EXISTS == 'false'
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
@@ -202,5 +176,3 @@ jobs:
           prerelease: ${{ env.IS_PRERELEASE == 'true' }}
           files: |
             ${{ github.workspace }}/custom_components/v2c_cloud/v2c_cloud.zip
-            ${{ github.workspace }}/v2c_cloud-${{ env.VERSION }}.spdx.json
-            ${{ github.workspace }}/v2c_cloud-${{ env.VERSION }}.cyclonedx.json

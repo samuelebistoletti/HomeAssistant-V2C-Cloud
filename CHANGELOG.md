@@ -2,7 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.3.4] - 2026-06-26
+
+### Fixed
+
+- **`ChargePower` / `HousePower` (and `FVPower`, `BatteryPower`, `GridPower`) showed `W` while the value was actually `kW` in cloud-only (4G) mode** (#42). The cloud→LAN synthesis scaled these power fields by 1000 only when a `voltage`/`voltageinstallation` field happened to be present in the payload and below 10 — an unrelated heuristic that silently skipped the conversion on accounts where that field was absent or out of range. The cloud always reports power measurements in kW, so the kW→W conversion is now applied unconditionally, the same way `ContractedPower` already is.
 
 ## [1.3.3] - 2026-06-17
 

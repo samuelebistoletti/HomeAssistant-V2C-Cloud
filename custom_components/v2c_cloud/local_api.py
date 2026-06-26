@@ -88,11 +88,13 @@ def _build_local_interval(
     return timedelta(seconds=seconds)
 
 
-# Mapping: cloud reported key (lowercase) → (local RealTimeData key, needs_scale)
+# Mapping: cloud reported key (lowercase) → (local RealTimeData key, is_power_kw)
 #
 # Sources confirmed against real `/device/reported` + `/device/currentstatecharge`
 # payloads on a Trydan XQUXDU running firmware 2.4.6 (see docs/cloud-payload-keys
-# for the dump used during the 2026-05-19 audit).
+# for the dump used during the 2026-05-19 audit). The cloud always reports power
+# measurements in kW; `is_power_kw` marks the fields that need the unconditional
+# kW → W conversion applied (see `_CLOUD_POWER_KW_TO_W` below).
 _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     "charge_state": ("ChargeState", False),
     "chargestate": ("ChargeState", False),
@@ -111,8 +113,7 @@ _REPORTED_TO_REALTIME: dict[str, tuple[str, bool]] = {
     # it carries a small internal signal (e.g. 0.077350 on a 230V EU install) that
     # does not correspond to any user-visible electrical quantity. The actual mains
     # / installation voltage is carried in `cp_level` (see below) and we map that
-    # to VoltageInstallation instead. `voltage` is intentionally NOT mapped here
-    # (but is still inspected by _detect_cloud_scale as a magnitude heuristic).
+    # to VoltageInstallation instead. `voltage` is intentionally NOT mapped here.
     "house_power": ("HousePower", True),
     "housepower": ("HousePower", True),
     "sun_power": ("FVPower", True),
@@ -217,19 +218,15 @@ _CLOUD_TO_LAN_MULTIPLIERS: dict[str, int] = {
     "LightLED": 100,
 }
 
-
-def _detect_cloud_scale(reported: dict[str, object]) -> float:
-    """Detect if cloud values are in kW/kV vs W/V using voltage as indicator."""
-    for key in ("voltage", "voltageinstallation"):
-        raw = reported.get(key)
-        if raw is not None:
-            try:
-                v = float(str(raw))
-                if 0 < v < 10:  # noqa: PLR2004 — voltage in kV would be < 10 V
-                    return 1000  # kV → V
-            except (ValueError, TypeError):
-                pass
-    return 1
+# All power measurements (ChargePower, HousePower, FVPower, BatteryPower,
+# GridPower) are reported by the cloud in kW, while the LAN /RealTimeData
+# convention — and the entity layer hard-coded to it — uses W. Previously this
+# was scaled via a heuristic that inferred kW vs W from the magnitude of the
+# unrelated `voltage` field; that field doesn't correlate with the power unit
+# and left the conversion unapplied whenever it was absent or out of range
+# (e.g. issue #42, where ChargePower/HousePower stayed in kW but were labelled
+# as W). The conversion is now applied unconditionally, like ContractedPower.
+_CLOUD_POWER_KW_TO_W = 1000
 
 
 def _build_realtime_from_reported(
@@ -253,10 +250,9 @@ def _build_realtime_from_reported(
         return {"_data_source": "cloud_reported_empty", "_lower_index": {}}
 
     reported_lower = {k.lower(): v for k, v in reported.items()}
-    scale = _detect_cloud_scale(reported_lower)
     result: dict[str, Any] = {"_data_source": "cloud_reported"}
 
-    for cloud_key, (local_key, needs_scale) in _REPORTED_TO_REALTIME.items():
+    for cloud_key, (local_key, is_power_kw) in _REPORTED_TO_REALTIME.items():
         if local_key in result:
             continue
         raw = reported_lower.get(cloud_key)
@@ -266,8 +262,8 @@ def _build_realtime_from_reported(
             value = float(str(raw))
         except (ValueError, TypeError):
             continue
-        if needs_scale:
-            value = value * scale
+        if is_power_kw:
+            value = value * _CLOUD_POWER_KW_TO_W
         multiplier = _CLOUD_TO_LAN_MULTIPLIERS.get(local_key)
         if multiplier is not None:
             value = value * multiplier
@@ -277,8 +273,7 @@ def _build_realtime_from_reported(
     csc = device_state.get("additional", {}).get("currentstatecharge")
     if isinstance(csc, dict):
         csc_lower = {k.lower(): v for k, v in csc.items()}
-        csc_scale = _detect_cloud_scale(csc_lower)
-        for cloud_key, (local_key, needs_scale) in _REPORTED_TO_REALTIME.items():
+        for cloud_key, (local_key, is_power_kw) in _REPORTED_TO_REALTIME.items():
             if local_key in result:
                 continue
             raw = csc_lower.get(cloud_key)
@@ -288,8 +283,8 @@ def _build_realtime_from_reported(
                 value = float(str(raw))
             except (ValueError, TypeError):
                 continue
-            if needs_scale:
-                value = value * csc_scale
+            if is_power_kw:
+                value = value * _CLOUD_POWER_KW_TO_W
             multiplier = _CLOUD_TO_LAN_MULTIPLIERS.get(local_key)
             if multiplier is not None:
                 value = value * multiplier

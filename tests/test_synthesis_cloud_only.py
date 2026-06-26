@@ -123,8 +123,7 @@ class TestVoltageInstallationMapping:
     """The mains/installation voltage comes from `cp_level` in cloud payloads
     (e.g. 248 V on a 230 V EU install). The cloud's `voltage` field carries
     a small internal signal (e.g. 0.077350) that does NOT correspond to the
-    mains voltage, so it is intentionally NOT mapped — but it is still used
-    by `_detect_cloud_scale` as a magnitude heuristic for power fields."""
+    mains voltage, so it is intentionally NOT mapped."""
 
     # A minimal /reported is required because _build_realtime_from_reported
     # short-circuits on an empty reported dict (the synthesis pipeline is
@@ -140,9 +139,9 @@ class TestVoltageInstallationMapping:
 
     def test_cloud_voltage_field_not_mapped(self) -> None:
         # Regression: pre-fix the cloud `voltage` field (= 0.077350) was
-        # scaled by 1000 in _detect_cloud_scale and surfaced as 77.35 V, a
-        # spurious mains-voltage reading. After the fix this field MUST be
-        # ignored as a voltage source.
+        # scaled by 1000 and surfaced as 77.35 V, a spurious mains-voltage
+        # reading. After the fix this field MUST be ignored as a voltage
+        # source.
         runtime = _runtime_with_reported_and_csc(
             self._PROBE_REPORTED,
             {"voltage": "0.077350"},
@@ -286,7 +285,7 @@ class TestFullPayloadFromRealDevice:
         # real-time telemetry
         "seconds": "26711",
         "error": "0",
-        "voltage": "0.072800",  # cloud reports kV → scale 1000
+        "voltage": "0.072800",  # internal signal, not mains voltage; unused by power scaling
         "phases": "0",
         "battery": "0.000000",
         "intensity": "0",  # csc has *live* intensity, /reported has setpoint
@@ -327,9 +326,44 @@ class TestFullPayloadFromRealDevice:
         assert result["ChargeState"] == 2  # from /csc
         assert result["ChargeTime"] == 26711  # seconds
         assert result["ChargeEnergy"] == 4.18
-        # Power values scaled from kW → W (heuristic triggers because the
-        # cloud `voltage` field — not real voltage — has magnitude < 10).
+        # Power values unconditionally scaled from kW → W.
         assert result["HousePower"] == 212.0
         # VoltageInstallation now sourced from `cp_level` (actual mains
         # voltage in V); the cloud `voltage` field is intentionally ignored.
         assert result["VoltageInstallation"] == 248.0
+
+
+class TestPowerFieldsAlwaysScaledKwToW:
+    """Regression for issue #42: ChargePower/HousePower showed as W while the
+    value was actually in kW. The old `_detect_cloud_scale` heuristic only
+    applied the kW->W conversion when a `voltage`/`voltageinstallation` field
+    happened to be present and below 10 — accounts without that field (or
+    with it outside that range) got the raw kW value mislabelled as W. Power
+    fields must scale unconditionally, regardless of the `voltage` field."""
+
+    def test_house_power_scales_without_voltage_field(self) -> None:
+        runtime = _runtime_with_reported({"house_power": "0.212000"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["HousePower"] == 212.0
+
+    def test_charge_power_scales_without_voltage_field(self) -> None:
+        runtime = _runtime_with_reported({"power": "3.456000"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["ChargePower"] == 3456.0
+
+    def test_fv_power_scales_without_voltage_field(self) -> None:
+        runtime = _runtime_with_reported({"sun_power": "1.500000"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["FVPower"] == 1500.0
+
+    def test_battery_power_scales_without_voltage_field(self) -> None:
+        runtime = _runtime_with_reported({"battery": "0.500000"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["BatteryPower"] == 500.0
+
+    def test_house_power_scales_even_when_voltage_is_out_of_range(self) -> None:
+        # voltage >= 10 used to defeat the old heuristic and leave the
+        # power value unscaled.
+        runtime = _runtime_with_reported({"house_power": "0.212000", "voltage": "230"})
+        result = _build_realtime_from_reported(runtime, "dev1")
+        assert result["HousePower"] == 212.0

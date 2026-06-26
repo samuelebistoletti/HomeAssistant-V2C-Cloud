@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.5] - 2026-06-26
+
+Re-publish release. The `v1.3.4` git tag and GitHub Release were deleted
+manually after publishing. No functional change to the integration — runtime
+code, entities and the config-entry schema are identical to `1.3.4`. This
+bump exists solely to re-trigger `tag-and-release.yaml` so the tag, release
+and SBOM artifacts (`v2c_cloud.zip`, `.spdx.json`, `.cyclonedx.json`) exist
+again for HACS.
+
 ## [1.3.4] - 2026-06-26
 
 ### Fixed

@@ -2,11 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.3.4] - 2026-06-26
+## [1.3.5] - 2026-06-26
 
 ### Fixed
 
 - **`ChargePower` / `HousePower` (and `FVPower`, `BatteryPower`, `GridPower`) showed `W` while the value was actually `kW` in cloud-only (4G) mode** (#42). The cloud→LAN synthesis scaled these power fields by 1000 only when a `voltage`/`voltageinstallation` field happened to be present in the payload and below 10 — an unrelated heuristic that silently skipped the conversion on accounts where that field was absent or out of range. The cloud always reports power measurements in kW, so the kW→W conversion is now applied unconditionally, the same way `ContractedPower` already is.
+
+### Removed
+
+- **SBOM assets (SPDX-JSON / CycloneDX-JSON) no longer attached to releases.** Since they were introduced in `1.3.0`, every release shipped 3 assets instead of 1 (`v2c_cloud.zip` plus the two SBOM files). HACS' download counter reads `download_count` from the release's asset list and is known to pick the wrong entry when more than one asset is present (see [hacs/integration#4438](https://github.com/hacs/integration/issues/4438)), which tracked with the integration's HACS download count going blank. Releases now publish only `v2c_cloud.zip`.
 
 ## [1.3.3] - 2026-06-17
 

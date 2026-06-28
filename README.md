@@ -14,7 +14,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 
 If you manage smart-charging slots through Intelligent Octopus, pair this project with my [Octopus Energy Italy integration](https://github.com/samuelebistoletti/HomeAssistant-OctopusEnergyIT). It exposes the Octopus APIs inside Home Assistant so that Intelligent Octopus can coordinate with V2C for advanced charging automations.
 
-More of my Home Assistant projects live at https://samuele.bistoletti.me/.
+More of my Home Assistant projects live at [https://samuele.bistoletti.me/](https://samuele.bistoletti.me/).
 
 ## Key Features
 

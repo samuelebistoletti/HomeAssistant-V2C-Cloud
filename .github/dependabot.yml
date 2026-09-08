@@ -26,6 +26,9 @@ updates:
 
   # Track Python dependency updates (runtime + test). Pin floors are intentional;
   # upper bounds prevent surprise breakages.
+  # NOTE: every test dependency must live in requirements_test.txt to be seen
+  # here. pytest-cov was previously installed ad-hoc by CI and scripts/setup,
+  # which kept it out of both this ecosystem and the pip-audit gate.
   - package-ecosystem: pip
     directory: /
     schedule:
@@ -45,3 +48,38 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Dev container base image + features. Dev-only (never shipped to users),
+  # but without this the image tag drifts silently.
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - devcontainer
+
+  # docker-compose.yml — the companion Home Assistant container used for live
+  # testing. It intentionally tracks the moving `:stable` tag, so this mostly
+  # reports nothing; it exists so a pinned tag would not go stale unnoticed.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - docker

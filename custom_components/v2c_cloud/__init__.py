@@ -52,6 +52,7 @@ from .const import (
     ATTR_TIME_END,
     ATTR_TIME_START,
     ATTR_TIMER_ACTIVE,
+    ATTR_TIMER_DAYS,
     ATTR_TIMER_ID,
     ATTR_UPDATED_AT,
     ATTR_VOLTAGE,
@@ -59,6 +60,7 @@ from .const import (
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
     CONF_API_KEY,
+    DEFAULT_TIMER_DAYS,
     DEFAULT_UPDATE_INTERVAL,
     DENKA_POWER_MAX,
     DENKA_POWER_MIN,
@@ -729,7 +731,17 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         timer_id = call.data[ATTR_TIMER_ID]
         time_start = call.data[ATTR_TIME_START]
         time_end = call.data[ATTR_TIME_END]
-        active = call.data.get(ATTR_TIMER_ACTIVE, True)
+        days_of_week = call.data.get(ATTR_TIMER_DAYS, DEFAULT_TIMER_DAYS)
+        if ATTR_TIMER_ACTIVE in call.data:
+            _LOGGER.warning(
+                "The '%s' field of %s.%s is deprecated and ignored: the"
+                " documented POST /device/timer body has no such field. Use the"
+                " Timer switch (LAN keyword 'Timer') to enable or disable the"
+                " programmed timers",
+                ATTR_TIMER_ACTIVE,
+                DOMAIN,
+                SERVICE_PROGRAM_TIMER,
+            )
 
         entry_data = await _async_get_entry_for_device(device_id)
         await _execute_and_refresh(
@@ -739,7 +751,7 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
                 timer_id,
                 time_start=time_start,
                 time_end=time_end,
-                active=bool(active),
+                days_of_week=days_of_week,
             ),
         )
 
@@ -757,7 +769,12 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
                 vol.Required(ATTR_TIME_END): cv.matches_regex(
                     r"^([01]\d|2[0-3]):[0-5]\d$"
                 ),
-                vol.Optional(ATTR_TIMER_ACTIVE, default=True): cv.boolean,
+                vol.Optional(
+                    ATTR_TIMER_DAYS, default=DEFAULT_TIMER_DAYS
+                ): cv.matches_regex(r"^[1-7]{1,7}$"),
+                # Deprecated: accepted so existing automations keep working,
+                # but never sent — the documented timer body has no such field.
+                vol.Optional(ATTR_TIMER_ACTIVE): cv.boolean,
             }
         ),
     )

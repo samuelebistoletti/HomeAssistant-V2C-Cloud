@@ -122,6 +122,24 @@
       },
       "signal_status": {
         "name": "Señal Wi-Fi"
+      },
+      "intensity_l1": {
+        "name": "Corriente fase 1"
+      },
+      "intensity_l2": {
+        "name": "Corriente fase 2"
+      },
+      "intensity_l3": {
+        "name": "Corriente fase 3"
+      },
+      "voltage_l1": {
+        "name": "Tensión fase 1"
+      },
+      "voltage_l2": {
+        "name": "Tensión fase 2"
+      },
+      "voltage_l3": {
+        "name": "Tensión fase 3"
       }
     },
     "switch": {
@@ -200,7 +218,7 @@
     },
     "program_timer": {
       "name": "Configurar temporizador de carga",
-      "description": "Establece hora de inicio/fin y estado de activación de un temporizador del dispositivo."
+      "description": "Establece la hora de inicio/fin y los días de la semana para uno de los temporizadores del dispositivo."
     },
     "register_rfid": {
       "name": "Registrar tarjeta RFID",

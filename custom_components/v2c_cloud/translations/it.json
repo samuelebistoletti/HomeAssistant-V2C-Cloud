@@ -122,6 +122,24 @@
       },
       "signal_status": {
         "name": "Segnale Wi-Fi"
+      },
+      "intensity_l1": {
+        "name": "Corrente fase 1"
+      },
+      "intensity_l2": {
+        "name": "Corrente fase 2"
+      },
+      "intensity_l3": {
+        "name": "Corrente fase 3"
+      },
+      "voltage_l1": {
+        "name": "Tensione fase 1"
+      },
+      "voltage_l2": {
+        "name": "Tensione fase 2"
+      },
+      "voltage_l3": {
+        "name": "Tensione fase 3"
       }
     },
     "switch": {
@@ -200,7 +218,7 @@
     },
     "program_timer": {
       "name": "Configura timer di ricarica",
-      "description": "Imposta ora di inizio/fine e stato di attivazione di uno dei timer disponibili."
+      "description": "Imposta ora di inizio/fine e giorni della settimana per uno dei timer del dispositivo."
     },
     "register_rfid": {
       "name": "Registra tessera RFID",
@@ -332,4 +350,3 @@
     }
   }
 }
-

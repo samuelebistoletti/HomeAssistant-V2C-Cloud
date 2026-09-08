@@ -178,8 +178,47 @@ LAN_ONLY_KEYS: frozenset[str] = frozenset(
         "ChargeMode",
         "DynamicPowerMode",
         "PauseDynamic",
+        # Per-phase measurements exist only in the LAN /RealTimeData payload;
+        # neither /device/reported nor /device/currentstatecharge carries them.
+        "IntensityMeasure_L1",
+        "IntensityMeasure_L2",
+        "IntensityMeasure_L3",
+        "VoltageMeasure_L1",
+        "VoltageMeasure_L2",
+        "VoltageMeasure_L3",
     }
 )
+
+# The published LAN /RealTimeData sample payload spells the first-phase current
+# as `IntensityMeasure_L1y` while the keyword table documents
+# `IntensityMeasure_L1`. Normalise the stray spelling onto the documented key
+# before the entity layer reads it (entities look keys up exactly).
+_REALTIME_KEY_ALIASES: dict[str, str] = {
+    "IntensityMeasure_L1y": "IntensityMeasure_L1",
+}
+
+
+def _normalise_realtime_keys(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    Map stray key spellings onto the documented /RealTimeData keyword names.
+
+    Mutates ``payload`` in place and returns it. An already-present documented
+    key always wins over its alias.
+    """
+    for alias, documented in _REALTIME_KEY_ALIASES.items():
+        if alias in payload and documented not in payload:
+            payload[documented] = payload[alias]
+    return payload
+
+
+# The cloud and the LAN disagree on the ChargeState enum for the same physical
+# quantity. The LAN codes are canonical for the entity layer (see
+# const.CHARGE_STATE_LABELS), so cloud codes are translated during synthesis:
+#   cloud 3 (ventilation required)      -> LAN 6 (STATE D)
+#   cloud 4 (control pilot short circuit) -> LAN 5 (STATE E, CP / ground fault)
+#   cloud 5 (general fault)             -> LAN 4 (STATE F, system fail / leak)
+# Codes 0/1/2 (disconnected / connected / charging) agree in both enums.
+_CLOUD_TO_LAN_CHARGE_STATE: dict[int, int] = {3: 6, 4: 5, 5: 4}
 
 _INT_FIELDS = frozenset(
     {
@@ -291,6 +330,15 @@ def _build_realtime_from_reported(
             result[local_key] = (
                 int(value) if local_key in _INT_FIELDS else round(value, 2)
             )
+
+    # Translate the cloud ChargeState enum onto the canonical LAN codes. Runs
+    # exactly once, after both numeric loops, because the 4 <-> 5 mapping is a
+    # swap and would cancel itself out if applied twice.
+    charge_state = result.get("ChargeState")
+    if isinstance(charge_state, int):
+        translated = _CLOUD_TO_LAN_CHARGE_STATE.get(charge_state)
+        if translated is not None:
+            result["ChargeState"] = translated
 
     # String-only fields (device id, firmware version, MAC). Pass through
     # without numeric coercion — the synthesis loop above silently drops
@@ -688,6 +736,9 @@ async def async_get_or_create_local_coordinator(
             raise UpdateFailed("Unexpected payload type from local endpoint")
 
         payload["_static_ip"] = static_ip
+
+        # Normalise documented key spellings before anything reads the payload.
+        _normalise_realtime_keys(payload)
 
         # Pre-build a lowercase-key → original-key index for O(1) case-insensitive lookups.
         payload["_lower_index"] = {

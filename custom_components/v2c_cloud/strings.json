@@ -122,6 +122,24 @@
       },
       "signal_status": {
         "name": "Wi-Fi signal"
+      },
+      "intensity_l1": {
+        "name": "Phase 1 current"
+      },
+      "intensity_l2": {
+        "name": "Phase 2 current"
+      },
+      "intensity_l3": {
+        "name": "Phase 3 current"
+      },
+      "voltage_l1": {
+        "name": "Phase 1 voltage"
+      },
+      "voltage_l2": {
+        "name": "Phase 2 voltage"
+      },
+      "voltage_l3": {
+        "name": "Phase 3 voltage"
       }
     },
     "switch": {
@@ -200,7 +218,7 @@
     },
     "program_timer": {
       "name": "Configure charging timer",
-      "description": "Set start/end time and activation status for one of the device timers."
+      "description": "Set start/end time and active week days for one of the device timers."
     },
     "register_rfid": {
       "name": "Register RFID card",
@@ -332,4 +350,3 @@
     }
   }
 }
-

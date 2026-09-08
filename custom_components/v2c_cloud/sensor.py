@@ -18,9 +18,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, UnitOfPower, UnitOfTime
 
 try:  # Home Assistant >= 2023.8
-    from homeassistant.const import UnitOfVoltage
+    from homeassistant.const import UnitOfElectricCurrent, UnitOfVoltage
 except ImportError:  # pragma: no cover - older releases
     UnitOfVoltage = None
+    UnitOfElectricCurrent = None
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -92,28 +93,34 @@ def _as_flag(value: Any) -> int | None:
 
 
 STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
+    # Codes follow the LAN /RealTimeData enum (see const.CHARGE_STATE_LABELS):
+    # 0/1/2 then 4 = STATE F, 5 = STATE E, 6 = STATE D. There is no code 3.
     "ChargeState": {
-        0: {"en": CHARGE_STATE_LABELS[0], "es": "Desconectado", "it": "Disconnesso"},
+        0: {
+            "en": CHARGE_STATE_LABELS[0],
+            "es": "Esperando vehículo",
+            "it": "In attesa del veicolo",
+        },
         1: {
             "en": CHARGE_STATE_LABELS[1],
             "es": "Vehículo conectado (inactivo)",
             "it": "Veicolo collegato",
         },
         2: {"en": CHARGE_STATE_LABELS[2], "es": "Cargando", "it": "In carica"},
-        3: {
-            "en": CHARGE_STATE_LABELS[3],
-            "es": "Ventilación requerida",
-            "it": "Ventilazione richiesta",
-        },
         4: {
             "en": CHARGE_STATE_LABELS[4],
-            "es": "Cortocircuito en piloto de control",
-            "it": "Corto del pilot",
+            "es": "Fallo del sistema / fuga detectada",
+            "it": "Guasto di sistema / dispersione rilevata",
         },
         5: {
             "en": CHARGE_STATE_LABELS[5],
-            "es": "Fallo general",
-            "it": "Guasto generale",
+            "es": "Error de piloto de control (estado E) / fallo de tierra",
+            "it": "Errore control pilot (stato E) / guasto di terra",
+        },
+        6: {
+            "en": CHARGE_STATE_LABELS[6],
+            "es": "Ventilación requerida",
+            "it": "Ventilazione richiesta",
         },
     },
     "SlaveError": {
@@ -180,12 +187,12 @@ STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
             "es": "Potencia programada desactivada",
             "it": "Potenza programmata disattiva",
         },
-        2: {"en": "Exclusive PV mode", "es": "Modo FV exclusivo", "it": "Solo PV"},
-        3: {
+        2: {
             "en": "Minimum power mode",
             "es": "Modo potencia mínima",
             "it": "Modalità potenza minima",
         },
+        3: {"en": "Exclusive PV mode", "es": "Modo FV exclusivo", "it": "Solo PV"},
         4: {"en": "Grid + PV mode", "es": "Modo red + FV", "it": "Modalità rete + PV"},
         5: {"en": "Stop mode", "es": "Modo parado", "it": "Modalità stop"},
     },
@@ -364,6 +371,75 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         icon="mdi:wifi-strength-2",
         unique_id_suffix="signal_status",
         value_fn=_as_int,
+    ),
+    # Per-phase measurements. Documented in the LAN /RealTimeData payload
+    # (revision 14/07/26) and absent from every cloud endpoint, hence listed in
+    # local_api.LAN_ONLY_KEYS so they report Unavailable in cloud-only mode.
+    V2CLocalRealtimeSensorDescription(
+        key="IntensityMeasure_L1",
+        translation_key="intensity_l1",
+        icon="mdi:current-ac",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=(
+            UnitOfElectricCurrent.AMPERE if UnitOfElectricCurrent else "A"
+        ),
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="intensity_l1",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="IntensityMeasure_L2",
+        translation_key="intensity_l2",
+        icon="mdi:current-ac",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=(
+            UnitOfElectricCurrent.AMPERE if UnitOfElectricCurrent else "A"
+        ),
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="intensity_l2",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="IntensityMeasure_L3",
+        translation_key="intensity_l3",
+        icon="mdi:current-ac",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=(
+            UnitOfElectricCurrent.AMPERE if UnitOfElectricCurrent else "A"
+        ),
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="intensity_l3",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="VoltageMeasure_L1",
+        translation_key="voltage_l1",
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="voltage_l1",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="VoltageMeasure_L2",
+        translation_key="voltage_l2",
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="voltage_l2",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="VoltageMeasure_L3",
+        translation_key="voltage_l3",
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="voltage_l3",
+        value_fn=_as_float,
     ),
 )
 

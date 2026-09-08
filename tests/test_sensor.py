@@ -191,21 +191,37 @@ class TestLocalizeState:
 
     def test_string_digit_is_normalised(self):
         result = _localize_state("ChargeState", "0", self._hass())
-        assert result == "Disconnected"
+        assert result == "Waiting for vehicle"
 
     def test_locked_state(self):
         assert _localize_state("Locked", 1, self._hass()) == "Locked"
         assert _localize_state("Locked", 0, self._hass()) == "Unlocked"
 
     def test_dynamic_power_mode(self):
+        """Codes 2/3 per the LAN doc: 2 = minimum power, 3 = exclusive PV."""
         assert (
-            _localize_state("DynamicPowerMode", 2, self._hass()) == "Exclusive PV mode"
+            _localize_state("DynamicPowerMode", 2, self._hass()) == "Minimum power mode"
         )
+        assert (
+            _localize_state("DynamicPowerMode", 3, self._hass()) == "Exclusive PV mode"
+        )
+
+    def test_charge_state_uses_lan_enum(self):
+        """LAN /RealTimeData enum: no code 3; 4 = F, 5 = E, 6 = D."""
+        hass = self._hass()
+        assert _localize_state("ChargeState", 2, hass) == "Charging"
+        assert _localize_state("ChargeState", 6, hass) == "Ventilation required"
+        assert _localize_state("ChargeState", 4, hass) == "System fault / leak detected"
+        assert (
+            _localize_state("ChargeState", 5, hass)
+            == "Control pilot error (state E) / ground fault"
+        )
+        assert _localize_state("ChargeState", 3, hass) is None
 
     def test_language_with_region_code(self):
         """hass.config.language may include region like 'en-US'."""
         result = _localize_state("ChargeState", 0, self._hass("en-US"))
-        assert result == "Disconnected"
+        assert result == "Waiting for vehicle"
 
 
 # ---------------------------------------------------------------------------

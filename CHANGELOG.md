@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-09-08
+
+Conformance release. The integration was audited end-to-end against the two
+authoritative V2C documents — the published Cloud OpenAPI 3.1.0 spec
+(`https://api.v2charge.com/`) and the Trydan local HTTP API keyword table
+(revision 14/07/26). All 40 documented cloud endpoints were already
+implemented; this release fixes the three places where the implementation
+diverged from the documentation and exposes six documented LAN fields that had
+no entity.
+
+### Added
+
+- **Six per-phase measurement sensors** — `IntensityMeasure_L1/L2/L3` (A) and
+  `VoltageMeasure_L1/L2/L3` (V). They are documented in the LAN
+  `/RealTimeData` payload but had no entity until now. All six are LAN-only
+  (no cloud endpoint carries them), so they correctly advertise as
+  **Unavailable** in cloud-only (4G) mode. Names added to `strings.json` and
+  all three translations (en/it/es).
+- **`days_of_week` field on `v2c_cloud.program_timer`** — digits 1-7 with
+  1 = Monday (e.g. `"123"` = Mon+Tue+Wed), defaulting to every day. This is
+  the documented `daysOfWeek` body field that the service previously never
+  sent.
+- Normalisation of the stray `IntensityMeasure_L1y` key spelling (present in
+  the published sample payload) onto the documented `IntensityMeasure_L1`.
+
+### Fixed
+
+- **`DynamicPowerMode` codes 2 and 3 were swapped**, mislabelling both the
+  sensor and the select. Per the LAN documentation, 2 = minimum power mode and
+  3 = exclusive PV mode (previously shown the other way round).
+- **`ChargeState` used the cloud enum for LAN data.** The two documents
+  disagree for the same quantity: the LAN keyword table maps the IEC 61851
+  pilot states A/B/C/F/E/D onto `0/1/2/4/5/6` (with no code 3), while the
+  cloud spec documents `3` = ventilation required, `4` = control pilot short
+  circuit, `5` = general fault. The integration shipped the cloud enum, so in
+  LAN mode state `6` (ventilation required) rendered as the raw number `6` and
+  states `4`/`5` carried the wrong labels. The LAN enum is now canonical for
+  the entity layer and cloud values are translated onto it during cloud→LAN
+  synthesis (`3→6`, `4→5`, `5→4`; `0/1/2` agree in both enums).
+- **`POST /device/timer` sent a non-conforming request.** It omitted the
+  documented `daysOfWeek` body field entirely — so a timer programmed from
+  Home Assistant had no days assigned — while sending guessed `start_time` /
+  `end_time` aliases, an undocumented `active` flag and a bogus `"timer id"`
+  query parameter (with a space). The request now carries exactly `timeStart`,
+  `timeEnd` and `daysOfWeek` plus the `timerId` query parameter, and rejects
+  malformed day strings before issuing the call.
+
+### Deprecated
+
+- **`active` field of `v2c_cloud.program_timer`.** The documented timer body
+  has no such field. It is still accepted so existing automations keep
+  working, but it is ignored and logs a warning. Enabling or disabling the
+  programmed timers is a separate control: the LAN `Timer` keyword, exposed as
+  the Timer switch.
+
+### Changed
+
+- `/device/logo_led` is now part of the published cloud spec; the client
+  docstring no longer describes it as an undocumented, probe-discovered
+  endpoint.
+- **Dependency and CI maintenance:** `aioresponses` >=0.7.8 → >=0.7.9
+  (Dependabot #48), `colorlog` 6.10.1 → 6.11.0 and `ruff` 0.15.18 → 0.15.22
+  (#51), `home-assistant/actions/hassfest` SHA refresh (#49),
+  `softprops/action-gh-release` v3.0.1 → v3.0.2 (#53).
+- Test suite grows from 479 to 515 tests; the new
+  `tests/test_api_doc_conformance_1_4.py` pins each documented enum, the timer
+  request shape and the per-phase entity set against the two source documents.
+
+### Security
+
+- `aiohttp` stays pinned `<3.14`. Re-verified on 2026-09-08 against aiohttp
+  3.14.3 with `aioresponses` 0.7.9 (its latest release): the suite still fails
+  with `TypeError: ClientResponse.__init__() missing 1 required keyword-only
+  argument: 'stream_writer'` (57 tests). The aiohttp advisories therefore
+  remain test-only and stay on the `security.yaml` test-deps ignore list; the
+  runtime audit is unchanged and still `--strict`. End users are unaffected —
+  the integration ships `"requirements": []` and Home Assistant core provides
+  the patched aiohttp at runtime.
+
 ## [1.3.5] - 2026-06-26
 
 ### Fixed

@@ -1,14 +1,12 @@
 pytest>=9.1.1,<10
 pytest-asyncio>=1.4.0,<2
-aiohttp>=3.13.5,<3.14
+aiohttp>=3.14.3,<4
 aioresponses>=0.7.9,<1
-# Why aiohttp<3.14: aiohttp 3.14.0 (released 2026-06-01) made
-# ClientResponse.__init__ require a `stream_writer` kwarg, which aioresponses
-# does not pass when it builds mock responses. Every test that uses
-# aioresponses fails with `TypeError: ClientResponse.__init__() missing 1
-# required keyword-only argument: 'stream_writer'`.
-# Re-verified 2026-09-08 against aiohttp 3.14.3 + aioresponses 0.7.9 (its
-# latest release, published 2026-06-23): still broken, 57 tests fail at
-# aioresponses/core.py:197. Bump the upper bound once aioresponses ships a
-# release that passes `stream_writer`.
+# aiohttp is pinned >=3.14.3 to stay clear of the 14 advisories that affect
+# the 3.13.x line (the highest, CVE-2026-69244, is only fixed in 3.14.3).
+# aiohttp 3.14 made `ClientResponse.__init__` require a keyword-only
+# `stream_writer` that aioresponses 0.7.9 (its latest release) does not pass;
+# `tests/conftest.py::_install_aioresponses_compat` supplies it, which is what
+# makes this pin possible. Drop that shim once aioresponses ships a release
+# that passes the kwarg itself.
 voluptuous>=0.16.0,<1

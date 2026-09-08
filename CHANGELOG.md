@@ -62,34 +62,59 @@ no entity.
 - `/device/logo_led` is now part of the published cloud spec; the client
   docstring no longer describes it as an undocumented, probe-discovered
   endpoint.
-- **Dependency and CI maintenance:** `aioresponses` >=0.7.8 → >=0.7.9
-  (Dependabot #48), `colorlog` 6.10.1 → 6.11.0 and `ruff` 0.15.18 → 0.15.22
-  (#51), `home-assistant/actions/hassfest` SHA refresh (#49),
-  `softprops/action-gh-release` v3.0.1 → v3.0.2 (#53).
+- **Dependency and CI maintenance.** Every pin was checked against its latest
+  release and updated as far as compatibility allows:
+  - Python: `aiohttp` >=3.13.5,<3.14 → **>=3.14.3,<4** (see _Security_),
+    `aioresponses` >=0.7.8 → >=0.7.9 (Dependabot #48), `colorlog` 6.10.1 →
+    **6.12.0**, `ruff` 0.15.18 → **0.16.6**, `pip` floor >=26.1.2 → >=26.2.1.
+    Already at their latest: `pytest` 9.1.1, `pytest-asyncio` 1.4.0,
+    `pyyaml` 6.0.3, `voluptuous` 0.16.0.
+  - Actions: `actions/setup-python` v6 → **v7** (ESM migration; the removed
+    `pip-install` input was never used here — only `python-version`, `cache`
+    and `cache-dependency-path`), `actions/stale` v10.3.0 → **v11.0.0** (ESM
+    migration, no input changes), `softprops/action-gh-release` v3.0.2 →
+    **v3.0.3** (#53 brought v3.0.2; v3.0.3 adds safe classification of
+    malformed GitHub API errors), `home-assistant/actions/hassfest` SHA
+    refreshed to current `master` (#49 brought the previous SHA). Already
+    current: `actions/checkout` v7, `actions/upload-artifact` v7,
+    `github/codeql-action` v4, `codecov/codecov-action` v7.0.0,
+    `dessant/lock-threads` v6.0.2, `gitleaks/gitleaks-action` v3.0.0,
+    `hacs/action` 22.5.0.
+- **`.ruff.toml`: `CPY001` added to the ignore list.** ruff 0.16 stabilised
+  `flake8-copyright`, which under this project's `select = ALL` fired on all 40
+  Python files. The project carries a single MIT `LICENSE` at the repo root and
+  does not use per-file copyright headers. `PLR0917` (also newly stabilised)
+  is silenced with a local `noqa` on the one dev-script helper that already
+  carried the matching `PLR0913` annotation.
 - Test suite grows from 479 to 515 tests; the new
   `tests/test_api_doc_conformance_1_4.py` pins each documented enum, the timer
   request shape and the per-phase entity set against the two source documents.
 
 ### Security
 
-- `aiohttp` stays pinned `<3.14`. Re-verified on 2026-09-08 against aiohttp
-  3.14.3 with `aioresponses` 0.7.9 (its latest release): the suite still fails
-  with `TypeError: ClientResponse.__init__() missing 1 required keyword-only
-  argument: 'stream_writer'` (57 tests). The aiohttp advisories therefore
-  remain test-only and stay on the `security.yaml` test-deps ignore list; the
-  runtime audit is unchanged and still `--strict`. End users are unaffected —
-  the integration ships `"requirements": []` and Home Assistant core provides
-  the patched aiohttp at runtime.
-- **Three further aiohttp advisories published 2026-08-04** now affect the
-  pinned test dependency and are added to the same test-deps ignore list
-  (bringing it to 14): `PYSEC-2026-3545` / CVE-2026-69244 (out-of-bounds heap
-  read in the C HTTP response parser on a malformed chunked response),
-  `PYSEC-2026-3546` / CVE-2026-69243 (HTTP request smuggling via WebSocket
-  upgrade) and `PYSEC-2026-3547` / CVE-2026-59881 (WebSocket client accepts
-  compressed frames without negotiated permessage-deflate). They are listed by
-  PYSEC ID because that is how the PyPI advisory source reports them. Fixes
-  exist only in aiohttp 3.14.2/3.14.3, which the `aioresponses` incompatibility
-  above still blocks.
+- **All 14 ignored aiohttp advisories are resolved, and the `--ignore-vuln`
+  list is gone.** Since `1.3.2` the test-deps `pip-audit` gate carried a
+  growing suppression list — 14 advisories by 2026-09-08, the newest three
+  published 2026-08-04 and one of them high severity (CVE-2026-69244,
+  out-of-bounds heap read in the C HTTP response parser; the others being
+  CVE-2026-69243, request smuggling via WebSocket upgrade, and CVE-2026-59881,
+  WebSocket client accepting compressed frames without negotiated
+  permessage-deflate). All of them existed because aiohttp was held at `<3.14`
+  for the test harness: aiohttp 3.14 made `ClientResponse.__init__` require a
+  keyword-only `stream_writer` that `aioresponses` (0.7.9, its latest release)
+  never passes, so every mocked response raised `TypeError`.
+
+  `tests/conftest.py::_install_aioresponses_compat` now supplies that argument.
+  aioresponses always builds responses with `writer=None` — aiohttp's "request
+  already sent" path — where the only attribute read off the stream writer is
+  `output_size`, so a one-attribute stub is sufficient. The shim patches
+  `aioresponses.core.ClientResponse` once, covers every mock in the suite, and
+  is a no-op on aiohttp < 3.14 (it checks the constructor signature first).
+
+  Consequently `aiohttp` is pinned `>=3.14.3,<4` and **both** audits now run
+  `--strict` with **zero ignores**. Verified locally: the full suite passes on
+  aiohttp 3.14.3 *and* on 3.13.5, and `pip-audit` reports "No known
+  vulnerabilities found" for runtime and test requirements alike.
 
 ## [1.3.5] - 2026-06-26
 

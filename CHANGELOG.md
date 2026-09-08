@@ -80,6 +80,16 @@ no entity.
   runtime audit is unchanged and still `--strict`. End users are unaffected —
   the integration ships `"requirements": []` and Home Assistant core provides
   the patched aiohttp at runtime.
+- **Three further aiohttp advisories published 2026-08-04** now affect the
+  pinned test dependency and are added to the same test-deps ignore list
+  (bringing it to 14): `PYSEC-2026-3545` / CVE-2026-69244 (out-of-bounds heap
+  read in the C HTTP response parser on a malformed chunked response),
+  `PYSEC-2026-3546` / CVE-2026-69243 (HTTP request smuggling via WebSocket
+  upgrade) and `PYSEC-2026-3547` / CVE-2026-59881 (WebSocket client accepts
+  compressed frames without negotiated permessage-deflate). They are listed by
+  PYSEC ID because that is how the PyPI advisory source reports them. Fixes
+  exist only in aiohttp 3.14.2/3.14.3, which the `aioresponses` incompatibility
+  above still blocks.
 
 ## [1.3.5] - 2026-06-26
 

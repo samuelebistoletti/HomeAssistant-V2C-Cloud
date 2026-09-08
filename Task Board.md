@@ -1,21 +1,34 @@
 # Task Board
 
-## Today
-- [ ] **Decidere se pushare il branch `fix/1.4.0-api-doc-conformance`** (PR o merge diretto) — il push del manifest su main pubblica la release 1.4.0.
-- [ ] Valutare se i 5 commit README (promo sconto Trydan) in cima a main richiedono una entry CHANGELOG/release, o restano solo docs.
-- [ ] (se nessuna issue in arrivo) valutare un refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data`.
+## Today (090926 — priorità per domani)
+- [ ] **Mergiare PR #55 quando l'utente dà il via** → pubblica la release 1.4.0 (manifest già bumpato; tag-and-release si triggera dal push di manifest.json su main). Valutare lo squash: il branch contiene `2f89a67` (aggiunge 14 CVE ignorate) poi `11afbd9` (le rimuove).
+- [ ] **Approvare/rifiutare le 3 revisioni SOP proposte dall'auditor** (vedi sotto in Note SOP) — richiedono ok utente prima di toccare `knowledge-base.md`.
+- [ ] Valutare se i 5 commit README (promo sconto Trydan) su main richiedono una entry CHANGELOG/release, o restano solo docs.
+
+## Note SOP in attesa di approvazione (auditor, 090826)
+1. Riscrivere la entry `[060926]` di `knowledge-base.md` sul pip-audit come **SUPERSEDED**: preferire il fix di versione reale alla ignore-list quando è raggiungibile; ignore scoped solo se non esiste fix.
+2. Nuova entry *Testing Gotchas*: "HTTP 200 non è prova di conformità" per ogni endpoint il cui body è stato inferito senza spec.
+3. Nuova entry *Project Patterns*: la traduzione cloud→LAN di enum/unità va applicata **una sola volta** allo stesso confine di sintesi (`_build_realtime_from_reported`), citando il rischio di auto-annullamento dello swap ChargeState.
 
 ## This Week
+- [ ] (se nessuna issue in arrivo) refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data` — rinviato: la giornata è andata su conformità API + dipendenze.
+- [ ] Rimuovere lo shim `_install_aioresponses_compat` quando aioresponses pubblicherà una release che passa `stream_writer` da sola.
 - [ ] Raccogliere feedback comunitario su `v1.3.5` stable.
 - [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.3.0+ è stable.
 
 ## Backlog
 - [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826).
-- [ ] Future: implement V2C cloud webhooks (startCharge/endCharge) — quando V2C documenta meccanismo di firma/auth.
+- [ ] Future: implement V2C cloud webhooks (startCharge/endCharge). **Sbloccato a metà (090826):** la spec OpenAPI ora documenta il payload (`idCharge`, `deviceId`, `method`, `datetime`, `energy`, `energyByHour`, `rfidCode`), ma NON c'è meccanismo di firma/auth e l'URL si registra solo dal portale V2C → payload da trattare come untrusted con validazione `deviceId`.
+- [ ] ~~Migrare via da `aioresponses`~~ — non più necessario per aiohttp 3.14 (risolto con lo shim in conftest, 090826). Resta valido solo se aioresponses venisse abbandonato a monte.
 - [ ] Future: refactor del service dispatcher in `__init__.py` (~640 righe ripetitive → ServiceSpec data-driven).
 - [ ] Future: split di `_async_update_data` (136 righe) in 3 helper.
 
 ## Done
+- [x] **PR #55 aperta verso main** — 5 commit, CI 13/13 verde, `mergeable: clean`; NON mergiata (l'utente dà il via) — 090826
+- [x] **aiohttp 3.14.3 sbloccato + 14 CVE ignorate rimosse** — shim `_install_aioresponses_compat` in conftest; entrambi i gate pip-audit `--strict` con zero ignore; suite verde su 3.14.3 e 3.13.5 (`11afbd9`) — 090826
+- [x] **Check completo di tutte le dipendenze** — Python e Action tutte all'ultima versione; `pytest-cov` tracciato in requirements_test.txt (era ad-hoc, invisibile a pip-audit e Dependabot); Dependabot esteso a `devcontainers` + `docker` (`4526222`) — 090826
+- [x] **Fix gate `pip-audit` fallito in CI** — 3 advisory aiohttp nuove del 04/08 con ID PYSEC; prima soppresse (`2f89a67`), poi risolte davvero dal bump — 090826
+- [x] Audit giornaliero auditor: PASS con warning; 4 nomination confermate + 3 revisioni SOP proposte — 090826
 - [x] **Implementata 1.4.0 (branch `fix/1.4.0-api-doc-conformance`, non pushata):** fix DynamicPowerMode 2/3, ChargeState enum LAN canonico + traduzione cloud→LAN, body `/device/timer` conforme (+`days_of_week`, `active` deprecato), 6 sensori per-fase con traduzioni en/it/es, alias `IntensityMeasure_L1y`; CHANGELOG + manifest 1.4.0 + README; 515 test verdi, ruff/JSON/YAML/parity traduzioni OK; commit `fe90dea` — 090826
 - [x] **Incidente:** cartella `custom_components/` cancellata per errore dall'utente a metà sessione; ripristinata con `git checkout --` e ripristino verificato file per file (0 file mancanti, 9 moduli non toccati identici a origin/main, 6 edit rifatti) — 090826
 - [x] **Merge 4 Dependabot PR** (#48 aioresponses 0.7.9, #51 colorlog+ruff 0.15.22, #49 hassfest SHA, #53 action-gh-release 3.0.2) — squash su main `f5376ba`; 479 test + ruff verdi in locale; 0 PR aperte — 090826

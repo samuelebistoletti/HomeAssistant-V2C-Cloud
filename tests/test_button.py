@@ -8,7 +8,7 @@ import pytest
 from homeassistant.exceptions import HomeAssistantError
 
 
-def _make_button(*, coroutine_factory=None, refresh_after_call=True):
+def _make_button(*, coroutine_factory=None, refresh_after_call=True, cloud_ok=True):
     from custom_components.v2c_cloud.button import V2CButton
 
     coord = MagicMock()
@@ -18,12 +18,16 @@ def _make_button(*, coroutine_factory=None, refresh_after_call=True):
     client = MagicMock()
     client.async_reboot = AsyncMock(return_value=None)
 
+    runtime_data = MagicMock()
+    runtime_data.cloud_commands_available = cloud_ok
+
     if coroutine_factory is None:
         coroutine_factory = lambda: client.async_reboot("dev-1")  # noqa: E731
 
     button = V2CButton(
         coord,
         client,
+        runtime_data,
         "dev-1",
         name_key="reboot",
         unique_suffix="reboot",

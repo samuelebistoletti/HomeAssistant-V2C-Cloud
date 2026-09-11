@@ -30,12 +30,14 @@ def _make_coordinator(connected_value, reported_value=None):
     return coord
 
 
-def _make_sensor(connected_value=None, reported_value=None):
+def _make_sensor(connected_value=None, reported_value=None, cloud_ok=True):
     from custom_components.v2c_cloud.binary_sensor import V2CConnectedBinarySensor
 
     coord = _make_coordinator(connected_value, reported_value)
     client = MagicMock()
-    return V2CConnectedBinarySensor(coord, client, "dev-1")
+    runtime_data = MagicMock()
+    runtime_data.cloud_commands_available = cloud_ok
+    return V2CConnectedBinarySensor(coord, client, runtime_data, "dev-1")
 
 
 class TestV2CConnectedBinarySensor:

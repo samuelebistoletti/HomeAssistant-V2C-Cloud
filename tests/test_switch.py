@@ -97,9 +97,16 @@ class TestV2CBooleanSwitchIsOn:
         switch, _ = _make_switch(local_keys=(), reported_value=False)
         assert switch.is_on is False
 
-    def test_returns_false_when_no_data_at_all(self):
+    def test_returns_unknown_when_no_data_at_all(self):
+        """
+        Never assert "off" for a switch whose state was never received.
+
+        A cloud-only switch with no payload used to report a confident `off`,
+        which read as a setting that had been checked rather than one that had
+        never arrived. `None` renders as Unknown, which is the truth.
+        """
         switch, _ = _make_switch(local_keys=(), reported_value=None)
-        assert switch.is_on is False
+        assert switch.is_on is None
 
     def test_optimistic_state_held_during_window(self):
         switch, _ = _make_switch(local_keys=())

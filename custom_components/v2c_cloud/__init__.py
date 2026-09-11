@@ -266,9 +266,18 @@ def _cached_fallback_payload(
 
 @dataclass
 class _CloudAuthState:
-    """Tracks whether the entry is currently running without cloud auth."""
+    """Tracks whether cloud commands can currently be expected to work."""
 
     degraded: bool = False
+    # A LAN-only entry holds no API key at all. The cloud is not "degraded"
+    # there, it is simply not part of the installation — but the consequence
+    # for a cloud-only control is identical, so it is tracked in one place.
+    absent: bool = False
+
+    @property
+    def usable(self) -> bool:
+        """Whether a request to the V2C Cloud stands a chance of succeeding."""
+        return not (self.degraded or self.absent)
 
 
 def _degraded_cloud_payload(
@@ -464,6 +473,21 @@ class V2CEntryRuntimeData:
     coordinator: DataUpdateCoordinator
     local_coordinators: dict[str, DataUpdateCoordinator] = field(default_factory=dict)
     cloud_only: bool = False
+    cloud_auth: _CloudAuthState = field(default_factory=_CloudAuthState)
+
+    @property
+    def cloud_commands_available(self) -> bool:
+        """
+        Whether a control that can only travel over the cloud can work now.
+
+        Some settings have no LAN equivalent at all — OCPP, the RFID reader,
+        the installation and slave types, the language, reboot and firmware
+        update. When the cloud rejects the API key (issue #54) or the entry
+        has no account in the first place, those controls cannot do anything,
+        and an entity that still offers itself as operable is worse than an
+        absent one: it invites a command that will be silently dropped.
+        """
+        return self.cloud_auth.usable
 
 
 async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
@@ -477,6 +501,7 @@ async def _async_fetch_initial_pairings(
     entry: ConfigEntry,
     client: V2CClient,
     has_cache: bool,
+    auth_state: _CloudAuthState,
 ) -> list[dict[str, Any]]:
     """
     Fetch ``/pairings/me`` at setup, tolerating a cloud that is down.
@@ -502,6 +527,7 @@ async def _async_fetch_initial_pairings(
             "until the cloud authenticates again.",
             len(_lan_addressable_records(entry)),
         )
+        auth_state.degraded = True
         _async_flag_cloud_auth_degraded(hass, entry)
         return []
     except V2CRequestError as err:
@@ -549,6 +575,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         )
     has_cache = bool(cached_pairings)
 
+    # Tracked from here on so that a rejection at startup — not just one during
+    # a later refresh — leaves the cloud-only controls unavailable.
+    auth_state = _CloudAuthState(absent=lan_only)
+
     # Validate credentials and initial connectivity by requesting pairings.
     if lan_only:
         _LOGGER.debug(
@@ -557,7 +587,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         )
         pairings = []
     else:
-        pairings = await _async_fetch_initial_pairings(hass, entry, client, has_cache)
+        pairings = await _async_fetch_initial_pairings(
+            hass, entry, client, has_cache, auth_state
+        )
 
     if not pairings and not has_cache:
         _LOGGER.warning("No V2C devices associated with this API key")
@@ -575,8 +607,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         seconds = math.ceil((device_count * 2 * 86400) / budget)
         seconds = max(seconds, min_seconds)
         return timedelta(seconds=seconds)
-
-    auth_state = _CloudAuthState()
 
     async def _async_update_data() -> dict[str, object]:
         """Fetch the latest data from the API."""
@@ -753,6 +783,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         client=client,
         coordinator=coordinator,
         cloud_only=is_cloud_only_device(entry.data),
+        cloud_auth=auth_state,
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -923,8 +954,14 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         try:
             result = await call_coroutine
         except V2CAuthError as err:
-            raise ConfigEntryAuthFailed(
-                "Authentication failed during service call"
+            # Deliberately not ConfigEntryAuthFailed: that would open the reauth
+            # dialog from a service call, which is the behaviour this release
+            # removed everywhere else. Whether a rejected key means "reauth" or
+            # "carry on over the LAN" is the coordinator's decision, taken in
+            # one place; a service call only has to report what happened.
+            raise HomeAssistantError(
+                "The V2C Cloud rejected the API key, so this command was not "
+                "delivered to the charger."
             ) from err
         except V2CRequestError as err:
             raise HomeAssistantError(str(err)) from err

@@ -303,6 +303,12 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
             key in LAN_ONLY_KEYS for key in self._local_keys
         ):
             return False
+        # The mirror case: a switch with no LAN keyword at all (OCPP, the RFID
+        # reader) can only be driven over the cloud. While the cloud rejects
+        # the key, offering it as operable invites a command that raises deep
+        # in the client and changes nothing on the charger.
+        if not self._local_keys and not self._runtime_data.cloud_commands_available:
+            return False
         if self._local_coordinator is not None:
             return self._local_coordinator.last_update_success
         return self.coordinator.last_update_success
@@ -342,8 +348,12 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
             self._apply_icon(self._optimistic_state)
             return self._optimistic_state
 
+        # No payload has ever carried this switch's key. "Off" would be an
+        # assertion the integration cannot make — and it read as one: an OCPP
+        # switch sat at "off" all through a cloud outage, looking like a
+        # setting that had been checked rather than one never received.
         self._apply_icon(state=False)
-        return False
+        return None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to the local coordinator once the entity is registered."""

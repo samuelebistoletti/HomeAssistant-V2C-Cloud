@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.3] - 2026-09-11
+
+### Fixed
+
+- Manual IP overrides and the cached address book were never read on a running
+  Home Assistant instance, so a LAN entry stayed offline even with an address
+  configured. Home Assistant exposes `entry.data` as a `mappingproxy`, which is
+  not a `dict` subclass, and the type guard rejected it.
+
 ## [1.4.0-beta.2] - 2026-09-11
 
 ### Fixed

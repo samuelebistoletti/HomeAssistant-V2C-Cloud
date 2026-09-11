@@ -7,6 +7,7 @@ config-flow branch, and the per-charger IP overrides in the options flow.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,7 +37,8 @@ LAN_IP = "192.168.1.50"
 def _entry(**data: Any) -> MagicMock:
     entry = MagicMock()
     entry.entry_id = "entry-1"
-    entry.data = data
+    # mappingproxy, as Home Assistant really exposes it.
+    entry.data = MappingProxyType(dict(data))
     entry.options = {}
     return entry
 

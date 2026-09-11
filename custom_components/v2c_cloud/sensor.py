@@ -560,10 +560,10 @@ class V2CTransportSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEntity)
     """
     Diagnostic sensor naming the transport currently carrying the data.
 
-    Exists because the failure mode in issue #54 was invisible: a Wi-Fi
-    install silently fell back to cloud synthesis, and the only clue was that
-    every LAN reading went Unknown. The state answers "LAN, cloud, or nothing",
-    and the attributes say which address is in use and where it came from.
+    Exists because that failure mode was otherwise invisible: a Wi-Fi install
+    could silently fall back to cloud synthesis, with every LAN reading going
+    Unknown as the only clue. The state answers "LAN, cloud, or nothing", and
+    the attributes say which address is in use and where it came from.
     """
 
     _attr_has_entity_name = True

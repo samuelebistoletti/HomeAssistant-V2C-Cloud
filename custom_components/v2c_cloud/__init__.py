@@ -290,9 +290,9 @@ def _degraded_cloud_payload(
     """
     Return degraded coordinator data, or None when the entry must reauth.
 
-    The V2C Cloud can reject a perfectly valid API key for days at a time
-    (issue #54). On a LAN-capable entry that must not unload the integration:
-    the charger is still reachable over HTTP. A repair issue is raised, the
+    The V2C Cloud can reject a perfectly valid API key for extended periods.
+    On a LAN-capable entry that must not unload the integration: the charger
+    is still reachable over HTTP. A repair issue is raised, the
     previous data is kept, and polling carries on. A cloud-only entry has no
     alternative transport, so None is returned and the caller raises
     ConfigEntryAuthFailed exactly as before.
@@ -482,9 +482,9 @@ class V2CEntryRuntimeData:
 
         Some settings have no LAN equivalent at all — OCPP, the RFID reader,
         the installation and slave types, the language, reboot and firmware
-        update. When the cloud rejects the API key (issue #54) or the entry
-        has no account in the first place, those controls cannot do anything,
-        and an entity that still offers itself as operable is worse than an
+        update. When the cloud rejects the API key or the entry has no
+        account in the first place, those controls cannot do anything, and
+        an entity that still offers itself as operable is worse than an
         absent one: it invites a command that will be silently dropped.
         """
         return self.cloud_auth.usable
@@ -517,8 +517,8 @@ async def _async_fetch_initial_pairings(
         # A cloud-only charger has no other transport: the entry genuinely
         # cannot work, so ask for a new key. A LAN entry with a known address
         # keeps running over HTTP and only raises a repair issue — tearing it
-        # down here is what made a V2C-side auth outage look like a total
-        # integration failure on Wi-Fi installs (issue #54).
+        # down here would make a cloud-side auth failure look like a total
+        # integration failure on Wi-Fi installs.
         if not _may_degrade_to_lan(entry):
             raise ConfigEntryAuthFailed("Invalid V2C Cloud API key") from err
         _LOGGER.warning(
@@ -856,9 +856,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # `DataUpdateCoordinator.async_shutdown` is a COROUTINE function: it
             # must be awaited or nothing is cancelled at all and Python emits
             # "RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown'
-            # was never awaited" (reported from a user log in issue #54). The
-            # isawaitable guard keeps stub/mock coordinators that expose a plain
-            # synchronous attribute working.
+            # was never awaited". The isawaitable guard keeps stub/mock
+            # coordinators that expose a plain synchronous attribute working.
             for coord in runtime_data.local_coordinators.values():
                 shutdown = getattr(coord, "async_shutdown", None)
                 if shutdown is not None:

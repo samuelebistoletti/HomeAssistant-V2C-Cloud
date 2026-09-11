@@ -1,5 +1,5 @@
 """
-Phase 2 of the issue #54 plan: running without a reachable V2C cloud.
+Running without a reachable V2C cloud.
 
 Covers the schema v3 additions (`manual_ips`, `lan_only`), the account-less
 config-flow branch, and the per-charger IP overrides in the options flow.

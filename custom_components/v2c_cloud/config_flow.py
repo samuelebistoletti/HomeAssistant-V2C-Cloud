@@ -150,9 +150,9 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Ask whether to set the integration up with or without a V2C account.
 
         The LAN-only branch exists because the cloud is not always available:
-        during the 2026-09 V2C authentication outage a fresh install was
-        impossible even for chargers sitting on the same network as Home
-        Assistant (issue #54).
+        without it, a fresh install is impossible even for a charger sitting on
+        the same network as Home Assistant, whenever the cloud is unreachable
+        or rejects authentication.
         """
         return self.async_show_menu(step_id="user", menu_options=["cloud", "lan_only"])
 

@@ -1,8 +1,8 @@
 """
-Resilience of a LAN entry to a total V2C Cloud outage (issue #54).
+Resilience of a LAN entry to a total V2C Cloud outage.
 
-The V2C Cloud rejected valid API keys for days. Every LAN install went dark
-with it, because:
+If the V2C Cloud rejects valid API keys for an extended period, every LAN
+install used to go dark with it, because:
 
 * an authentication failure raised `ConfigEntryAuthFailed` unconditionally, so
   the entry was torn down even though the charger was reachable over HTTP; and
@@ -433,8 +433,8 @@ class TestRejectedKeyIsReportedNotSwallowed:
 
     The cloud answers a rejected key with an empty-bodied 401, so the raw
     exception reads "V2C authentication failed: " and nothing more. Pressing
-    the OCPP switch during the outage put that, plus a traceback, in the log
-    and left the UI with no explanation at all.
+    the OCPP switch while the cloud is unauthenticated used to put that, plus
+    a traceback, in the log and leave the UI with no explanation at all.
     """
 
     async def test_entity_command_raises_a_readable_error(self) -> None:

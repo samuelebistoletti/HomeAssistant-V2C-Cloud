@@ -177,13 +177,13 @@ class TestUnauthenticatedCloudGating:
     """
     A control with no LAN route must go Unavailable when the cloud is out.
 
-    During the V2C auth outage (issue #54) the integration kept running over
-    the LAN, which is the point — but OCPP and the RFID reader, which exist
-    only in the cloud API, stayed available and toggleable. Pressing one
-    raised deep inside the client and changed nothing on the charger, while
-    the switch went on displaying a state it had never received. The
-    integration's own log said "cloud-only controls are unavailable until it
-    recovers"; nothing in the code made that true.
+    Degrading to LAN on an authentication failure keeps the integration
+    running, which is the point — but OCPP and the RFID reader, which exist
+    only in the cloud API, used to stay available and toggleable regardless.
+    Pressing one raised deep inside the client and changed nothing on the
+    charger, while the switch went on displaying a state it had never
+    received. The integration's own log said "cloud-only controls are
+    unavailable until it recovers"; nothing in the code made that true.
     """
 
     def _switch(self, *, local_keys: tuple[str, ...], cloud_ok: bool) -> object:

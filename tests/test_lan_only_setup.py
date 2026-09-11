@@ -249,6 +249,30 @@ class TestManualIpSteps:
         written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
         assert written[CONF_MANUAL_IPS] == {}
 
+    async def test_cloud_only_entry_is_not_offered_manual_ips(self):
+        """An override would never be used on a 4G entry, so do not ask."""
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+            }
+        )
+        flow = self._flow(entry)
+        result = await flow.async_step_init()
+
+        assert CONF_SET_MANUAL_IPS not in {str(k) for k in result["data_schema"].schema}
+
+    async def test_switching_to_cloud_only_skips_the_forms(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        result = await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert result["type"] == "create_entry"
+
     def test_known_ids_merge_cache_and_overrides(self):
         entry = _entry(
             **{

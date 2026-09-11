@@ -505,7 +505,14 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                         )
                     )
 
-                if user_input.get(CONF_SET_MANUAL_IPS) and device_ids:
+                # A cloud-only (4G) entry has no LAN transport, so an address
+                # override would never be used. Skip the forms rather than
+                # collecting something inert.
+                wants_manual = (
+                    user_input.get(CONF_SET_MANUAL_IPS)
+                    and not new_data[CONF_CLOUD_ONLY]
+                )
+                if wants_manual and device_ids:
                     self._pending_devices = list(device_ids)
                     self._manual_ips = dict(current_manual)
                     self._pending_options = new_options
@@ -533,7 +540,11 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 # cannot live here: Home Assistant resolves field labels from
                 # static translation keys, and a key built from the device id
                 # would surface in the UI as the raw `manual_ip_<id>` string.
-                vol.Optional(CONF_SET_MANUAL_IPS, default=False): bool,
+                **(
+                    {vol.Optional(CONF_SET_MANUAL_IPS, default=False): bool}
+                    if current_mode != "cloud_only"
+                    else {}
+                ),
             }
         )
         return self.async_show_form(

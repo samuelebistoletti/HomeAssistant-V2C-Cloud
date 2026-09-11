@@ -509,6 +509,54 @@ class TestManualIpSteps:
         written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
         assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
 
+    async def test_clearing_the_box_works_on_a_cloud_only_entry_too(self):
+        """
+        The box is shown on 4G entries and says it removes the addresses.
+
+        Gating the clear on the destination being LAN made that promise a
+        no-op for an entry that was already Cloud only: the only way to drop
+        an address was to detour through Local (Wi-Fi) and back.
+        """
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+                CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP},
+            }
+        )
+        flow = self._flow(entry)
+        await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: False,
+            }
+        )
+
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {}
+
+    async def test_leaving_the_box_alone_on_a_cloud_only_entry_keeps_them(self):
+        flow = self._flow(
+            _entry(
+                **{
+                    CONF_CLOUD_ONLY: True,
+                    CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+                    CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP},
+                }
+            )
+        )
+        await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
+
     async def test_opting_in_with_no_known_charger_reports_an_error(self):
         """Silently saving nothing would look like the box never stuck."""
         flow = self._flow(_entry(**{CONF_CLOUD_ONLY: False}))

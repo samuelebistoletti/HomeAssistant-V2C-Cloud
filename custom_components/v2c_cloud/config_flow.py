@@ -553,7 +553,8 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 # the other way leaves stored overrides alone: they cost
                 # nothing while unused and are still there on the way back.
                 is_lan = not changes[CONF_CLOUD_ONLY]
-                wants_manual = is_lan and bool(user_input.get(CONF_SET_MANUAL_IPS))
+                set_manual = bool(user_input.get(CONF_SET_MANUAL_IPS))
+                wants_manual = is_lan and set_manual
 
                 if wants_manual and not device_ids:
                     errors[CONF_SET_MANUAL_IPS] = "no_known_devices"
@@ -568,10 +569,18 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     self._mode_changed = mode_changed
                     return await self.async_step_manual_ip()
                 else:
-                    if is_lan and current_manual:
-                        # The box now mirrors what is stored, so clearing it is
-                        # the gesture that drops every override and hands the
-                        # addresses back to cloud discovery.
+                    # The box now mirrors what is stored, so clearing it is the
+                    # gesture that drops every override and hands the addresses
+                    # back to cloud discovery — on a Cloud only (4G) entry too,
+                    # where the box is still shown and still says so.
+                    #
+                    # The single exception is the move TO Cloud only: there the
+                    # box is about to become irrelevant, and a user tidying it
+                    # up on the way out must not silently lose the addresses
+                    # they will need the moment they come back to Wi-Fi — which
+                    # is exactly when the cloud may be unable to supply them.
+                    switching_to_cloud = mode_changed and not is_lan
+                    if current_manual and not set_manual and not switching_to_cloud:
                         changes[CONF_MANUAL_IPS] = {}
                     return self._apply(changes, new_options, mode_changed=mode_changed)
 

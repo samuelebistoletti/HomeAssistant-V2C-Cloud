@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.7] - 2026-09-11
+
+### Fixed
+
+- Clearing the manual IP checkbox now removes the stored addresses on a Cloud
+  only (4G) entry as well. Switching from Local (Wi-Fi) to Cloud only still
+  keeps them.
+- A command refused by the cloud makes the integration re-check the connection
+  straight away, instead of leaving cloud-only controls operable until the next
+  scheduled refresh.
+- A switch whose command fails returns to its previous state instead of
+  displaying the requested one for the rest of the optimistic hold window.
+
 ## [1.4.0-beta.6] - 2026-09-11
 
 ### Fixed

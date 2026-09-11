@@ -21,6 +21,7 @@ from types import MappingProxyType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.v2c_cloud import (
@@ -437,6 +438,8 @@ class TestRejectedKeyIsReportedNotSwallowed:
     """
 
     async def test_entity_command_raises_a_readable_error(self) -> None:
+        from unittest.mock import AsyncMock
+
         from homeassistant.exceptions import HomeAssistantError
 
         from custom_components.v2c_cloud.entity import V2CEntity
@@ -444,6 +447,7 @@ class TestRejectedKeyIsReportedNotSwallowed:
 
         entity = V2CEntity.__new__(V2CEntity)
         entity.coordinator = MagicMock()
+        entity.coordinator.async_request_refresh = AsyncMock()
 
         async def _rejected() -> None:
             raise V2CAuthError("V2C authentication failed: ")
@@ -457,8 +461,35 @@ class TestRejectedKeyIsReportedNotSwallowed:
 
         assert "rejected the API key" in message
         assert "local network" in message
-        # Never a bare refresh after a failed command.
-        entity.coordinator.async_request_refresh.assert_not_called()
+
+    async def test_failed_command_tells_the_coordinator(self) -> None:
+        """
+        The command proved the cloud is unauthenticated — don't wait for a poll.
+
+        Without this, the cloud-only controls stayed available until the next
+        scheduled refresh independently rediscovered what the command had
+        already established. The coordinator is asked to refresh rather than
+        being told what to conclude: degrade-to-LAN versus ask-for-a-new-key
+        depends on the entry, and that decision lives in one place.
+        """
+        from unittest.mock import AsyncMock
+
+        from homeassistant.exceptions import HomeAssistantError
+
+        from custom_components.v2c_cloud.entity import V2CEntity
+        from custom_components.v2c_cloud.v2c_cloud import V2CAuthError
+
+        entity = V2CEntity.__new__(V2CEntity)
+        entity.coordinator = MagicMock()
+        entity.coordinator.async_request_refresh = AsyncMock()
+
+        async def _rejected() -> None:
+            raise V2CAuthError("401")
+
+        with pytest.raises(HomeAssistantError):
+            await entity._async_call_and_refresh(_rejected())
+
+        entity.coordinator.async_request_refresh.assert_awaited_once()
 
     async def test_successful_command_still_refreshes(self) -> None:
         from unittest.mock import AsyncMock

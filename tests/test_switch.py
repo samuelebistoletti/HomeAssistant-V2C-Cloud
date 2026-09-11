@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 
 def _make_switch(
     *,
@@ -178,3 +180,72 @@ class TestV2CBooleanSwitchAvailability:
         switch._local_coordinator = None
         switch.coordinator.last_update_success = True
         assert switch.available is True
+
+
+class TestFailedCommandDoesNotStick:
+    """
+    A command that was refused must not leave its requested state on display.
+
+    The switch writes the requested state optimistically before calling the
+    API, so the UI reacts instantly. When the call fails that assumption is
+    wrong, and holding it made a refused OCPP toggle read as "on" for the full
+    90-second hold window.
+    """
+
+    def _switch_with_failing_setter(self, error):
+        from custom_components.v2c_cloud.switch import V2CBooleanSwitch
+
+        switch, _ = _make_switch(local_keys=())
+        switch._setter = AsyncMock(side_effect=error)
+        switch.async_write_ha_state = MagicMock()
+        switch.coordinator = MagicMock()
+        switch.coordinator.async_request_refresh = AsyncMock()
+        assert isinstance(switch, V2CBooleanSwitch)
+        return switch
+
+    async def test_optimistic_state_is_rolled_back_on_auth_failure(self):
+        from homeassistant.exceptions import HomeAssistantError
+
+        from custom_components.v2c_cloud.v2c_cloud import V2CAuthError
+
+        switch = self._switch_with_failing_setter(V2CAuthError("401"))
+
+        with pytest.raises(HomeAssistantError):
+            await switch.async_turn_on()
+
+        assert switch._optimistic_state is None
+        assert switch._last_command_ts is None
+
+    async def test_optimistic_state_is_rolled_back_on_any_failure(self):
+        from custom_components.v2c_cloud.v2c_cloud import V2CRequestError
+
+        switch = self._switch_with_failing_setter(V2CRequestError("500", status=500))
+
+        with pytest.raises(V2CRequestError):
+            await switch.async_turn_on()
+
+        assert switch._optimistic_state is None
+
+    async def test_previous_state_is_restored_not_just_cleared(self):
+        """A switch that was legitimately on stays on when turning it off fails."""
+        from custom_components.v2c_cloud.v2c_cloud import V2CRequestError
+
+        switch = self._switch_with_failing_setter(V2CRequestError("500", status=500))
+        switch._optimistic_state = True
+
+        with pytest.raises(V2CRequestError):
+            await switch.async_turn_off()
+
+        assert switch._optimistic_state is True
+
+    async def test_successful_command_keeps_the_optimistic_state(self):
+        switch, setter = _make_switch(local_keys=())
+        switch.async_write_ha_state = MagicMock()
+        switch.coordinator = MagicMock()
+        switch.coordinator.async_request_refresh = AsyncMock()
+        switch._schedule_delayed_refresh = MagicMock()
+
+        await switch.async_turn_on()
+
+        setter.assert_awaited_once()
+        assert switch._optimistic_state is True

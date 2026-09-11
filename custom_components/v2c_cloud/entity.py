@@ -236,6 +236,13 @@ class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
         try:
             await coro
         except V2CAuthError as err:
+            # This call just proved the cloud is unauthenticated, so the shared
+            # state must not wait for the next scheduled poll to rediscover it.
+            # The proof is handed to the coordinator rather than acted on here:
+            # whether a rejected key means "degrade to LAN" or "ask for a new
+            # key" depends on the entry, and that decision already lives in one
+            # place.
+            await self.coordinator.async_request_refresh()
             # The cloud reports a rejected key as an empty-bodied 401, so the
             # raw exception surfaces as "V2C authentication failed: " followed
             # by nothing — a traceback in the log and no explanation in the UI.

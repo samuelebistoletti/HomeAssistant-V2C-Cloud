@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 from collections.abc import Callable, Iterable
@@ -599,9 +600,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if runtime_data is not None:
             # Cancel the scheduled polling task for every local coordinator so that
             # orphaned asyncio handles do not keep the objects alive after removal.
+            #
+            # `DataUpdateCoordinator.async_shutdown` is a COROUTINE function: it
+            # must be awaited or nothing is cancelled at all and Python emits
+            # "RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown'
+            # was never awaited" (reported from a user log in issue #54). The
+            # isawaitable guard keeps stub/mock coordinators that expose a plain
+            # synchronous attribute working.
             for coord in runtime_data.local_coordinators.values():
-                if hasattr(coord, "async_shutdown"):
-                    coord.async_shutdown()
+                shutdown = getattr(coord, "async_shutdown", None)
+                if shutdown is not None:
+                    result = shutdown()
+                    if inspect.isawaitable(result):
+                        await result
                 elif hasattr(coord, "_unsub_refresh") and coord._unsub_refresh:  # noqa: SLF001
                     coord._unsub_refresh()  # noqa: SLF001
         hass.data[DOMAIN].pop(entry.entry_id, None)

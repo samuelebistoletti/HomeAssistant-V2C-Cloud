@@ -61,10 +61,18 @@
     "step": {
       "init": {
         "title": "Opciones V2C Cloud",
-        "description": "Local (Wi-Fi) prefiere la API HTTP del propio cargador y recurre a la nube; Solo nube (4G) usa siempre la nube. Los campos de IP de abajo (uno por identificador de cargador) tienen prioridad sobre la dirección detectada en la nube: rellena uno si la nube no está accesible o si la dirección es incorrecta. Déjalo vacío para que decida la nube.",
+        "description": "Local (Wi-Fi) prefiere la API HTTP del propio cargador y recurre a la nube; Solo nube (4G) usa siempre la nube. Marca la casilla de abajo para introducir una dirección IP fija para cada cargador — necesario cuando la nube de V2C no está accesible o informa una dirección incorrecta.",
         "data": {
           "connection_type": "Tipo de conexión",
-          "local_update_interval": "Intervalo de refresco local (segundos)"
+          "local_update_interval": "Intervalo de refresco local (segundos)",
+          "set_manual_ips": "Configurar manualmente las direcciones IP"
+        }
+      },
+      "manual_ip": {
+        "title": "Dirección IP de {device}",
+        "description": "Introduce la dirección del cargador {device} en tu red local. Tiene prioridad sobre la dirección detectada en la nube. Déjalo vacío para quitar la anulación y que decida la nube.",
+        "data": {
+          "ip_address": "Dirección IP"
         }
       }
     },

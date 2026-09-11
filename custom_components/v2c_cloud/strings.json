@@ -61,10 +61,18 @@
     "step": {
       "init": {
         "title": "V2C Cloud options",
-        "description": "Local (Wi-Fi) prefers the charger's own HTTP API and falls back to the cloud; Cloud only (4G) always uses the cloud. The per-charger IP fields below (named after each charger id) override the address discovered from the cloud — fill one in if the cloud is unreachable or the address is wrong. Leave empty to let the cloud decide.",
+        "description": "Local (Wi-Fi) prefers the charger's own HTTP API and falls back to the cloud; Cloud only (4G) always uses the cloud. Tick the box below to enter a fixed IP address for each charger — needed when the V2C cloud is unreachable or reports the wrong address.",
         "data": {
           "connection_type": "Connection type",
-          "local_update_interval": "Local refresh interval (seconds)"
+          "local_update_interval": "Local refresh interval (seconds)",
+          "set_manual_ips": "Set charger IP addresses manually"
+        }
+      },
+      "manual_ip": {
+        "title": "IP address for {device}",
+        "description": "Enter the address of charger {device} on your local network. It takes precedence over the address discovered from the cloud. Leave it empty to remove the override and let the cloud decide.",
+        "data": {
+          "ip_address": "IP address"
         }
       }
     },

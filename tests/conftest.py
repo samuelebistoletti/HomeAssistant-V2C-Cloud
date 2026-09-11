@@ -160,9 +160,20 @@ def _install_ha_stubs() -> None:
                 return {"title": title, "data": data}
 
             def async_show_form(
-                self, *, step_id: str, data_schema: Any = None, errors: Any = None
+                self,
+                *,
+                step_id: str,
+                data_schema: Any = None,
+                errors: Any = None,
+                description_placeholders: Any = None,
             ) -> dict:
-                return {"type": "form", "step_id": step_id}
+                return {
+                    "type": "form",
+                    "step_id": step_id,
+                    "data_schema": data_schema,
+                    "errors": errors,
+                    "description_placeholders": description_placeholders,
+                }
 
             def async_show_menu(
                 self, *, step_id: str, menu_options: Any = None
@@ -186,9 +197,20 @@ def _install_ha_stubs() -> None:
                 return {"type": "create_entry", "data": data}
 
             def async_show_form(
-                self, *, step_id: str, data_schema: Any = None, errors: Any = None
+                self,
+                *,
+                step_id: str,
+                data_schema: Any = None,
+                errors: Any = None,
+                description_placeholders: Any = None,
             ) -> dict:
-                return {"type": "form", "step_id": step_id}
+                return {
+                    "type": "form",
+                    "step_id": step_id,
+                    "data_schema": data_schema,
+                    "errors": errors,
+                    "description_placeholders": description_placeholders,
+                }
 
         ha_ce.OptionsFlow = OptionsFlow
     ha_ce.callback = lambda f: f

@@ -13,9 +13,11 @@ All notable changes to this project will be documented in this file.
   account: enter the charger's IP address and the device id is read from the
   charger itself. Such an entry never calls the cloud; cloud-only controls are
   unavailable on it.
-- **Per-charger IP overrides** in the integration options. A configured
-  address takes precedence over cloud discovery and is validated against the
-  private-address policy; an empty field returns control to the cloud.
+- **Per-charger IP overrides** in the integration options. Tick *Set charger
+  IP addresses manually* and the options flow asks for one address per
+  charger. A configured address takes precedence over cloud discovery and is
+  validated against the private-address policy; an empty field returns control
+  to the cloud.
 - **LAN entries keep working while the V2C Cloud is unavailable or rejects
   authentication.** Polling and control continue over the local network and a
   repair issue is raised, clearing automatically when the cloud recovers.

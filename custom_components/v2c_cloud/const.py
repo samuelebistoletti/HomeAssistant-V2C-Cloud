@@ -23,6 +23,8 @@ CONF_CLOUD_ONLY = "cloud_only"
 CONF_LAN_ONLY = "lan_only"
 CONF_CACHED_PAIRINGS = "cached_pairings"
 CONF_MANUAL_IPS = "manual_ips"
+# Options-flow only: opt-in that leads to the per-charger IP forms.
+CONF_SET_MANUAL_IPS = "set_manual_ips"
 
 # Repair-issue identifiers (homeassistant.helpers.issue_registry).
 ISSUE_CLOUD_AUTH_DEGRADED = "cloud_auth_degraded"

@@ -19,9 +19,13 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from ._net import validate_private_ip
+from ._pairings import _persist_lan_observed_ip
 from .const import (
     CLOUD_ONLY_UPDATE_INTERVAL,
+    CONF_CACHED_PAIRINGS,
+    CONF_CLOUD_ONLY,
     CONF_LOCAL_UPDATE_INTERVAL,
+    CONF_MANUAL_IPS,
     DEFAULT_LOCAL_INTERVAL,
     LOCAL_HTTP_TIMEOUT,
     LOCAL_MAX_RETRIES,
@@ -80,7 +84,7 @@ def _build_local_interval(
     ``options[CONF_LOCAL_UPDATE_INTERVAL]`` when set, falling back to
     ``DEFAULT_LOCAL_INTERVAL``. Always returns a ``timedelta``.
     """
-    if entry_data.get("cloud_only"):
+    if entry_data.get(CONF_CLOUD_ONLY):
         return CLOUD_ONLY_UPDATE_INTERVAL
     seconds = options.get(CONF_LOCAL_UPDATE_INTERVAL)
     if not isinstance(seconds, int) or seconds <= 0:
@@ -396,8 +400,34 @@ async def _async_read_keyword(
         return keyword, None
 
 
-def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:
-    """Return the static IP address associated with a charger, if known."""
+def _entry_data_of(runtime_data: V2CEntryRuntimeData) -> dict[str, Any]:
+    """Return ``entry.data`` as a plain dict, or {} when unavailable."""
+    entry = getattr(runtime_data.coordinator, "config_entry", None)
+    data = getattr(entry, "data", None)
+    return data if isinstance(data, dict) else {}
+
+
+def manual_ip_for(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:
+    """Return the user-supplied IP override for a charger, if any."""
+    overrides = _entry_data_of(runtime_data).get(CONF_MANUAL_IPS)
+    if isinstance(overrides, dict):
+        candidate = overrides.get(device_id)
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return None
+
+
+def _ip_from_manual_override(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> str | None:
+    """The address the user typed in the options flow."""
+    return manual_ip_for(runtime_data, device_id)
+
+
+def _ip_from_cloud_runtime(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> str | None:
+    """The address currently advertised by the cloud coordinator."""
     device_state = get_device_state_from_coordinator(
         runtime_data.coordinator, device_id
     )
@@ -407,6 +437,30 @@ def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str 
         if isinstance(static_ip, str) and static_ip:
             return static_ip
 
+    reported = device_state.get("reported")
+    if isinstance(reported, dict):
+        candidate = reported.get("ip") or reported.get("wifi_ip")
+        if isinstance(candidate, str) and candidate:
+            return candidate
+
+    data = getattr(runtime_data.coordinator, "data", None)
+    pairings = data.get("pairings") if isinstance(data, dict) else None
+    return _ip_in_records(pairings, device_id)
+
+
+def _ip_from_offline_cache(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> str | None:
+    """The address persisted in ``entry.data`` — survives a cloud outage."""
+    return _ip_in_records(
+        _entry_data_of(runtime_data).get(CONF_CACHED_PAIRINGS), device_id
+    )
+
+
+def _ip_from_local_payload(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> str | None:
+    """The address reported by the charger itself on the last LAN poll."""
     local_coordinator = runtime_data.local_coordinators.get(device_id)
     if local_coordinator and isinstance(local_coordinator.data, dict):
         ip_value = local_coordinator.data.get(
@@ -414,25 +468,42 @@ def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str 
         ) or local_coordinator.data.get("IP")
         if isinstance(ip_value, str) and ip_value:
             return ip_value
+    return None
 
-    reported = device_state.get("reported")
-    if isinstance(reported, dict):
-        candidate = reported.get("ip") or reported.get("wifi_ip")
-        if isinstance(candidate, str) and candidate:
+
+def _ip_in_records(records: object, device_id: str) -> str | None:
+    """Find ``device_id``'s ip in a list of ``{deviceId, ip}`` dicts."""
+    if not isinstance(records, list):
+        return None
+    for item in records:
+        if isinstance(item, dict) and item.get("deviceId") == device_id:
+            maybe_ip = item.get("ip")
+            if isinstance(maybe_ip, str) and maybe_ip:
+                return maybe_ip
+    return None
+
+
+# Address sources in priority order. The user's explicit override wins, then
+# live cloud data, then the persisted cache, then whatever the charger last
+# told us about itself. Steps 1 and 3 are what keep the LAN transport alive
+# during a total cloud outage: before they existed every source was derived
+# from live cloud data, so an authentication failure left the integration with
+# no address at all and silently degraded a LAN install to cloud-only
+# behaviour (issue #54).
+_IP_SOURCES: tuple[Callable[[V2CEntryRuntimeData, str], str | None], ...] = (
+    _ip_from_manual_override,
+    _ip_from_cloud_runtime,
+    _ip_from_offline_cache,
+    _ip_from_local_payload,
+)
+
+
+def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:
+    """Return the static IP address associated with a charger, if known."""
+    for source in _IP_SOURCES:
+        candidate = source(runtime_data, device_id)
+        if candidate:
             return candidate
-
-    pairings = (
-        runtime_data.coordinator.data.get("pairings")
-        if runtime_data.coordinator.data
-        else []
-    )
-    if isinstance(pairings, list):
-        for item in pairings:
-            if item.get("deviceId") == device_id:
-                maybe_ip = item.get("ip")
-                if isinstance(maybe_ip, str) and maybe_ip:
-                    return maybe_ip
-
     return None
 
 
@@ -557,7 +628,7 @@ async def async_write_keyword(  # noqa: PLR0913
 
 def is_cloud_only_device(entry_data: dict[str, Any]) -> bool:
     """Return True when the entry is configured as cloud-only (no LAN)."""
-    return bool(entry_data.get("cloud_only"))
+    return bool(entry_data.get(CONF_CLOUD_ONLY))
 
 
 def config_data_for(runtime_data: V2CEntryRuntimeData) -> dict[str, Any]:
@@ -623,12 +694,27 @@ async def async_route_local_or_cloud(  # noqa: PLR0913
             return
 
     if cloud_call is None:
+        # Be precise about WHICH of the two conditions failed. Saying
+        # "cloud-only mode" on a Wi-Fi entry whose LAN write just failed sent
+        # users looking for a configuration problem that did not exist
+        # (issue #54).
+        if cloud_only:
+            detail = (
+                "this entry is configured as Cloud only (4G), and the V2C "
+                "Cloud API exposes no remote setter for this control"
+            )
+        else:
+            detail = (
+                "the charger could not be reached on the LAN and the V2C "
+                "Cloud API exposes no remote setter for this control, so "
+                "there is no transport left to carry the change"
+            )
         raise HomeAssistantError(
-            f"Cannot set {keyword!r} from Home Assistant in cloud-only mode: "
-            "the V2C Cloud API does not expose a remote setter for this "
-            "control. Adjust it via the V2C app (which uses a different "
-            "transport) or switch the integration to Local (Wi-Fi) mode if "
-            "the charger is on the same LAN."
+            f"Cannot set {keyword!r} from Home Assistant: {detail}. Adjust it "
+            "via the V2C app (which uses a different transport), or restore "
+            "LAN reachability — check that the charger is powered, on the "
+            "same network, and that its IP is known (you can set it manually "
+            "in the integration options)."
         )
 
     try:
@@ -767,17 +853,27 @@ async def async_get_or_create_local_coordinator(
             )
         failure_count = 0
 
+        # This address just proved it reaches the charger — persist it so the
+        # entry keeps a usable LAN address across restarts even if the cloud
+        # (the only other writer of the cache) never answers again.
+        _persist_lan_observed_ip(
+            hass, runtime_data.coordinator.config_entry, device_id, static_ip
+        )
+
         return payload
 
     # Detect cloud-only to use longer poll interval and log once
     entry_obj = runtime_data.coordinator.config_entry
     _entry_data = entry_obj.data
     _options = entry_obj.options or {}
-    _explicit_cloud = bool(_entry_data.get("cloud_only"))
-    if not _explicit_cloud:
-        _ip = resolve_static_ip(runtime_data, device_id)
-        _is_safe, _ = validate_private_ip(_ip) if _ip else (False, None)
-        _explicit_cloud = not _is_safe
+    # The entry's own flag is the ONLY thing that decides the transport. It
+    # used to be ORed with "no usable IP right now", which silently demoted a
+    # Wi-Fi install to cloud-only behaviour for as long as the cloud (the only
+    # address source at the time) was unreachable.
+    _explicit_cloud = bool(_entry_data.get(CONF_CLOUD_ONLY))
+    _ip = resolve_static_ip(runtime_data, device_id)
+    _is_safe, _ = validate_private_ip(_ip) if _ip else (False, None)
+    _lan_address_known = bool(_is_safe)
 
     if _explicit_cloud:
         interval = CLOUD_ONLY_UPDATE_INTERVAL
@@ -785,7 +881,19 @@ async def async_get_or_create_local_coordinator(
             "V2C %s: cloud-only mode (4G), sensors from cloud reported data", device_id
         )
     else:
+        # A LAN entry keeps the LAN cadence even when the address is momentarily
+        # unknown (e.g. the cloud is down and nothing has been cached yet), so
+        # the charger recovers by itself the moment an address appears —
+        # whether from cloud recovery, the persisted cache or a manual override.
         interval = _build_local_interval(_entry_data, _options)
+        if not _lan_address_known:
+            _LOGGER.warning(
+                "V2C %s: no LAN address known yet (cloud unreachable and no "
+                "cached or manual IP). Polling continues at the LAN cadence; "
+                "set the charger IP in the integration options to recover "
+                "immediately.",
+                device_id,
+            )
 
     coordinator = DataUpdateCoordinator(
         hass,

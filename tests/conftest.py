@@ -316,6 +316,33 @@ def _install_ha_stubs() -> None:
 
         ha_dr.DeviceInfo = DeviceInfo
 
+    # homeassistant.helpers.issue_registry (repairs)
+    ha_ir = _mod("homeassistant.helpers.issue_registry")
+    if not hasattr(ha_ir, "async_create_issue"):
+
+        class IssueSeverity:
+            CRITICAL = "critical"
+            ERROR = "error"
+            WARNING = "warning"
+
+        ha_ir.IssueSeverity = IssueSeverity
+        # Recorded so tests can assert which repair issues were raised/cleared.
+        ha_ir.created_issues = {}
+        ha_ir.deleted_issues = []
+
+        def _async_create_issue(hass, domain, issue_id, **kwargs):
+            ha_ir.created_issues[(domain, issue_id)] = kwargs
+
+        def _async_delete_issue(hass, domain, issue_id):
+            ha_ir.created_issues.pop((domain, issue_id), None)
+            ha_ir.deleted_issues.append((domain, issue_id))
+
+        ha_ir.async_create_issue = _async_create_issue
+        ha_ir.async_delete_issue = _async_delete_issue
+
+    # Make `from homeassistant.helpers import issue_registry as ir` resolve.
+    sys.modules["homeassistant.helpers"].issue_registry = ha_ir
+
     # homeassistant.helpers.config_validation (cv)
     ha_cv = _mod("homeassistant.helpers.config_validation")
     ha_cv.string = str

@@ -11,6 +11,19 @@ DOMAIN = "v2c_cloud"
 # read this single source of truth.
 SCHEMA_VERSION = 2
 
+# entry.data keys governing how the integration reaches each charger.
+#   cloud_only    -> 4G charger: no LAN transport exists at all.
+#   manual_ips    -> {deviceId: ip} overrides supplied by the user; they win
+#                    over anything discovered from the cloud, and they are the
+#                    only address source that survives a total cloud outage on
+#                    an entry that has never seen /pairings/me.
+CONF_CLOUD_ONLY = "cloud_only"
+CONF_CACHED_PAIRINGS = "cached_pairings"
+CONF_MANUAL_IPS = "manual_ips"
+
+# Repair-issue identifiers (homeassistant.helpers.issue_registry).
+ISSUE_CLOUD_AUTH_DEGRADED = "cloud_auth_degraded"
+
 CONF_API_KEY = "api_key"
 CONF_LOCAL_UPDATE_INTERVAL = "local_update_interval"
 

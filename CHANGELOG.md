@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.2] - 2026-09-11
+
+### Fixed
+
+- The manual IP field in the integration options showed its internal key
+  (`manual_ip_<charger id>`) instead of a label. Addresses are now requested
+  one charger at a time, on a properly labelled field.
+- The manual IP opt-in is available on cloud-only entries too, so switching a
+  4G charger to Local (Wi-Fi) and giving it an address happens in one pass.
+- The options flow no longer writes the connection-mode change, nor reloads
+  the integration, until the flow completes; abandoning it part-way leaves the
+  entry untouched.
+
 ## [1.4.0-beta.1] - 2026-09-11
 
 > **Breaking (auto-migrated):** the config entry schema is upgraded from v2 to

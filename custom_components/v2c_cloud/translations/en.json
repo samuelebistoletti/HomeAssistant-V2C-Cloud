@@ -156,6 +156,14 @@
       },
       "voltage_l3": {
         "name": "Phase 3 voltage"
+      },
+      "active_transport": {
+        "name": "Active transport",
+        "state": {
+          "lan": "Local network",
+          "cloud": "V2C Cloud",
+          "offline": "Offline"
+        }
       }
     },
     "switch": {

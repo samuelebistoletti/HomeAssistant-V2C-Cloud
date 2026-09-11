@@ -22,6 +22,11 @@ try:  # Home Assistant >= 2023.8
 except ImportError:  # pragma: no cover - older releases
     UnitOfVoltage = None
     UnitOfElectricCurrent = None
+
+try:  # Home Assistant >= 2023.1
+    from homeassistant.const import EntityCategory
+except ImportError:  # pragma: no cover - older releases
+    EntityCategory = None
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -32,7 +37,14 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import CHARGE_STATE_LABELS, DOMAIN
 from .entity import build_device_info, coerce_bool
-from .local_api import LAN_ONLY_KEYS, async_get_or_create_local_coordinator
+from .local_api import (
+    LAN_ONLY_KEYS,
+    active_transport,
+    async_get_or_create_local_coordinator,
+    describe_ip_source,
+    payload_is_cloud_synthesised,
+    payload_is_empty,
+)
 
 if TYPE_CHECKING:
     from . import V2CEntryRuntimeData
@@ -474,6 +486,7 @@ async def async_setup_entry(
             V2CLocalRealtimeSensor(runtime_data, coordinator, device_id, description)
             for description in REALTIME_SENSOR_DESCRIPTIONS
         )
+        entities.append(V2CTransportSensor(runtime_data, coordinator, device_id))
 
     async_add_entities(entities)
 
@@ -505,12 +518,26 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
 
     @property
     def available(self) -> bool:
-        """Return False for LAN-only keys when the entry is cloud-only."""
-        if (
-            self._runtime_data.cloud_only
-            and self.entity_description.key in LAN_ONLY_KEYS
-        ):
+        """
+        Report unavailable rather than unknown when there is simply no data.
+
+        Three distinct situations used to collapse into a bare "unknown":
+        a LAN-only quantity on a cloud-only entry, a cloud outage that left
+        the synthesis with nothing at all, and a LAN-only quantity while the
+        payload is being synthesised from the cloud. None of them means "the
+        charger reports an unknown value" — they mean "this reading cannot
+        exist right now", which is what Unavailable is for.
+        """
+        key = self.entity_description.key
+        if self._runtime_data.cloud_only and key in LAN_ONLY_KEYS:
             return False
+
+        data = self.coordinator.data
+        if payload_is_empty(data):
+            return False
+        if key in LAN_ONLY_KEYS and payload_is_cloud_synthesised(data):
+            return False
+
         return self.coordinator.last_update_success
 
     @property
@@ -527,3 +554,62 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         if localized is not None:
             return localized
         return value
+
+
+class V2CTransportSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEntity):
+    """
+    Diagnostic sensor naming the transport currently carrying the data.
+
+    Exists because the failure mode in issue #54 was invisible: a Wi-Fi
+    install silently fell back to cloud synthesis, and the only clue was that
+    every LAN reading went Unknown. The state answers "LAN, cloud, or nothing",
+    and the attributes say which address is in use and where it came from.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        runtime_data: V2CEntryRuntimeData,
+        coordinator: DataUpdateCoordinator,
+        device_id: str,
+    ) -> None:
+        """Initialise the diagnostic transport sensor for one charger."""
+        super().__init__(coordinator)
+        self._runtime_data = runtime_data
+        self._device_id = device_id
+        self._attr_translation_key = "active_transport"
+        self._attr_unique_id = f"{device_id}_active_transport"
+        self._attr_icon = "mdi:transit-connection-variant"
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["lan", "cloud", "offline"]
+        if EntityCategory is not None:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return registry information for the underlying charger."""
+        return build_device_info(self._runtime_data.coordinator, self._device_id)
+
+    @property
+    def available(self) -> bool:
+        """Always available: "offline" is itself the useful answer."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """Return `lan`, `cloud` or `offline`."""
+        return active_transport(self._runtime_data, self._device_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the address in use and which source supplied it."""
+        ip, source = describe_ip_source(self._runtime_data, self._device_id)
+        entry_data = self._runtime_data.coordinator.config_entry.data
+        return {
+            "ip_address": ip,
+            "ip_source": source,
+            "cloud_only": bool(entry_data.get("cloud_only")),
+            "lan_only": bool(entry_data.get("lan_only")),
+        }

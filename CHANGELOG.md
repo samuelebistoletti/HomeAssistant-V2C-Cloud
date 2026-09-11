@@ -2,18 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0] - 2026-09-08
+## [1.4.0] - 2026-09-11
 
-Conformance release. The integration was audited end-to-end against the two
+Conformance and resilience release.
+
+**Conformance:** the integration was audited end-to-end against the two
 authoritative V2C documents — the published Cloud OpenAPI 3.1.0 spec
 (`https://api.v2charge.com/`) and the Trydan local HTTP API keyword table
 (revision 14/07/26). All 40 documented cloud endpoints were already
-implemented; this release fixes the three places where the implementation
-diverged from the documentation and exposes six documented LAN fields that had
-no entity.
+implemented; this fixes the three places where the implementation diverged
+from the documentation and exposes six documented LAN fields that had no
+entity.
+
+**Resilience:** in September 2026 the V2C Cloud rejected valid API keys for
+days (#54). Chargers on the local network stayed perfectly reachable, yet the
+integration went dark with the cloud. It no longer does. A Wi-Fi install keeps
+running over the LAN through a cloud outage, addresses can be supplied by hand,
+and the integration can now be set up with no V2C account at all. Cloud-only
+(4G) chargers are deliberately unchanged — without the cloud they have no
+transport — and the two install types are now properly decoupled.
+
+> **Breaking (auto-migrated):** the config entry schema moves from v2 to v3 on
+> first load. No user action is required.
 
 ### Added
 
+- **The integration survives a total V2C Cloud outage** (#54). For several days
+  in September 2026 the V2C API rejected freshly generated, valid API keys.
+  Every Wi-Fi install went down with it even though the chargers were reachable
+  on the LAN the whole time, because an authentication failure raised
+  `ConfigEntryAuthFailed` unconditionally — unloading the entry, local
+  coordinators included — and because every address source `resolve_static_ip`
+  consulted was itself derived from live cloud data. A LAN entry that knows at
+  least one address now **degrades instead of unloading**: it raises a repair
+  issue explaining that cloud-only controls are unavailable, keeps polling and
+  controlling the charger over HTTP, and clears the issue by itself when the
+  cloud authenticates again. Cloud-only (4G) entries are untouched: they have
+  no second transport, so they still ask for reauthentication.
+- **Setup without a V2C account.** The config flow opens with a choice: with a
+  V2C account (the previous flow, unchanged) or **local only** — type the
+  charger's IP and the device id is read straight off its `/RealTimeData`
+  response. Such an entry stores no API key and never calls the cloud. During
+  the outage a fresh install was impossible even for a charger on the same
+  switch as Home Assistant; this is the path that fixes that.
+- **Per-charger IP overrides** in the integration options, one optional field
+  per known charger. A filled field takes precedence over everything the cloud
+  reports and is the only address source that works when the cloud has never
+  answered; an empty one hands control back to the cloud. Values are validated
+  with the same private-address policy the LAN write path enforces.
+- **`Active transport` diagnostic sensor** per charger, reporting `Local
+  network`, `V2C Cloud` or `Offline`, with the address in use and where it came
+  from (manual / cloud / cache / charger) as attributes. The failure mode in
+  #54 was invisible: a Wi-Fi install silently fell back to cloud synthesis and
+  the only clue was that every LAN reading went Unknown.
 - **Six per-phase measurement sensors** — `IntensityMeasure_L1/L2/L3` (A) and
   `VoltageMeasure_L1/L2/L3` (V). They are documented in the LAN
   `/RealTimeData` payload but had no entity until now. All six are LAN-only
@@ -29,6 +70,25 @@ no entity.
 
 ### Fixed
 
+- **`async_shutdown` was called but never awaited** on config-entry unload
+  (`__init__.py`), reported through a user log in #54. The visible symptom was
+  `RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown' was never
+  awaited`; the real damage is that nothing was cancelled, so every unload or
+  reload leaked each local coordinator's scheduled refresh timer — exactly what
+  the surrounding code exists to prevent.
+- **A LAN charger was silently reclassified as cloud-only** whenever no usable
+  IP happened to be available at that instant. The entry's own connection-type
+  flag is now the only thing that decides the transport, and a LAN entry keeps
+  its LAN polling cadence, recovering by itself as soon as an address appears.
+- **LAN readings reported `Unknown` when they could not exist at all.** A
+  LAN-only quantity on a cloud-synthesised payload, and any reading when
+  neither transport produced data, are now `Unavailable` — "the value cannot
+  exist right now" rather than "the charger reports an unknown value".
+- **The router's error message named the wrong cause.** On a Wi-Fi entry whose
+  LAN write had just failed it said the entry was in "cloud-only mode", sending
+  users to look for a configuration problem that did not exist. It now
+  distinguishes a genuinely cloud-only entry from an unreachable charger, and
+  points at the new manual-IP option.
 - **`DynamicPowerMode` codes 2 and 3 were swapped**, mislabelling both the
   sensor and the select. Per the LAN documentation, 2 = minimum power mode and
   3 = exclusive PV mode (previously shown the other way round).
@@ -59,6 +119,13 @@ no entity.
 
 ### Changed
 
+- **Config entry schema v2 → v3 (auto-migrated).** Adds `manual_ips` (the
+  per-charger overrides) and `lan_only` (entries created without an account).
+  Nothing that already existed changes, and entries created by older versions
+  migrate silently on first load.
+- A successful LAN fetch now persists the address that just worked, so the
+  cached address book is no longer written by the cloud alone and survives a
+  restart in the middle of an outage.
 - `/device/logo_led` is now part of the published cloud spec; the client
   docstring no longer describes it as an undocumented, probe-discovered
   endpoint.
@@ -86,7 +153,7 @@ no entity.
   does not use per-file copyright headers. `PLR0917` (also newly stabilised)
   is silenced with a local `noqa` on the one dev-script helper that already
   carried the matching `PLR0913` annotation.
-- Test suite grows from 479 to 515 tests; the new
+- Test suite grows from 479 to 563 tests; the new
   `tests/test_api_doc_conformance_1_4.py` pins each documented enum, the timer
   request shape and the per-phase entity set against the two source documents.
 

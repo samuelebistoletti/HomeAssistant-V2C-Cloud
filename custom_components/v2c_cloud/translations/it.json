@@ -156,6 +156,14 @@
       },
       "voltage_l3": {
         "name": "Tensione fase 3"
+      },
+      "active_transport": {
+        "name": "Trasporto attivo",
+        "state": {
+          "lan": "Rete locale",
+          "cloud": "Cloud V2C",
+          "offline": "Non raggiungibile"
+        }
       }
     },
     "switch": {

@@ -498,6 +498,64 @@ _IP_SOURCES: tuple[Callable[[V2CEntryRuntimeData, str], str | None], ...] = (
 )
 
 
+# Human-readable label per address source, for the diagnostic sensor.
+_IP_SOURCE_LABELS: dict[str, str] = {
+    "_ip_from_manual_override": "manual",
+    "_ip_from_cloud_runtime": "cloud",
+    "_ip_from_offline_cache": "cache",
+    "_ip_from_local_payload": "charger",
+}
+
+
+def describe_ip_source(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> tuple[str | None, str | None]:
+    """Return ``(ip, source_label)`` naming which source supplied the address."""
+    for source in _IP_SOURCES:
+        candidate = source(runtime_data, device_id)
+        if candidate:
+            return candidate, _IP_SOURCE_LABELS.get(source.__name__)
+    return None, None
+
+
+def payload_is_cloud_synthesised(data: object) -> bool:
+    """
+    True when a local payload was synthesised from cloud data, not fetched.
+
+    `_build_realtime_from_reported` tags what it produces; a real
+    ``/RealTimeData`` response carries no such marker. Entities use this to
+    tell "the charger told us" from "we inferred it from the cloud".
+    """
+    return isinstance(data, dict) and str(data.get("_data_source", "")).startswith(
+        "cloud_reported"
+    )
+
+
+def payload_is_empty(data: object) -> bool:
+    """True when neither transport produced anything for this charger."""
+    return isinstance(data, dict) and data.get("_data_source") == "cloud_reported_empty"
+
+
+def active_transport(runtime_data: V2CEntryRuntimeData, device_id: str) -> str:
+    """
+    Return which transport is currently carrying this charger's data.
+
+    ``lan``     the charger answered on the local network;
+    ``cloud``   values are synthesised from the V2C Cloud;
+    ``offline`` neither transport has produced anything.
+    """
+    local_coordinator = runtime_data.local_coordinators.get(device_id)
+    data = getattr(local_coordinator, "data", None) if local_coordinator else None
+    if isinstance(data, dict):
+        if payload_is_empty(data):
+            return "offline"
+        if not payload_is_cloud_synthesised(data):
+            return "lan"
+        return "cloud"
+    cloud_state = get_device_state_from_coordinator(runtime_data.coordinator, device_id)
+    return "cloud" if cloud_state.get("reported") else "offline"
+
+
 def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:
     """Return the static IP address associated with a charger, if known."""
     for source in _IP_SOURCES:

@@ -18,7 +18,7 @@ genuinely has no second transport — still asks for reauthentication.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from homeassistant.helpers import issue_registry as ir
 
@@ -35,7 +35,13 @@ from custom_components.v2c_cloud.const import (
     DOMAIN,
     ISSUE_CLOUD_AUTH_DEGRADED,
 )
-from custom_components.v2c_cloud.local_api import manual_ip_for, resolve_static_ip
+from custom_components.v2c_cloud.local_api import (
+    active_transport,
+    describe_ip_source,
+    manual_ip_for,
+    payload_is_empty,
+    resolve_static_ip,
+)
 
 DEVICE_ID = "XQUXDU"
 LAN_IP = "192.168.1.50"
@@ -215,3 +221,157 @@ class TestDegradedRepairIssue:
         _async_flag_cloud_auth_degraded(hass, second)
 
         assert len(ir.created_issues) == 2
+
+
+# ---------------------------------------------------------------------------
+# End-to-end outage simulation
+# ---------------------------------------------------------------------------
+
+
+class TestOutageSimulation:
+    """The three combinations that matter, driven through the real coordinator."""
+
+    async def _coordinator(self, *, entry_data, lan_serves: bool):
+        """Build a real local coordinator; `lan_serves` decides if HTTP answers."""
+        from aiohttp import ClientSession
+        from aioresponses import aioresponses
+
+        from custom_components.v2c_cloud.local_api import (
+            async_get_or_create_local_coordinator,
+        )
+
+        runtime = MagicMock()
+        runtime.local_coordinators = {}
+        runtime.coordinator.config_entry.data = entry_data
+        runtime.coordinator.config_entry.options = {}
+        runtime.coordinator.data = {"devices": {DEVICE_ID: {"reported": {}}}}
+
+        session = ClientSession()
+        try:
+            with (
+                aioresponses() as m,
+                patch(
+                    "custom_components.v2c_cloud.local_api.async_get_clientsession",
+                    return_value=session,
+                ),
+                patch("custom_components.v2c_cloud.local_api._persist_lan_observed_ip"),
+            ):
+                if lan_serves:
+                    m.get(
+                        f"http://{LAN_IP}/RealTimeData",
+                        status=200,
+                        body='{"ChargeState":2,"ChargePower":7360,"Intensity":32}',
+                        repeat=True,
+                    )
+                coordinator = await async_get_or_create_local_coordinator(
+                    MagicMock(), runtime, DEVICE_ID
+                )
+        finally:
+            await session.close()
+        return runtime, coordinator
+
+    async def test_cloud_down_but_lan_reachable_keeps_real_data(self):
+        """The headline case: cloud dead, charger on Wi-Fi, entities alive."""
+        runtime, coordinator = await self._coordinator(
+            entry_data={
+                CONF_CLOUD_ONLY: False,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+            },
+            lan_serves=True,
+        )
+
+        assert coordinator.data["ChargeState"] == 2
+        assert coordinator.data["ChargePower"] == 7360
+        # The payload came off the charger, not from cloud synthesis.
+        assert "_data_source" not in coordinator.data
+        assert active_transport(runtime, DEVICE_ID) == "lan"
+
+    async def test_manual_override_alone_is_enough(self):
+        """No cache, no cloud — just the address the user typed."""
+        runtime, coordinator = await self._coordinator(
+            entry_data={CONF_CLOUD_ONLY: False, CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP}},
+            lan_serves=True,
+        )
+
+        assert coordinator.data["Intensity"] == 32
+        assert active_transport(runtime, DEVICE_ID) == "lan"
+        assert describe_ip_source(runtime, DEVICE_ID) == (LAN_IP, "manual")
+
+    async def test_cloud_down_and_no_address_reports_offline(self):
+        """Nothing to talk to: say so, instead of a wall of Unknown."""
+        runtime, coordinator = await self._coordinator(
+            entry_data={CONF_CLOUD_ONLY: False},
+            lan_serves=False,
+        )
+
+        assert payload_is_empty(coordinator.data)
+        assert active_transport(runtime, DEVICE_ID) == "offline"
+        assert describe_ip_source(runtime, DEVICE_ID) == (None, None)
+
+    async def test_lan_entry_keeps_lan_cadence_without_an_address(self):
+        """A LAN entry must not be demoted to the cloud-only poll interval."""
+        from custom_components.v2c_cloud.const import CLOUD_ONLY_UPDATE_INTERVAL
+
+        _, coordinator = await self._coordinator(
+            entry_data={CONF_CLOUD_ONLY: False},
+            lan_serves=False,
+        )
+        assert coordinator.update_interval != CLOUD_ONLY_UPDATE_INTERVAL
+
+    async def test_cloud_only_entry_uses_cloud_cadence(self):
+        """A 4G entry is unaffected by any of this."""
+        from custom_components.v2c_cloud.const import CLOUD_ONLY_UPDATE_INTERVAL
+
+        _, coordinator = await self._coordinator(
+            entry_data={
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+            },
+            lan_serves=False,
+        )
+        assert coordinator.update_interval == CLOUD_ONLY_UPDATE_INTERVAL
+
+
+class TestAvailabilitySemantics:
+    """Unavailable means "cannot exist", Unknown means "value not reported"."""
+
+    def _sensor(self, *, key: str, data: Any, cloud_only: bool = False):
+        from custom_components.v2c_cloud.sensor import (
+            REALTIME_SENSOR_DESCRIPTIONS,
+            V2CLocalRealtimeSensor,
+        )
+
+        description = next(d for d in REALTIME_SENSOR_DESCRIPTIONS if d.key == key)
+        sensor = V2CLocalRealtimeSensor.__new__(V2CLocalRealtimeSensor)
+        sensor.entity_description = description
+        runtime = MagicMock()
+        runtime.cloud_only = cloud_only
+        sensor._runtime_data = runtime
+        coordinator = MagicMock()
+        coordinator.data = data
+        coordinator.last_update_success = True
+        sensor.coordinator = coordinator
+        return sensor
+
+    def test_empty_payload_is_unavailable_not_unknown(self):
+        sensor = self._sensor(
+            key="ChargePower", data={"_data_source": "cloud_reported_empty"}
+        )
+        assert sensor.available is False
+
+    def test_lan_only_key_unavailable_while_synthesised(self):
+        sensor = self._sensor(
+            key="SignalStatus", data={"_data_source": "cloud_reported", "Intensity": 6}
+        )
+        assert sensor.available is False
+
+    def test_cloud_backed_key_stays_available_while_synthesised(self):
+        sensor = self._sensor(
+            key="ChargePower",
+            data={"_data_source": "cloud_reported", "ChargePower": 10},
+        )
+        assert sensor.available is True
+
+    def test_real_lan_payload_keeps_lan_only_keys_available(self):
+        sensor = self._sensor(key="SignalStatus", data={"SignalStatus": 3})
+        assert sensor.available is True

@@ -2,10 +2,11 @@
   "config": {
     "step": {
       "user": {
-        "title": "V2C Cloud",
-        "description": "Enter your V2C Cloud API key. You can generate it from the V2C Cloud portal.",
-        "data": {
-          "api_key": "API key"
+        "title": "How do you want to connect?",
+        "description": "Choose 'With a V2C account' for the full integration: chargers are discovered automatically and cloud-only controls are available. Choose 'Local only' to talk to a charger on your network without an account — useful when the V2C cloud is unreachable. Cloud-only controls stay unavailable in that mode.",
+        "menu_options": {
+          "cloud": "With a V2C account (cloud + LAN)",
+          "lan_only": "Local only, no V2C account"
         }
       },
       "reauth_confirm": {
@@ -28,12 +29,27 @@
         "data": {
           "connection_type": "Connection type"
         }
+      },
+      "cloud": {
+        "title": "V2C Cloud account",
+        "description": "Enter the API key from v2c.cloud (User → API → Get token).",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "lan_only": {
+        "title": "Charger on the local network",
+        "description": "Enter the charger's IP address on your LAN. Home Assistant reads its id directly from the charger, so no V2C account is needed. Give the charger a fixed address (DHCP reservation) so it stays reachable.",
+        "data": {
+          "ip_address": "Charger IP address"
+        }
       }
     },
     "error": {
       "invalid_api_key": "The provided API key is not valid.",
       "cannot_connect": "Could not reach the V2C Cloud API. Check your internet connection and try again.",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "no_device_id": "The charger answered but did not report a device id."
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
@@ -45,7 +61,7 @@
     "step": {
       "init": {
         "title": "V2C Cloud options",
-        "description": "Choose how the charger connects and tune the LAN polling interval.\n\n• **Connection type:** switch between **Local (Wi-Fi)** and **Cloud only (4G)** at any time. Changing this reloads the integration.\n\n• **Local refresh interval:** how often the integration polls the charger over LAN, in seconds. Range 5-300, default 30. Values below 15 s can saturate a slow LAN and are not recommended. Cloud-only (4G) chargers ignore this setting.\n\nPer-device LAN IPs are discovered from the V2C Cloud automatically and kept in sync, so no manual IP needs to be configured.",
+        "description": "Local (Wi-Fi) prefers the charger's own HTTP API and falls back to the cloud; Cloud only (4G) always uses the cloud. The per-charger IP fields below (named after each charger id) override the address discovered from the cloud — fill one in if the cloud is unreachable or the address is wrong. Leave empty to let the cloud decide.",
         "data": {
           "connection_type": "Connection type",
           "local_update_interval": "Local refresh interval (seconds)"
@@ -347,6 +363,12 @@
     "get_connected_status": {
       "name": "Refresh cloud connection status",
       "description": "Query the cloud-side connection status; the result is fired on the v2c_cloud_connected_status event."
+    }
+  },
+  "issues": {
+    "cloud_auth_degraded": {
+      "title": "V2C Cloud is not authenticating — running on LAN only",
+      "description": "Home Assistant could not authenticate against the V2C Cloud for \"{title}\". The integration is still controlling your charger over the local network, so nothing has been lost, but cloud-only controls (RFID, OCPP, firmware update, reboot) are unavailable until the cloud recovers.\n\nThis is usually a problem on V2C's side rather than a wrong key — the V2C API rejected valid keys for several days in September 2026. If it persists, re-enter your API key from the integration's Reconfigure dialog. If the charger is on your LAN but still shows no data, set its IP address manually in the integration options."
     }
   }
 }

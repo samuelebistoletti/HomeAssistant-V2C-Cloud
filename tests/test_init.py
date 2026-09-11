@@ -314,7 +314,7 @@ class TestBuildSyntheticFallback:
 
 
 class TestMigration:
-    """Unit tests for the v1 -> v2 schema migration."""
+    """Unit tests for the v1 -> v2 -> v3 schema migrations."""
 
     async def test_migrate_local_no_fallback(self) -> None:
         from custom_components.v2c_cloud.__init__ import async_migrate_entry
@@ -330,8 +330,11 @@ class TestMigration:
         assert result is True
         kwargs = hass.config_entries.async_update_entry.call_args.kwargs
         new_data = kwargs["data"]
-        assert kwargs["version"] == 2
+        assert kwargs["version"] == 3
         assert new_data["cloud_only"] is False
+        # v3 keys are added by the chained migration, not by v1 -> v2.
+        assert new_data["manual_ips"] == {}
+        assert new_data["lan_only"] is False
         assert new_data["cached_pairings"] == []
         # Vestigial sentinel: leave fallback_ip = "" so a HACS rollback to
         # <1.3 reads it as the cloud-only sentinel rather than crashing on
@@ -404,17 +407,60 @@ class TestMigration:
             {"deviceId": "B", "ip": "10.0.0.2"},
         ]
 
-    async def test_migrate_already_v2_is_noop(self) -> None:
+    async def test_migrate_v2_adds_v3_keys(self) -> None:
+        """A v2 entry gains manual_ips + lan_only and nothing else changes."""
         from custom_components.v2c_cloud.__init__ import async_migrate_entry
 
         entry = MagicMock()
         entry.version = 2
-        entry.data = {"api_key": "K", "cloud_only": False, "cached_pairings": []}
+        entry.data = {
+            "api_key": "K",
+            "cloud_only": True,
+            "cached_pairings": [{"deviceId": "DEV1", "ip": "192.168.1.50"}],
+            "fallback_ip": "",
+        }
         hass = MagicMock()
         hass.config_entries.async_update_entry = MagicMock()
 
-        result = await async_migrate_entry(hass, entry)
-        assert result is True
+        assert await async_migrate_entry(hass, entry) is True
+
+        kwargs = hass.config_entries.async_update_entry.call_args.kwargs
+        new_data = kwargs["data"]
+        assert kwargs["version"] == 3
+        assert new_data["manual_ips"] == {}
+        assert new_data["lan_only"] is False
+        # Pre-existing values are carried over untouched.
+        assert new_data["cloud_only"] is True
+        assert new_data["cached_pairings"] == [
+            {"deviceId": "DEV1", "ip": "192.168.1.50"}
+        ]
+        assert new_data["api_key"] == "K"
+
+    async def test_migrate_v2_keeps_existing_manual_ips(self) -> None:
+        """setdefault must not clobber values a newer flow already wrote."""
+        from custom_components.v2c_cloud.__init__ import async_migrate_entry
+
+        entry = MagicMock()
+        entry.version = 2
+        entry.data = {"api_key": "K", "manual_ips": {"DEV1": "192.168.1.9"}}
+        hass = MagicMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        await async_migrate_entry(hass, entry)
+
+        new_data = hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert new_data["manual_ips"] == {"DEV1": "192.168.1.9"}
+
+    async def test_migrate_already_v3_is_noop(self) -> None:
+        from custom_components.v2c_cloud.__init__ import async_migrate_entry
+
+        entry = MagicMock()
+        entry.version = 3
+        entry.data = {"api_key": "K", "cloud_only": False}
+        hass = MagicMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        assert await async_migrate_entry(hass, entry) is True
         hass.config_entries.async_update_entry.assert_not_called()
 
     async def test_migrate_fallback_ip_none_is_treated_as_local(self) -> None:

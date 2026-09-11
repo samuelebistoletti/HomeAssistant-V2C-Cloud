@@ -9,7 +9,7 @@ DOMAIN = "v2c_cloud"
 # Config-entry schema version. Bump in lockstep with a new migration in
 # async_migrate_entry; both config_flow.VERSION and the migration target
 # read this single source of truth.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # entry.data keys governing how the integration reaches each charger.
 #   cloud_only    -> 4G charger: no LAN transport exists at all.
@@ -17,7 +17,10 @@ SCHEMA_VERSION = 2
 #                    over anything discovered from the cloud, and they are the
 #                    only address source that survives a total cloud outage on
 #                    an entry that has never seen /pairings/me.
+#   lan_only      -> the entry was set up without a V2C account at all: no
+#                    api_key, no cloud calls, addresses supplied by the user.
 CONF_CLOUD_ONLY = "cloud_only"
+CONF_LAN_ONLY = "lan_only"
 CONF_CACHED_PAIRINGS = "cached_pairings"
 CONF_MANUAL_IPS = "manual_ips"
 

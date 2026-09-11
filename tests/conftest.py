@@ -164,6 +164,15 @@ def _install_ha_stubs() -> None:
             ) -> dict:
                 return {"type": "form", "step_id": step_id}
 
+            def async_show_menu(
+                self, *, step_id: str, menu_options: Any = None
+            ) -> dict:
+                return {
+                    "type": "menu",
+                    "step_id": step_id,
+                    "menu_options": menu_options,
+                }
+
             def async_update_reload_and_abort(
                 self, entry: Any, *, data_updates: Any = None
             ) -> dict:

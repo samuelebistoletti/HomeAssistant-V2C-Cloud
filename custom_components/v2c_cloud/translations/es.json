@@ -8,14 +8,16 @@
     "error": {
       "invalid_api_key": "La clave API proporcionada no es válida.",
       "cannot_connect": "No se pudo contactar con el API de V2C Cloud. Comprueba tu conexión a internet y vuelve a intentarlo.",
-      "unknown": "Se produjo un error inesperado"
+      "unknown": "Se produjo un error inesperado",
+      "no_device_id": "El cargador respondió pero no indicó un identificador."
     },
     "step": {
       "user": {
-        "title": "V2C Cloud",
-        "description": "Introduce tu clave API de V2C Cloud. Puedes generarla desde el portal V2C Cloud.",
-        "data": {
-          "api_key": "Clave API"
+        "title": "¿Cómo quieres conectarte?",
+        "description": "Elige 'Con una cuenta V2C' para la integración completa: los cargadores se detectan automáticamente y los controles solo-nube están disponibles. Elige 'Solo local' para comunicarte con un cargador de tu red sin cuenta — útil cuando la nube de V2C no está accesible. En ese modo los controles solo-nube no estarán disponibles.",
+        "menu_options": {
+          "cloud": "Con una cuenta V2C (nube + LAN)",
+          "lan_only": "Solo local, sin cuenta V2C"
         }
       },
       "reauth_confirm": {
@@ -38,6 +40,20 @@
         "data": {
           "connection_type": "Tipo de conexión"
         }
+      },
+      "cloud": {
+        "title": "Cuenta de V2C Cloud",
+        "description": "Introduce la clave API de v2c.cloud (Usuario → API → Obtener token).",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "lan_only": {
+        "title": "Cargador en la red local",
+        "description": "Introduce la dirección IP del cargador en tu LAN. Home Assistant lee su identificador directamente del cargador, así que no hace falta cuenta V2C. Asigna al cargador una dirección fija (reserva DHCP) para que siga siendo accesible.",
+        "data": {
+          "ip_address": "Dirección IP del cargador"
+        }
       }
     }
   },
@@ -45,7 +61,7 @@
     "step": {
       "init": {
         "title": "Opciones V2C Cloud",
-        "description": "Elige cómo se conecta el cargador y ajusta el intervalo de sondeo LAN.\n\n• **Tipo de conexión:** puedes cambiar en cualquier momento entre **Local (Wi-Fi)** y **Solo cloud (4G)**. El cambio recarga la integración.\n\n• **Intervalo de refresco local:** con qué frecuencia la integración consulta el cargador por LAN, en segundos. Rango 5-300, predeterminado 30. Valores inferiores a 15 s pueden saturar una LAN lenta y no se recomiendan. Los cargadores solo cloud (4G) ignoran esta opción.\n\nLas IP LAN por dispositivo se descubren automáticamente desde el V2C Cloud y se mantienen sincronizadas, por lo que no es necesario configurar ninguna IP manualmente.",
+        "description": "Local (Wi-Fi) prefiere la API HTTP del propio cargador y recurre a la nube; Solo nube (4G) usa siempre la nube. Los campos de IP de abajo (uno por identificador de cargador) tienen prioridad sobre la dirección detectada en la nube: rellena uno si la nube no está accesible o si la dirección es incorrecta. Déjalo vacío para que decida la nube.",
         "data": {
           "connection_type": "Tipo de conexión",
           "local_update_interval": "Intervalo de refresco local (segundos)"
@@ -347,6 +363,12 @@
     "get_connected_status": {
       "name": "Verificar conexión cloud",
       "description": "Consulta el estado de conexión del dispositivo en el cloud; el resultado se publica en el evento v2c_cloud_connected_status."
+    }
+  },
+  "issues": {
+    "cloud_auth_degraded": {
+      "title": "V2C Cloud no autentica — funcionando solo por LAN",
+      "description": "Home Assistant no ha podido autenticarse en V2C Cloud para \"{title}\". La integración sigue controlando el cargador por la red local, así que no se ha perdido nada, pero los controles solo-nube (RFID, OCPP, actualización de firmware, reinicio) no están disponibles hasta que la nube se recupere.\n\nSuele ser un problema del lado de V2C y no una clave incorrecta — en septiembre de 2026 la API de V2C rechazó claves válidas durante días. Si persiste, vuelve a introducir tu clave API desde el diálogo Reconfigurar. Si el cargador está en tu LAN pero no muestra datos, configura su IP manualmente en las opciones."
     }
   }
 }

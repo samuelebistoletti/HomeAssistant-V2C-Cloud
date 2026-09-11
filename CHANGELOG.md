@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.8] - 2026-09-11
+
+### Fixed
+
+- When two commands for the same switch overlap, a failure of the earlier one
+  no longer discards the state and hold window established by the later one.
+
 ## [1.4.0-beta.7] - 2026-09-11
 
 ### Fixed

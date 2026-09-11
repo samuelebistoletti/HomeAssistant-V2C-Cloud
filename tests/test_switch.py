@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -249,3 +250,78 @@ class TestFailedCommandDoesNotStick:
 
         setter.assert_awaited_once()
         assert switch._optimistic_state is True
+
+
+class TestOverlappingCommands:
+    """
+    A failing command must not trample a newer one that is still in flight.
+
+    Two service calls can overlap on the same entity — two automations firing
+    together, or a user tapping while a slow request is on the wire. The
+    second call owns the display from the moment it starts. Rolling back the
+    first one on failure restored a state captured before the second began and
+    cleared the hold the second had started, so the UI reverted to stale state
+    even when the newer command succeeded.
+    """
+
+    def _switch(self):
+        switch, _ = _make_switch(local_keys=())
+        switch.async_write_ha_state = MagicMock()
+        switch.coordinator = MagicMock()
+        switch.coordinator.async_request_refresh = AsyncMock()
+        switch._schedule_delayed_refresh = MagicMock()
+        return switch
+
+    async def test_older_failure_leaves_the_newer_command_alone(self):
+        from custom_components.v2c_cloud.v2c_cloud import V2CRequestError
+
+        switch = self._switch()
+
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def _slow_then_fail(_state):
+            first_started.set()
+            await release_first.wait()
+            raise V2CRequestError("500", status=500)
+
+        switch._setter = AsyncMock(side_effect=_slow_then_fail)
+        first = asyncio.create_task(switch.async_turn_on())
+        await first_started.wait()
+
+        # A second command starts and takes over the display.
+        switch._setter = AsyncMock(return_value=None)
+        await switch.async_turn_off()
+        assert switch._optimistic_state is False
+        hold_after_second = switch._last_command_ts
+
+        # Now let the first one fail.
+        release_first.set()
+        with pytest.raises(V2CRequestError):
+            await first
+
+        assert switch._optimistic_state is False, "newer command was overwritten"
+        assert switch._last_command_ts == hold_after_second, "newer hold was cleared"
+
+    async def test_latest_failure_still_rolls_back(self):
+        """The guard must not disable the rollback in the ordinary case."""
+        from custom_components.v2c_cloud.v2c_cloud import V2CRequestError
+
+        switch = self._switch()
+        switch._optimistic_state = True
+        switch._setter = AsyncMock(side_effect=V2CRequestError("500", status=500))
+
+        with pytest.raises(V2CRequestError):
+            await switch.async_turn_off()
+
+        assert switch._optimistic_state is True
+        assert switch._last_command_ts is None
+
+    async def test_each_command_gets_its_own_token(self):
+        switch = self._switch()
+        first = switch._record_command()
+        second = switch._record_command()
+
+        assert first != second
+        assert switch._is_latest_command(second) is True
+        assert switch._is_latest_command(first) is False

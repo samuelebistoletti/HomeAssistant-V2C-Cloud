@@ -2,186 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0] - 2026-09-11
+## [1.4.0-beta.1] - 2026-09-11
 
-Conformance and resilience release.
-
-**Conformance:** the integration was audited end-to-end against the two
-authoritative V2C documents — the published Cloud OpenAPI 3.1.0 spec
-(`https://api.v2charge.com/`) and the Trydan local HTTP API keyword table
-(revision 14/07/26). All 40 documented cloud endpoints were already
-implemented; this fixes the three places where the implementation diverged
-from the documentation and exposes six documented LAN fields that had no
-entity.
-
-**Resilience:** in September 2026 the V2C Cloud rejected valid API keys for
-days (#54). Chargers on the local network stayed perfectly reachable, yet the
-integration went dark with the cloud. It no longer does. A Wi-Fi install keeps
-running over the LAN through a cloud outage, addresses can be supplied by hand,
-and the integration can now be set up with no V2C account at all. Cloud-only
-(4G) chargers are deliberately unchanged — without the cloud they have no
-transport — and the two install types are now properly decoupled.
-
-> **Breaking (auto-migrated):** the config entry schema moves from v2 to v3 on
-> first load. No user action is required.
+> **Breaking (auto-migrated):** the config entry schema is upgraded from v2 to
+> v3 on first load. No user action is required.
 
 ### Added
 
-- **The integration survives a total V2C Cloud outage** (#54). For several days
-  in September 2026 the V2C API rejected freshly generated, valid API keys.
-  Every Wi-Fi install went down with it even though the chargers were reachable
-  on the LAN the whole time, because an authentication failure raised
-  `ConfigEntryAuthFailed` unconditionally — unloading the entry, local
-  coordinators included — and because every address source `resolve_static_ip`
-  consulted was itself derived from live cloud data. A LAN entry that knows at
-  least one address now **degrades instead of unloading**: it raises a repair
-  issue explaining that cloud-only controls are unavailable, keeps polling and
-  controlling the charger over HTTP, and clears the issue by itself when the
-  cloud authenticates again. Cloud-only (4G) entries are untouched: they have
-  no second transport, so they still ask for reauthentication.
-- **Setup without a V2C account.** The config flow opens with a choice: with a
-  V2C account (the previous flow, unchanged) or **local only** — type the
-  charger's IP and the device id is read straight off its `/RealTimeData`
-  response. Such an entry stores no API key and never calls the cloud. During
-  the outage a fresh install was impossible even for a charger on the same
-  switch as Home Assistant; this is the path that fixes that.
-- **Per-charger IP overrides** in the integration options, one optional field
-  per known charger. A filled field takes precedence over everything the cloud
-  reports and is the only address source that works when the cloud has never
-  answered; an empty one hands control back to the cloud. Values are validated
-  with the same private-address policy the LAN write path enforces.
-- **`Active transport` diagnostic sensor** per charger, reporting `Local
-  network`, `V2C Cloud` or `Offline`, with the address in use and where it came
-  from (manual / cloud / cache / charger) as attributes. The failure mode in
-  #54 was invisible: a Wi-Fi install silently fell back to cloud synthesis and
-  the only clue was that every LAN reading went Unknown.
-- **Six per-phase measurement sensors** — `IntensityMeasure_L1/L2/L3` (A) and
-  `VoltageMeasure_L1/L2/L3` (V). They are documented in the LAN
-  `/RealTimeData` payload but had no entity until now. All six are LAN-only
-  (no cloud endpoint carries them), so they correctly advertise as
-  **Unavailable** in cloud-only (4G) mode. Names added to `strings.json` and
-  all three translations (en/it/es).
+- **Local-only setup.** The integration can be configured without a V2C
+  account: enter the charger's IP address and the device id is read from the
+  charger itself. Such an entry never calls the cloud; cloud-only controls are
+  unavailable on it.
+- **Per-charger IP overrides** in the integration options. A configured
+  address takes precedence over cloud discovery and is validated against the
+  private-address policy; an empty field returns control to the cloud.
+- **LAN entries keep working while the V2C Cloud is unavailable or rejects
+  authentication.** Polling and control continue over the local network and a
+  repair issue is raised, clearing automatically when the cloud recovers.
+  Cloud-only (4G) entries still require reauthentication.
+- **`Active transport` diagnostic sensor** per charger — `Local network`,
+  `V2C Cloud` or `Offline` — exposing the address in use and its source
+  (manual, cloud, cache, charger) as attributes.
+- **Six per-phase measurement sensors**: `IntensityMeasure_L1/L2/L3` (A) and
+  `VoltageMeasure_L1/L2/L3` (V). LAN-only, so they report as unavailable in
+  cloud-only mode.
 - **`days_of_week` field on `v2c_cloud.program_timer`** — digits 1-7 with
-  1 = Monday (e.g. `"123"` = Mon+Tue+Wed), defaulting to every day. This is
-  the documented `daysOfWeek` body field that the service previously never
-  sent.
-- Normalisation of the stray `IntensityMeasure_L1y` key spelling (present in
-  the published sample payload) onto the documented `IntensityMeasure_L1`.
-
-### Fixed
-
-- **`async_shutdown` was called but never awaited** on config-entry unload
-  (`__init__.py`), reported through a user log in #54. The visible symptom was
-  `RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown' was never
-  awaited`; the real damage is that nothing was cancelled, so every unload or
-  reload leaked each local coordinator's scheduled refresh timer — exactly what
-  the surrounding code exists to prevent.
-- **A LAN charger was silently reclassified as cloud-only** whenever no usable
-  IP happened to be available at that instant. The entry's own connection-type
-  flag is now the only thing that decides the transport, and a LAN entry keeps
-  its LAN polling cadence, recovering by itself as soon as an address appears.
-- **LAN readings reported `Unknown` when they could not exist at all.** A
-  LAN-only quantity on a cloud-synthesised payload, and any reading when
-  neither transport produced data, are now `Unavailable` — "the value cannot
-  exist right now" rather than "the charger reports an unknown value".
-- **The router's error message named the wrong cause.** On a Wi-Fi entry whose
-  LAN write had just failed it said the entry was in "cloud-only mode", sending
-  users to look for a configuration problem that did not exist. It now
-  distinguishes a genuinely cloud-only entry from an unreachable charger, and
-  points at the new manual-IP option.
-- **`DynamicPowerMode` codes 2 and 3 were swapped**, mislabelling both the
-  sensor and the select. Per the LAN documentation, 2 = minimum power mode and
-  3 = exclusive PV mode (previously shown the other way round).
-- **`ChargeState` used the cloud enum for LAN data.** The two documents
-  disagree for the same quantity: the LAN keyword table maps the IEC 61851
-  pilot states A/B/C/F/E/D onto `0/1/2/4/5/6` (with no code 3), while the
-  cloud spec documents `3` = ventilation required, `4` = control pilot short
-  circuit, `5` = general fault. The integration shipped the cloud enum, so in
-  LAN mode state `6` (ventilation required) rendered as the raw number `6` and
-  states `4`/`5` carried the wrong labels. The LAN enum is now canonical for
-  the entity layer and cloud values are translated onto it during cloud→LAN
-  synthesis (`3→6`, `4→5`, `5→4`; `0/1/2` agree in both enums).
-- **`POST /device/timer` sent a non-conforming request.** It omitted the
-  documented `daysOfWeek` body field entirely — so a timer programmed from
-  Home Assistant had no days assigned — while sending guessed `start_time` /
-  `end_time` aliases, an undocumented `active` flag and a bogus `"timer id"`
-  query parameter (with a space). The request now carries exactly `timeStart`,
-  `timeEnd` and `daysOfWeek` plus the `timerId` query parameter, and rejects
-  malformed day strings before issuing the call.
-
-### Deprecated
-
-- **`active` field of `v2c_cloud.program_timer`.** The documented timer body
-  has no such field. It is still accepted so existing automations keep
-  working, but it is ignored and logs a warning. Enabling or disabling the
-  programmed timers is a separate control: the LAN `Timer` keyword, exposed as
-  the Timer switch.
+  1 = Monday (e.g. `"123"` = Mon+Tue+Wed), defaulting to every day.
 
 ### Changed
 
-- **Config entry schema v2 → v3 (auto-migrated).** Adds `manual_ips` (the
-  per-charger overrides) and `lan_only` (entries created without an account).
-  Nothing that already existed changes, and entries created by older versions
-  migrate silently on first load.
-- A successful LAN fetch now persists the address that just worked, so the
-  cached address book is no longer written by the cloud alone and survives a
-  restart in the middle of an outage.
-- `/device/logo_led` is now part of the published cloud spec; the client
-  docstring no longer describes it as an undocumented, probe-discovered
-  endpoint.
-- **Dependency and CI maintenance.** Every pin was checked against its latest
-  release and updated as far as compatibility allows:
-  - Python: `aiohttp` >=3.13.5,<3.14 → **>=3.14.3,<4** (see _Security_),
-    `aioresponses` >=0.7.8 → >=0.7.9 (Dependabot #48), `colorlog` 6.10.1 →
-    **6.12.0**, `ruff` 0.15.18 → **0.16.6**, `pip` floor >=26.1.2 → >=26.2.1.
-    Already at their latest: `pytest` 9.1.1, `pytest-asyncio` 1.4.0,
-    `pyyaml` 6.0.3, `voluptuous` 0.16.0.
-  - Actions: `actions/setup-python` v6 → **v7** (ESM migration; the removed
-    `pip-install` input was never used here — only `python-version`, `cache`
-    and `cache-dependency-path`), `actions/stale` v10.3.0 → **v11.0.0** (ESM
-    migration, no input changes), `softprops/action-gh-release` v3.0.2 →
-    **v3.0.3** (#53 brought v3.0.2; v3.0.3 adds safe classification of
-    malformed GitHub API errors), `home-assistant/actions/hassfest` SHA
-    refreshed to current `master` (#49 brought the previous SHA). Already
-    current: `actions/checkout` v7, `actions/upload-artifact` v7,
-    `github/codeql-action` v4, `codecov/codecov-action` v7.0.0,
-    `dessant/lock-threads` v6.0.2, `gitleaks/gitleaks-action` v3.0.0,
-    `hacs/action` 22.5.0.
-- **`.ruff.toml`: `CPY001` added to the ignore list.** ruff 0.16 stabilised
-  `flake8-copyright`, which under this project's `select = ALL` fired on all 40
-  Python files. The project carries a single MIT `LICENSE` at the repo root and
-  does not use per-file copyright headers. `PLR0917` (also newly stabilised)
-  is silenced with a local `noqa` on the one dev-script helper that already
-  carried the matching `PLR0913` annotation.
-- Test suite grows from 479 to 563 tests; the new
-  `tests/test_api_doc_conformance_1_4.py` pins each documented enum, the timer
-  request shape and the per-phase entity set against the two source documents.
+- Config entry schema v2 → v3, adding `manual_ips` and `lan_only`.
+- The connection type stored on the entry is the only thing that selects the
+  transport. LAN entries keep their LAN polling interval regardless of cloud
+  availability.
+- A successful LAN fetch persists the address it used, keeping the cached
+  address book current without the cloud.
+- `ChargeState` follows the LAN enum (`0/1/2/4/5/6`, no code 3); cloud values
+  are translated onto it during cloud→LAN synthesis.
+- `DynamicPowerMode`: 2 = minimum power mode, 3 = exclusive PV mode.
+- `POST /device/timer` sends exactly `timeStart`, `timeEnd` and `daysOfWeek`
+  with `timerId` as a query parameter, and rejects malformed day strings.
+- `IntensityMeasure_L1y` is normalised onto the documented
+  `IntensityMeasure_L1`.
+- Entities report `Unavailable` instead of `Unknown` when the reading cannot
+  be produced by the active transport.
+- `/device/logo_led` is documented in the published cloud spec.
+- Dependencies: `aiohttp` >=3.14.3, `aioresponses` >=0.7.9, `colorlog` 6.12.0,
+  `ruff` 0.16.6, `pip` >=26.2.1, and `pytest-cov` now pinned in
+  `requirements_test.txt`. Actions: `actions/setup-python` v7, `actions/stale`
+  v11.0.0, `softprops/action-gh-release` v3.0.3, `home-assistant/actions/hassfest`
+  SHA refresh.
+- Dependabot additionally tracks the `devcontainers` and `docker` ecosystems.
+- `.ruff.toml` ignores `CPY001`.
+
+### Deprecated
+
+- **`active` field of `v2c_cloud.program_timer`** — accepted for compatibility
+  but ignored. Use the Timer switch to enable or disable programmed timers.
+
+### Fixed
+
+- `async_shutdown` is awaited on config-entry unload, so each local
+  coordinator's scheduled refresh is cancelled.
+- Control errors distinguish a cloud-only entry from an unreachable charger
+  and point at the manual-IP option.
 
 ### Security
 
-- **All 14 ignored aiohttp advisories are resolved, and the `--ignore-vuln`
-  list is gone.** Since `1.3.2` the test-deps `pip-audit` gate carried a
-  growing suppression list — 14 advisories by 2026-09-08, the newest three
-  published 2026-08-04 and one of them high severity (CVE-2026-69244,
-  out-of-bounds heap read in the C HTTP response parser; the others being
-  CVE-2026-69243, request smuggling via WebSocket upgrade, and CVE-2026-59881,
-  WebSocket client accepting compressed frames without negotiated
-  permessage-deflate). All of them existed because aiohttp was held at `<3.14`
-  for the test harness: aiohttp 3.14 made `ClientResponse.__init__` require a
-  keyword-only `stream_writer` that `aioresponses` (0.7.9, its latest release)
-  never passes, so every mocked response raised `TypeError`.
-
-  `tests/conftest.py::_install_aioresponses_compat` now supplies that argument.
-  aioresponses always builds responses with `writer=None` — aiohttp's "request
-  already sent" path — where the only attribute read off the stream writer is
-  `output_size`, so a one-attribute stub is sufficient. The shim patches
-  `aioresponses.core.ClientResponse` once, covers every mock in the suite, and
-  is a no-op on aiohttp < 3.14 (it checks the constructor signature first).
-
-  Consequently `aiohttp` is pinned `>=3.14.3,<4` and **both** audits now run
-  `--strict` with **zero ignores**. Verified locally: the full suite passes on
-  aiohttp 3.14.3 *and* on 3.13.5, and `pip-audit` reports "No known
-  vulnerabilities found" for runtime and test requirements alike.
+- `pip-audit` runs `--strict` with zero ignored advisories on both runtime and
+  test dependencies.
 
 ## [1.3.5] - 2026-06-26
 

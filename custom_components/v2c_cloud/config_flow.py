@@ -394,13 +394,13 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         self._config_entry = config_entry
         self._pending_devices: list[str] = []
         self._manual_ips: dict[str, str] = {}
-        self._pending_data: dict[str, Any] = {}
+        self._pending_changes: dict[str, Any] = {}
         self._pending_options: dict[str, Any] = {}
         self._mode_changed: bool = False
 
     def _apply(
         self,
-        new_data: dict[str, Any],
+        changes: dict[str, Any],
         new_options: dict[str, Any],
         *,
         mode_changed: bool,
@@ -413,11 +413,21 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         is still open — rebuilding the coordinators without the addresses the
         user is in the middle of typing.
 
+        ``changes`` carries only the keys this flow actually edited, and they
+        are merged into ``entry.data`` as it stands RIGHT NOW rather than into
+        the snapshot taken when the first step was shown. While the user works
+        through the per-charger forms the cloud coordinator keeps running and
+        may persist a freshly discovered charger into ``cached_pairings``;
+        writing back the snapshot would drop it, and the lost address could
+        leave that charger unreachable the next time the cloud goes down.
+
         ``entry.data`` goes through async_update_entry; ``entry.options`` is
         written by the async_create_entry return value, the canonical HA
         pattern for options-flow output (passing ``data={}`` there would
         overwrite the options just set).
         """
+        new_data = dict(self._config_entry.data)
+        new_data.update(changes)
         self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
 
         if mode_changed:
@@ -460,10 +470,10 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 if self._pending_devices:
                     return await self.async_step_manual_ip()
 
-                new_data = dict(self._pending_data)
-                new_data[CONF_MANUAL_IPS] = self._manual_ips
+                changes = dict(self._pending_changes)
+                changes[CONF_MANUAL_IPS] = self._manual_ips
                 return self._apply(
-                    new_data,
+                    changes,
                     self._pending_options,
                     mode_changed=self._mode_changed,
                 )
@@ -512,11 +522,10 @@ class V2COptionsFlow(config_entries.OptionsFlow):
             if not errors and not MIN_LOCAL_INTERVAL <= interval <= MAX_LOCAL_INTERVAL:
                 errors[CONF_LOCAL_UPDATE_INTERVAL] = "invalid_interval"
 
-            new_data = dict(current_data)
             mode_changed = new_mode != current_mode
 
             if not errors:
-                new_data[CONF_CLOUD_ONLY] = new_mode == "cloud_only"
+                changes: dict[str, Any] = {CONF_CLOUD_ONLY: new_mode == "cloud_only"}
 
                 new_options = dict(current_options)
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
@@ -527,8 +536,7 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 # Wi-Fi and given its address in a single pass, which matters
                 # most when the cloud is down and cannot supply one.
                 wants_manual = (
-                    user_input.get(CONF_SET_MANUAL_IPS)
-                    and not new_data[CONF_CLOUD_ONLY]
+                    user_input.get(CONF_SET_MANUAL_IPS) and not changes[CONF_CLOUD_ONLY]
                 )
                 if wants_manual and device_ids:
                     # Nothing is persisted yet: forms are still to come, and
@@ -536,12 +544,12 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     # as it was.
                     self._pending_devices = list(device_ids)
                     self._manual_ips = dict(current_manual)
-                    self._pending_data = new_data
+                    self._pending_changes = changes
                     self._pending_options = new_options
                     self._mode_changed = mode_changed
                     return await self.async_step_manual_ip()
 
-                return self._apply(new_data, new_options, mode_changed=mode_changed)
+                return self._apply(changes, new_options, mode_changed=mode_changed)
 
         schema = vol.Schema(
             {

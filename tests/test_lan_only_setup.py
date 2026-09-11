@@ -359,6 +359,49 @@ class TestManualIpSteps:
         await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
         assert flow.hass.async_create_task.call_count == 1
 
+    async def test_cloud_updates_during_the_flow_are_not_lost(self):
+        """
+        The commit must merge into entry.data as it stands, not a snapshot.
+
+        The cloud coordinator keeps running while the user fills in the
+        per-charger forms and can persist a newly discovered charger into
+        `cached_pairings`. Writing back the snapshot taken at the first step
+        would drop it, and the lost address could leave that charger
+        unreachable the next time the cloud goes down.
+        """
+        entry = self._entry_with(DEVICE_ID)
+        flow = self._flow(entry)
+
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+
+        # Meanwhile the cloud discovers a second charger and persists it.
+        entry.data = MappingProxyType(
+            {
+                **dict(entry.data),
+                CONF_CACHED_PAIRINGS: [
+                    {"deviceId": DEVICE_ID, "ip": "192.168.1.9"},
+                    {"deviceId": "DISCOVERED", "ip": "192.168.1.77"},
+                ],
+            }
+        )
+
+        await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert {p["deviceId"] for p in written[CONF_CACHED_PAIRINGS]} == {
+            DEVICE_ID,
+            "DISCOVERED",
+        }
+        # ...and the flow's own edits are still applied.
+        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
+        assert written[CONF_CLOUD_ONLY] is False
+
     def test_known_ids_merge_cache_and_overrides(self):
         entry = _entry(
             **{

@@ -902,6 +902,17 @@ async def _fetch_single_device_state(  # noqa: C901
         if isinstance(outcome, V2CRateLimitError):
             raise outcome
 
+    # So must a rejected key. `return_exceptions=True` used to bury it here as a
+    # per-call warning, leaving the refresh to finish "successfully" with empty
+    # payloads — so the coordinator never learned the cloud was unauthenticated,
+    # never raised the repair issue, and left every cloud-only control offering
+    # itself as operable. `/device/reported` runs on every cycle, which makes it
+    # the signal that actually notices; `/pairings/me` is served from a one-hour
+    # cache and can stay quiet for an hour after a restart.
+    for outcome in gather_results:
+        if isinstance(outcome, V2CAuthError):
+            raise outcome
+
     # --- Process reported state ---
     reported: Any = result_map["reported"]
     if isinstance(reported, Exception):
@@ -1081,6 +1092,12 @@ async def async_gather_devices_state(
     for pairing, outcome in zip(valid_pairings, raw_results, strict=True):
         device_id = pairing["deviceId"]
         if isinstance(outcome, V2CRateLimitError):
+            raise outcome
+        # A rejected key is a property of the account, not of one charger, and
+        # the coordinator has to hear about it to decide between degrading to
+        # LAN and asking for a new key. Logging it as an "unexpected error" per
+        # device and carrying on hid a total cloud outage behind a warning.
+        if isinstance(outcome, V2CAuthError):
             raise outcome
         if isinstance(outcome, Exception):
             _LOGGER.warning(

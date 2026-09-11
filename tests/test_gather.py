@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.v2c_cloud.v2c_cloud import (
+    V2CAuthError,
     V2CRateLimitError,
     V2CRequestError,
     async_gather_devices_state,
@@ -103,6 +104,40 @@ class TestAsyncGatherDevicesState:
         )
         assert "dev-A" in result
         assert "dev-B" in result
+
+    async def test_auth_error_propagates(self):
+        """
+        A rejected key must reach the coordinator, not stop at a warning.
+
+        `return_exceptions=True` buried it twice — once per API call, once per
+        device — so a refresh finished "successfully" with empty payloads. The
+        coordinator never learned the cloud was unauthenticated, so it never
+        raised the repair issue and never marked the cloud-only controls
+        unavailable, while `/device/reported` went on failing every cycle.
+        """
+        client = _make_client(reported_error=V2CAuthError("401"))
+        with pytest.raises(V2CAuthError):
+            await async_gather_devices_state(client, [{"deviceId": "dev-1"}])
+
+    async def test_auth_error_on_any_call_propagates(self):
+        """Any cloud call answering 401 means the same thing for the account."""
+        client = _make_client(current_state_charge_error=V2CAuthError("401"))
+        with pytest.raises(V2CAuthError):
+            await async_gather_devices_state(client, [{"deviceId": "dev-1"}])
+
+    async def test_auth_error_aborts_the_whole_cycle(self):
+        """
+        Authentication is a property of the account, not of one charger.
+
+        Returning the chargers that happened to answer would leave the entry
+        looking healthy on a partial payload.
+        """
+        client = _make_client(reported_error=V2CAuthError("401"))
+        with pytest.raises(V2CAuthError):
+            await async_gather_devices_state(
+                client,
+                [{"deviceId": "dev-A"}, {"deviceId": "dev-B"}],
+            )
 
 
 # ---------------------------------------------------------------------------

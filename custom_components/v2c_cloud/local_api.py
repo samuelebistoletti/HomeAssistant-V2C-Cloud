@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
@@ -400,11 +400,20 @@ async def _async_read_keyword(
         return keyword, None
 
 
-def _entry_data_of(runtime_data: V2CEntryRuntimeData) -> dict[str, Any]:
-    """Return ``entry.data`` as a plain dict, or {} when unavailable."""
+def _entry_data_of(runtime_data: V2CEntryRuntimeData) -> Mapping[str, Any]:
+    """
+    Return ``entry.data``, or an empty mapping when unavailable.
+
+    The type check is against ``Mapping``, NOT ``dict``: Home Assistant hands
+    out ``entry.data`` as a ``types.MappingProxyType``, which is a Mapping but
+    is *not* a dict subclass. An ``isinstance(data, dict)`` guard here silently
+    discarded the real config on every live instance — the manual IP overrides
+    and the cached address book were never read — while passing every test,
+    because the test doubles supplied plain dicts.
+    """
     entry = getattr(runtime_data.coordinator, "config_entry", None)
     data = getattr(entry, "data", None)
-    return data if isinstance(data, dict) else {}
+    return data if isinstance(data, Mapping) else {}
 
 
 def manual_ip_for(runtime_data: V2CEntryRuntimeData, device_id: str) -> str | None:

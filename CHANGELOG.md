@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.3] - 2026-09-11
+
+### Fixed
+
+- Manual IP overrides and the cached address book were never read on a running
+  Home Assistant instance, so a LAN entry stayed offline even with an address
+  configured. Home Assistant exposes `entry.data` as a `mappingproxy`, which is
+  not a `dict` subclass, and the type guard rejected it.
+- Chargers discovered by the cloud while the options dialog was open were
+  discarded when it was saved. The options flow now merges its own edits into
+  the current configuration instead of the snapshot taken when it opened.
+
 ## [1.4.0-beta.2] - 2026-09-11
 
 ### Fixed

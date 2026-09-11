@@ -17,6 +17,7 @@ genuinely has no second transport — still asks for reauthentication.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -49,10 +50,19 @@ OTHER_IP = "192.168.1.77"
 
 
 def _entry(**data: Any) -> MagicMock:
+    """
+    Build a config-entry double whose ``data`` is a MappingProxyType.
+
+    Home Assistant exposes ``entry.data`` as a mappingproxy, which is a Mapping
+    but NOT a dict subclass. Doubles that hand back a plain dict hide type
+    errors that break every live instance — that is exactly how an
+    ``isinstance(data, dict)`` guard shipped in 1.4.0-beta.2 and silently
+    discarded the manual IP overrides and the cached address book.
+    """
     entry = MagicMock()
     entry.entry_id = "entry-1"
     entry.title = "V2C Cloud"
-    entry.data = data
+    entry.data = MappingProxyType(dict(data))
     return entry
 
 
@@ -375,3 +385,42 @@ class TestAvailabilitySemantics:
     def test_real_lan_payload_keeps_lan_only_keys_available(self):
         sensor = self._sensor(key="SignalStatus", data={"SignalStatus": 3})
         assert sensor.available is True
+
+
+class TestEntryDataIsReadThroughMappingProxy:
+    """
+    Home Assistant hands out ``entry.data`` as a mappingproxy, not a dict.
+
+    Regression cover for 1.4.0-beta.2, where an ``isinstance(data, dict)``
+    guard made the integration ignore both the manual overrides and the cached
+    address book on every real instance while the suite stayed green.
+    """
+
+    def _runtime_with_proxy(self, **data: Any) -> MagicMock:
+        runtime = MagicMock()
+        runtime.coordinator.config_entry.data = MappingProxyType(dict(data))
+        runtime.coordinator.data = None
+        runtime.local_coordinators = {}
+        return runtime
+
+    def test_manual_override_is_read_from_a_mappingproxy(self):
+        runtime = self._runtime_with_proxy(**{CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP}})
+        assert resolve_static_ip(runtime, DEVICE_ID) == LAN_IP
+
+    def test_cached_pairings_are_read_from_a_mappingproxy(self):
+        runtime = self._runtime_with_proxy(
+            **{CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}]}
+        )
+        assert resolve_static_ip(runtime, DEVICE_ID) == LAN_IP
+
+    def test_transport_reports_the_source_from_a_mappingproxy(self):
+        runtime = self._runtime_with_proxy(**{CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP}})
+        assert describe_ip_source(runtime, DEVICE_ID) == (LAN_IP, "manual")
+
+    def test_a_plain_dict_keeps_working_too(self):
+        """Other callers (and older HA versions) may still pass a real dict."""
+        runtime = MagicMock()
+        runtime.coordinator.config_entry.data = {CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP}}
+        runtime.coordinator.data = None
+        runtime.local_coordinators = {}
+        assert resolve_static_ip(runtime, DEVICE_ID) == LAN_IP

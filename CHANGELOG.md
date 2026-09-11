@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.5] - 2026-09-11
+
+### Changed
+
+- Controls that exist only in the V2C cloud API report as unavailable while the
+  cloud is unauthenticated, or on an entry set up without an account: OCPP, the
+  RFID reader, installation type, slave device, language, the reboot and
+  firmware update buttons, and the cloud connectivity sensor. Everything served
+  over the local network keeps working.
+- A switch whose state has never been received reports Unknown instead of Off.
+
+### Fixed
+
+- A command the cloud refuses now surfaces a readable error instead of a
+  traceback, and no longer opens the re-authentication dialog from a service
+  call.
+
 ## [1.4.0-beta.4] - 2026-09-11
 
 ### Changed

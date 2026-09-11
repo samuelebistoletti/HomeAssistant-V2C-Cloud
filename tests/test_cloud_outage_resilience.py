@@ -424,3 +424,53 @@ class TestEntryDataIsReadThroughMappingProxy:
         runtime.coordinator.data = None
         runtime.local_coordinators = {}
         assert resolve_static_ip(runtime, DEVICE_ID) == LAN_IP
+
+
+class TestRejectedKeyIsReportedNotSwallowed:
+    """
+    A command that cannot be delivered must say so, in words.
+
+    The cloud answers a rejected key with an empty-bodied 401, so the raw
+    exception reads "V2C authentication failed: " and nothing more. Pressing
+    the OCPP switch during the outage put that, plus a traceback, in the log
+    and left the UI with no explanation at all.
+    """
+
+    async def test_entity_command_raises_a_readable_error(self) -> None:
+        from homeassistant.exceptions import HomeAssistantError
+
+        from custom_components.v2c_cloud.entity import V2CEntity
+        from custom_components.v2c_cloud.v2c_cloud import V2CAuthError
+
+        entity = V2CEntity.__new__(V2CEntity)
+        entity.coordinator = MagicMock()
+
+        async def _rejected() -> None:
+            raise V2CAuthError("V2C authentication failed: ")
+
+        try:
+            await entity._async_call_and_refresh(_rejected())
+        except HomeAssistantError as err:
+            message = str(err)
+        else:
+            raise AssertionError("a rejected key must surface as an error")
+
+        assert "rejected the API key" in message
+        assert "local network" in message
+        # Never a bare refresh after a failed command.
+        entity.coordinator.async_request_refresh.assert_not_called()
+
+    async def test_successful_command_still_refreshes(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from custom_components.v2c_cloud.entity import V2CEntity
+
+        entity = V2CEntity.__new__(V2CEntity)
+        entity.coordinator = MagicMock()
+        entity.coordinator.async_request_refresh = AsyncMock()
+
+        async def _ok() -> None:
+            return None
+
+        await entity._async_call_and_refresh(_ok())
+        entity.coordinator.async_request_refresh.assert_awaited_once()

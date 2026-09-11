@@ -230,6 +230,10 @@ class V2CEnumSelect(_OptimisticHoldMixin, V2CEntity, SelectEntity):
             and self._local_key in LAN_ONLY_KEYS
         ):
             return False
+        # Installation type, slave device and language have no LAN keyword:
+        # without a working cloud they cannot be read or written at all.
+        if self._local_key is None and not self._runtime_data.cloud_commands_available:
+            return False
         if self._local_coordinator is not None:
             return self._local_coordinator.last_update_success
         return self.coordinator.last_update_success

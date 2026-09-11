@@ -283,6 +283,12 @@ class V2CNumberEntity(_OptimisticHoldMixin, V2CEntity, NumberEntity):
     @property
     def available(self) -> bool:
         """Return True if the entity can be controlled."""
+        # Every number currently maps to a LAN keyword, so this guard is a
+        # standing rule rather than a live case: a value that can only travel
+        # over the cloud must not present itself as settable while the cloud
+        # is rejecting the key.
+        if self._local_key is None and not self._runtime_data.cloud_commands_available:
+            return False
         if self._local_coordinator is not None:
             return self._local_coordinator.last_update_success
         return self.coordinator.last_update_success

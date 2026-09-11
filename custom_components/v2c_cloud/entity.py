@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -12,6 +13,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN
+from .v2c_cloud import V2CAuthError
 
 if TYPE_CHECKING:
     from .v2c_cloud import V2CClient
@@ -231,6 +233,16 @@ class V2CEntity(CoordinatorEntity[DataUpdateCoordinator]):
 
     async def _async_call_and_refresh(self, coro: Any, *, refresh: bool = True) -> None:
         """Helper to perform an API call and optionally refresh the cloud coordinator."""
-        await coro
+        try:
+            await coro
+        except V2CAuthError as err:
+            # The cloud reports a rejected key as an empty-bodied 401, so the
+            # raw exception surfaces as "V2C authentication failed: " followed
+            # by nothing — a traceback in the log and no explanation in the UI.
+            raise HomeAssistantError(
+                "The V2C Cloud rejected the API key, so this command was not "
+                "delivered to the charger. Controls served over the local "
+                "network keep working."
+            ) from err
         if refresh:
             await self.coordinator.async_request_refresh()

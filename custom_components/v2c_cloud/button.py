@@ -19,6 +19,7 @@ from .local_api import V2CLocalApiError
 from .v2c_cloud import V2CError
 
 if TYPE_CHECKING:
+    from . import V2CEntryRuntimeData
     from .v2c_cloud import V2CClient
 
 
@@ -41,6 +42,7 @@ async def async_setup_entry(
                 V2CButton(
                     coordinator,
                     client,
+                    runtime_data,
                     device_id,
                     name_key="reboot",
                     unique_suffix="reboot",
@@ -53,6 +55,7 @@ async def async_setup_entry(
                 V2CButton(
                     coordinator,
                     client,
+                    runtime_data,
                     device_id,
                     name_key="trigger_update",
                     unique_suffix="trigger_update",
@@ -75,6 +78,7 @@ class V2CButton(V2CEntity, ButtonEntity):
         self,
         coordinator: DataUpdateCoordinator,
         client: V2CClient,
+        runtime_data: V2CEntryRuntimeData,
         device_id: str,
         *,
         name_key: str,
@@ -88,11 +92,22 @@ class V2CButton(V2CEntity, ButtonEntity):
         super().__init__(coordinator, client, device_id)
         self._coroutine_factory = coroutine_factory
         self._refresh_after_call = refresh_after_call
+        self._runtime_data = runtime_data
         self._attr_translation_key = name_key
         self._attr_unique_id = f"v2c_{device_id}_{unique_suffix}"
         self._attr_icon = icon
         if entity_category:
             self._attr_entity_category = entity_category
+
+    @property
+    def available(self) -> bool:
+        """Return True only while the action behind the button can be issued."""
+        # Reboot and firmware update are cloud commands with no LAN equivalent.
+        # A button that can be pressed but does nothing is a worse answer than
+        # one that is visibly out of service.
+        if not self._runtime_data.cloud_commands_available:
+            return False
+        return self.coordinator.last_update_success
 
     async def async_press(self) -> None:
         """Execute the button action."""

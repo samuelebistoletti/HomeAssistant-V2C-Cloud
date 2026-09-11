@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.6] - 2026-09-11
+
+### Fixed
+
+- A V2C Cloud authentication failure is now detected on every refresh, so the
+  repair notice appears and cloud-only controls report as unavailable as soon
+  as the cloud stops accepting the API key — including in the hour after a
+  restart, when the pairings cache could previously mask the outage entirely.
+
 ## [1.4.0-beta.5] - 2026-09-11
 
 ### Changed

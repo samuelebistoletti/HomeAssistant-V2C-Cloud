@@ -495,10 +495,10 @@ def _ip_in_records(records: object, device_id: str) -> str | None:
 # Address sources in priority order. The user's explicit override wins, then
 # live cloud data, then the persisted cache, then whatever the charger last
 # told us about itself. Steps 1 and 3 are what keep the LAN transport alive
-# during a total cloud outage: before they existed every source was derived
-# from live cloud data, so an authentication failure left the integration with
-# no address at all and silently degraded a LAN install to cloud-only
-# behaviour (issue #54).
+# during a total cloud outage: without them every source would be derived
+# from live cloud data, so an authentication failure would leave the
+# integration with no address at all and silently degrade a LAN install to
+# cloud-only behaviour.
 _IP_SOURCES: tuple[Callable[[V2CEntryRuntimeData, str], str | None], ...] = (
     _ip_from_manual_override,
     _ip_from_cloud_runtime,
@@ -762,9 +762,8 @@ async def async_route_local_or_cloud(  # noqa: PLR0913
 
     if cloud_call is None:
         # Be precise about WHICH of the two conditions failed. Saying
-        # "cloud-only mode" on a Wi-Fi entry whose LAN write just failed sent
-        # users looking for a configuration problem that did not exist
-        # (issue #54).
+        # "cloud-only mode" on a Wi-Fi entry whose LAN write just failed sends
+        # users looking for a configuration problem that does not exist.
         if cloud_only:
             detail = (
                 "this entry is configured as Cloud only (4G), and the V2C "

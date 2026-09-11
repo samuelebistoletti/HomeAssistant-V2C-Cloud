@@ -10,8 +10,6 @@
 
 This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while configuration tasks still rely on the official cloud endpoints. It is purpose-built for the official V2C Cloud APIs and the local APIs exposed by **V2C Trydan** chargers.
 
-> ⚠️ **V2C Cloud API outage (Sept 2026).** V2C's own authentication backend has been intermittently rejecting valid API keys — see [issue #54](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/issues/54). It is not something the integration can fix on its own, but as of **1.4.0** a **Local (Wi-Fi)** setup keeps working over the LAN through an outage like this instead of going offline with it — see [Running without the cloud](#running-without-the-cloud) below.
-
 ### Companion Octopus Energy integration
 
 If you manage smart-charging slots through Intelligent Octopus, pair this project with my [Octopus Energy Italy integration](https://github.com/samuelebistoletti/HomeAssistant-OctopusEnergyIT). It exposes the Octopus APIs inside Home Assistant so that Intelligent Octopus can coordinate with V2C for advanced charging automations.
@@ -86,7 +84,7 @@ Changes are applied to all per-device local coordinators immediately; no integra
 
 ## Running without the cloud *(new in 1.4.0)*
 
-The V2C Cloud is not always available — see the [outage notice](#v2c-cloud-integration-for-home-assistant) at the top of this file for a current example. As of 1.4.0, a **Local (Wi-Fi)** setup is decoupled from that: the wallbox's own HTTP API is enough to keep telemetry and the controls it supports working, cloud or no cloud.
+The V2C Cloud is not always reachable — rate limits, connectivity issues, or an authentication rejection can all happen. As of 1.4.0, a **Local (Wi-Fi)** setup is decoupled from that: the wallbox's own HTTP API is enough to keep telemetry and the controls it supports working, cloud or no cloud.
 
 ### Set up without a V2C account
 1. **Settings → Devices & Services → Add Integration → V2C Cloud → Local only.**

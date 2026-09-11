@@ -1,7 +1,7 @@
 """
 Tests for `async_unload_entry` — local-coordinator shutdown.
 
-Regression cover for the bug reported through a user log in issue #54:
+Regression cover for a bug found in a user's log:
 `DataUpdateCoordinator.async_shutdown` is a coroutine function, and it was
 being CALLED but never AWAITED. The visible symptom was
 `RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown' was never

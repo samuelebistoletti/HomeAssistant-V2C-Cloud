@@ -249,18 +249,48 @@ class TestManualIpSteps:
         written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
         assert written[CONF_MANUAL_IPS] == {}
 
-    async def test_cloud_only_entry_is_not_offered_manual_ips(self):
-        """An override would never be used on a 4G entry, so do not ask."""
+    async def test_cloud_only_entry_is_still_offered_manual_ips(self):
+        """
+        The checkbox must be available on a 4G entry too.
+
+        Converting a cloud-only entry to Wi-Fi is exactly when the address has
+        to be typed by hand — the cloud that would otherwise supply it is the
+        thing that is down. Hiding the checkbox based on the *current* mode
+        forced the user to save, reload and reopen Options first.
+        """
         entry = _entry(
             **{
                 CONF_CLOUD_ONLY: True,
                 CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
             }
         )
-        flow = self._flow(entry)
-        result = await flow.async_step_init()
+        result = await self._flow(entry).async_step_init()
 
-        assert CONF_SET_MANUAL_IPS not in {str(k) for k in result["data_schema"].schema}
+        assert CONF_SET_MANUAL_IPS in {str(k) for k in result["data_schema"].schema}
+
+    async def test_switching_from_cloud_only_to_local_asks_for_the_address(self):
+        """The whole conversion happens in one pass."""
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": ""}],
+            }
+        )
+        flow = self._flow(entry)
+        result = await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert result["step_id"] == "manual_ip"
+
+        final = await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        assert final["type"] == "create_entry"
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_CLOUD_ONLY] is False
+        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
 
     async def test_switching_to_cloud_only_skips_the_forms(self):
         flow = self._flow(self._entry_with(DEVICE_ID))
@@ -272,6 +302,60 @@ class TestManualIpSteps:
             }
         )
         assert result["type"] == "create_entry"
+
+    async def test_nothing_is_persisted_until_the_flow_completes(self):
+        """
+        Abandoning a later form must leave the entry untouched.
+
+        The mode change used to be written — and the reload scheduled — as
+        soon as the first step was submitted, so a user who closed the dialog
+        on the address form ended up with a half-applied configuration and an
+        integration reloading underneath the open flow.
+        """
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: False,
+            }
+        )
+        flow.hass.config_entries.async_update_entry.reset_mock()
+
+        flow2 = self._flow(self._entry_with(DEVICE_ID))
+        await flow2.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        # Still inside the manual-IP form: nothing written, no reload queued.
+        flow2.hass.config_entries.async_update_entry.assert_not_called()
+        flow2.hass.async_create_task.assert_not_called()
+
+        await flow2.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        flow2.hass.config_entries.async_update_entry.assert_called_once()
+
+    async def test_reload_is_scheduled_once_at_the_end(self):
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+            }
+        )
+        flow = self._flow(entry)
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert flow.hass.async_create_task.call_count == 0
+
+        await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        assert flow.hass.async_create_task.call_count == 1
 
     def test_known_ids_merge_cache_and_overrides(self):
         entry = _entry(

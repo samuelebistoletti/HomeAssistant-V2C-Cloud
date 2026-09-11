@@ -394,7 +394,41 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         self._config_entry = config_entry
         self._pending_devices: list[str] = []
         self._manual_ips: dict[str, str] = {}
+        self._pending_data: dict[str, Any] = {}
         self._pending_options: dict[str, Any] = {}
+        self._mode_changed: bool = False
+
+    def _apply(
+        self,
+        new_data: dict[str, Any],
+        new_options: dict[str, Any],
+        *,
+        mode_changed: bool,
+    ) -> FlowResult:
+        """
+        Commit the whole options flow at once, as its final act.
+
+        Persisting earlier would leave the entry half-updated if the user
+        abandons a later step, and would reload the integration while the flow
+        is still open — rebuilding the coordinators without the addresses the
+        user is in the middle of typing.
+
+        ``entry.data`` goes through async_update_entry; ``entry.options`` is
+        written by the async_create_entry return value, the canonical HA
+        pattern for options-flow output (passing ``data={}`` there would
+        overwrite the options just set).
+        """
+        self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+
+        if mode_changed:
+            # Switching modes restructures the coordinator topology (cloud-only
+            # vs LAN polling), so the entry must be reloaded. Scheduled rather
+            # than awaited: reloading inline re-enters the still-open flow.
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(self._config_entry.entry_id)
+            )
+
+        return self.async_create_entry(title="", data=new_options)
 
     async def async_step_manual_ip(
         self,
@@ -426,12 +460,13 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 if self._pending_devices:
                     return await self.async_step_manual_ip()
 
-                new_data = dict(self._config_entry.data)
+                new_data = dict(self._pending_data)
                 new_data[CONF_MANUAL_IPS] = self._manual_ips
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data
+                return self._apply(
+                    new_data,
+                    self._pending_options,
+                    mode_changed=self._mode_changed,
                 )
-                return self.async_create_entry(title="", data=self._pending_options)
 
         return self.async_show_form(
             step_id="manual_ip",
@@ -486,39 +521,27 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 new_options = dict(current_options)
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
 
-                # Persist entry.data via async_update_entry; entry.options is
-                # written by the async_create_entry return below — passing
-                # ``data=new_options`` to async_create_entry is the canonical
-                # HA pattern to store options flow output. Passing ``data={}``
-                # here would OVERWRITE the options the user just set.
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data
-                )
-
-                if mode_changed:
-                    # Switching modes restructures the coordinator topology
-                    # (cloud-only vs LAN polling). Schedule a reload so the
-                    # change takes effect immediately.
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(
-                            self._config_entry.entry_id
-                        )
-                    )
-
-                # A cloud-only (4G) entry has no LAN transport, so an address
-                # override would never be used. Skip the forms rather than
-                # collecting something inert.
+                # An address override is only ever read by the LAN transport,
+                # so the DESTINATION mode decides whether to ask — not the
+                # current one. That is what lets a 4G entry be switched to
+                # Wi-Fi and given its address in a single pass, which matters
+                # most when the cloud is down and cannot supply one.
                 wants_manual = (
                     user_input.get(CONF_SET_MANUAL_IPS)
                     and not new_data[CONF_CLOUD_ONLY]
                 )
                 if wants_manual and device_ids:
+                    # Nothing is persisted yet: forms are still to come, and
+                    # abandoning the flow half-way must leave the entry exactly
+                    # as it was.
                     self._pending_devices = list(device_ids)
                     self._manual_ips = dict(current_manual)
+                    self._pending_data = new_data
                     self._pending_options = new_options
+                    self._mode_changed = mode_changed
                     return await self.async_step_manual_ip()
 
-                return self.async_create_entry(title="", data=new_options)
+                return self._apply(new_data, new_options, mode_changed=mode_changed)
 
         schema = vol.Schema(
             {
@@ -540,11 +563,7 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 # cannot live here: Home Assistant resolves field labels from
                 # static translation keys, and a key built from the device id
                 # would surface in the UI as the raw `manual_ip_<id>` string.
-                **(
-                    {vol.Optional(CONF_SET_MANUAL_IPS, default=False): bool}
-                    if current_mode != "cloud_only"
-                    else {}
-                ),
+                vol.Optional(CONF_SET_MANUAL_IPS, default=False): bool,
             }
         )
         return self.async_show_form(

@@ -8,14 +8,16 @@
     "error": {
       "invalid_api_key": "La API key fornita non è valida.",
       "cannot_connect": "Impossibile raggiungere l'API V2C Cloud. Verifica la connessione a internet e riprova.",
-      "unknown": "Si è verificato un errore imprevisto"
+      "unknown": "Si è verificato un errore imprevisto",
+      "no_device_id": "La wallbox ha risposto ma non ha comunicato un identificativo."
     },
     "step": {
       "user": {
-        "title": "V2C Cloud",
-        "description": "Inserisci la tua API key V2C Cloud. Puoi generarla dal portale V2C Cloud.",
-        "data": {
-          "api_key": "API key"
+        "title": "Come vuoi collegarti?",
+        "description": "Scegli 'Con un account V2C' per l'integrazione completa: le wallbox vengono rilevate automaticamente e i controlli solo-cloud sono disponibili. Scegli 'Solo locale' per parlare con una wallbox sulla tua rete senza account — utile quando il cloud V2C non è raggiungibile. In quella modalità i controlli solo-cloud restano non disponibili.",
+        "menu_options": {
+          "cloud": "Con un account V2C (cloud + LAN)",
+          "lan_only": "Solo locale, senza account V2C"
         }
       },
       "reauth_confirm": {
@@ -38,6 +40,20 @@
         "data": {
           "connection_type": "Tipo di connessione"
         }
+      },
+      "cloud": {
+        "title": "Account V2C Cloud",
+        "description": "Inserisci la API key da v2c.cloud (Utente → API → Ottieni token).",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "lan_only": {
+        "title": "Wallbox sulla rete locale",
+        "description": "Inserisci l'indirizzo IP della wallbox sulla tua LAN. Home Assistant legge l'identificativo direttamente dalla wallbox, quindi non serve alcun account V2C. Assegna alla wallbox un indirizzo fisso (prenotazione DHCP) perché resti raggiungibile.",
+        "data": {
+          "ip_address": "Indirizzo IP della wallbox"
+        }
       }
     }
   },
@@ -45,7 +61,7 @@
     "step": {
       "init": {
         "title": "Opzioni V2C Cloud",
-        "description": "Scegli come si connette il caricatore e regola l'intervallo di polling LAN.\n\n• **Tipo di connessione:** puoi passare in qualsiasi momento tra **Locale (Wi-Fi)** e **Solo cloud (4G)**. Il cambio ricarica l'integrazione.\n\n• **Intervallo di refresh locale:** ogni quanti secondi l'integrazione interroga il caricatore via LAN. Range 5-300, default 30. Valori inferiori a 15 s possono saturare una LAN lenta e non sono consigliati. I caricatori cloud-only (4G) ignorano questa impostazione.\n\nGli IP LAN dei singoli dispositivi vengono scoperti automaticamente dal V2C Cloud e mantenuti in sincronia, quindi non serve configurarne nessuno manualmente.",
+        "description": "Locale (Wi-Fi) preferisce l'API HTTP della wallbox e ripiega sul cloud; Solo cloud (4G) usa sempre il cloud. I campi IP qui sotto (uno per identificativo di wallbox) hanno la precedenza sull'indirizzo rilevato dal cloud: compilane uno se il cloud non è raggiungibile o se l'indirizzo è sbagliato. Lascia vuoto per lasciar decidere al cloud.",
         "data": {
           "connection_type": "Tipo di connessione",
           "local_update_interval": "Intervallo refresh locale (secondi)"
@@ -122,6 +138,32 @@
       },
       "signal_status": {
         "name": "Segnale Wi-Fi"
+      },
+      "intensity_l1": {
+        "name": "Corrente fase 1"
+      },
+      "intensity_l2": {
+        "name": "Corrente fase 2"
+      },
+      "intensity_l3": {
+        "name": "Corrente fase 3"
+      },
+      "voltage_l1": {
+        "name": "Tensione fase 1"
+      },
+      "voltage_l2": {
+        "name": "Tensione fase 2"
+      },
+      "voltage_l3": {
+        "name": "Tensione fase 3"
+      },
+      "active_transport": {
+        "name": "Trasporto attivo",
+        "state": {
+          "lan": "Rete locale",
+          "cloud": "Cloud V2C",
+          "offline": "Non raggiungibile"
+        }
       }
     },
     "switch": {
@@ -200,7 +242,7 @@
     },
     "program_timer": {
       "name": "Configura timer di ricarica",
-      "description": "Imposta ora di inizio/fine e stato di attivazione di uno dei timer disponibili."
+      "description": "Imposta ora di inizio/fine e giorni della settimana per uno dei timer del dispositivo."
     },
     "register_rfid": {
       "name": "Registra tessera RFID",
@@ -330,6 +372,11 @@
       "name": "Verifica connessione cloud",
       "description": "Verifica lo stato di connessione cloud del dispositivo; il risultato è pubblicato sull'evento v2c_cloud_connected_status."
     }
+  },
+  "issues": {
+    "cloud_auth_degraded": {
+      "title": "Il cloud V2C non autentica — funzionamento in sola LAN",
+      "description": "Home Assistant non è riuscito ad autenticarsi sul cloud V2C per \"{title}\". L'integrazione continua a controllare la wallbox sulla rete locale, quindi non hai perso nulla, ma i controlli solo-cloud (RFID, OCPP, aggiornamento firmware, riavvio) restano non disponibili finché il cloud non torna.\n\nDi solito è un problema lato V2C e non una chiave sbagliata — a settembre 2026 l'API V2C ha rifiutato chiavi valide per giorni. Se persiste, reinserisci la API key dalla finestra Riconfigura dell'integrazione. Se la wallbox è sulla tua LAN ma non mostra dati, imposta manualmente il suo indirizzo IP nelle opzioni."
+    }
   }
 }
-

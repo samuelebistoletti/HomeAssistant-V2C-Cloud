@@ -53,11 +53,23 @@ program_timer:
       required: true
       selector:
         time:
-    active:
-      name: Timer attivo
-      description: Abilita o disabilita il timer programmato.
+    days_of_week:
+      name: Giorni della settimana
+      description: >-
+        Giorni in cui il timer è attivo, come cifre da 1 a 7 dove 1 = lunedì
+        e 7 = domenica (es. "123" = lunedì, martedì, mercoledì). Default: tutti
+        i giorni.
       required: false
-      default: true
+      default: "1234567"
+      selector:
+        text:
+    active:
+      name: Timer attivo (deprecato)
+      description: >-
+        Deprecato e ignorato: il body documentato di POST /device/timer non
+        prevede questo campo. Per attivare o disattivare i timer programmati
+        usa lo switch Timer (keyword LAN "Timer").
+      required: false
       selector:
         boolean:
 register_rfid:

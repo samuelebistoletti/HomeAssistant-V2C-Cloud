@@ -9,7 +9,23 @@ DOMAIN = "v2c_cloud"
 # Config-entry schema version. Bump in lockstep with a new migration in
 # async_migrate_entry; both config_flow.VERSION and the migration target
 # read this single source of truth.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# entry.data keys governing how the integration reaches each charger.
+#   cloud_only    -> 4G charger: no LAN transport exists at all.
+#   manual_ips    -> {deviceId: ip} overrides supplied by the user; they win
+#                    over anything discovered from the cloud, and they are the
+#                    only address source that survives a total cloud outage on
+#                    an entry that has never seen /pairings/me.
+#   lan_only      -> the entry was set up without a V2C account at all: no
+#                    api_key, no cloud calls, addresses supplied by the user.
+CONF_CLOUD_ONLY = "cloud_only"
+CONF_LAN_ONLY = "lan_only"
+CONF_CACHED_PAIRINGS = "cached_pairings"
+CONF_MANUAL_IPS = "manual_ips"
+
+# Repair-issue identifiers (homeassistant.helpers.issue_registry).
+ISSUE_CLOUD_AUTH_DEGRADED = "cloud_auth_degraded"
 
 CONF_API_KEY = "api_key"
 CONF_LOCAL_UPDATE_INTERVAL = "local_update_interval"
@@ -73,22 +89,35 @@ LANGUAGES = {
     9: {"en": "Catalan", "it": "Catalano"},
 }
 
+# DynamicPowerMode (LAN keyword, write-enabled). Codes per the official Trydan
+# local-API documentation (revision 14/07/26): 0 = timed power enabled,
+# 1 = DEPRECATED legacy "timed power disabled", then timed power disabled with
+# an explicit mode: 2 = minimum power, 3 = exclusive PV, 4 = grid + PV,
+# 5 = stop. Codes 2 and 3 were previously swapped here, mislabelling both the
+# sensor and the select.
 DYNAMIC_POWER_MODES = {
     0: {"en": "Timed power enabled", "it": "Potenza programmata attiva"},
     1: {"en": "Timed power disabled", "it": "Potenza programmata disattiva"},
-    2: {"en": "Exclusive PV mode", "it": "Modalità PV esclusiva"},
-    3: {"en": "Minimum power mode", "it": "Modalità potenza minima"},
+    2: {"en": "Minimum power mode", "it": "Modalità potenza minima"},
+    3: {"en": "Exclusive PV mode", "it": "Modalità PV esclusiva"},
     4: {"en": "Grid + PV mode", "it": "Modalità rete + PV"},
     5: {"en": "Stop mode", "it": "Modalità stop"},
 }
 
+# ChargeState codes. The LAN /RealTimeData keyword documentation (revision
+# 14/07/26) is canonical for the entity layer: it maps the IEC 61851 pilot
+# states A/B/C/F/E/D onto 0/1/2/4/5/6 and has NO code 3. The V2C Cloud OpenAPI
+# spec documents a DIFFERENT enum for the same quantity (3 = ventilation
+# required, 4 = control pilot short circuit, 5 = general fault), so cloud
+# values are translated onto these LAN codes during synthesis — see
+# local_api._CLOUD_TO_LAN_CHARGE_STATE.
 CHARGE_STATE_LABELS = {
-    0: "Disconnected",
+    0: "Waiting for vehicle",
     1: "Vehicle connected (idle)",
     2: "Charging",
-    3: "Ventilation required",
-    4: "Control pilot short circuit",
-    5: "General fault",
+    4: "System fault / leak detected",
+    5: "Control pilot error (state E) / ground fault",
+    6: "Ventilation required",
 }
 
 # Locally-writeable charge mode (Trydan Modbus spec: 0=monophasic, 1=threephasic, 2=mixed)
@@ -152,6 +181,11 @@ ATTR_TIMER_ID = "timer_id"
 ATTR_TIME_START = "start_time"
 ATTR_TIME_END = "end_time"
 ATTR_TIMER_ACTIVE = "active"
+ATTR_TIMER_DAYS = "days_of_week"
+
+# Documented `daysOfWeek` body field for POST /device/timer: digits 1-7 with
+# 1 = Monday .. 7 = Sunday (e.g. "123" = Mon+Tue+Wed). Defaults to every day.
+DEFAULT_TIMER_DAYS = "1234567"
 ATTR_WIFI_SSID = "ssid"
 ATTR_WIFI_PASSWORD = "password"  # noqa: S105
 ATTR_RFID_CODE = "code"

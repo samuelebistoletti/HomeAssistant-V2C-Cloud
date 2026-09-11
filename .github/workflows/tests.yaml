@@ -30,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -42,7 +42,6 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r requirements_test.txt
-          pip install pytest-cov
 
       - name: Ruff lint
         run: ruff check .

@@ -18,9 +18,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, UnitOfPower, UnitOfTime
 
 try:  # Home Assistant >= 2023.8
-    from homeassistant.const import UnitOfVoltage
+    from homeassistant.const import UnitOfElectricCurrent, UnitOfVoltage
 except ImportError:  # pragma: no cover - older releases
     UnitOfVoltage = None
+    UnitOfElectricCurrent = None
+
+try:  # Home Assistant >= 2023.1
+    from homeassistant.const import EntityCategory
+except ImportError:  # pragma: no cover - older releases
+    EntityCategory = None
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -31,7 +37,14 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import CHARGE_STATE_LABELS, DOMAIN
 from .entity import build_device_info, coerce_bool
-from .local_api import LAN_ONLY_KEYS, async_get_or_create_local_coordinator
+from .local_api import (
+    LAN_ONLY_KEYS,
+    active_transport,
+    async_get_or_create_local_coordinator,
+    describe_ip_source,
+    payload_is_cloud_synthesised,
+    payload_is_empty,
+)
 
 if TYPE_CHECKING:
     from . import V2CEntryRuntimeData
@@ -92,28 +105,34 @@ def _as_flag(value: Any) -> int | None:
 
 
 STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
+    # Codes follow the LAN /RealTimeData enum (see const.CHARGE_STATE_LABELS):
+    # 0/1/2 then 4 = STATE F, 5 = STATE E, 6 = STATE D. There is no code 3.
     "ChargeState": {
-        0: {"en": CHARGE_STATE_LABELS[0], "es": "Desconectado", "it": "Disconnesso"},
+        0: {
+            "en": CHARGE_STATE_LABELS[0],
+            "es": "Esperando vehículo",
+            "it": "In attesa del veicolo",
+        },
         1: {
             "en": CHARGE_STATE_LABELS[1],
             "es": "Vehículo conectado (inactivo)",
             "it": "Veicolo collegato",
         },
         2: {"en": CHARGE_STATE_LABELS[2], "es": "Cargando", "it": "In carica"},
-        3: {
-            "en": CHARGE_STATE_LABELS[3],
-            "es": "Ventilación requerida",
-            "it": "Ventilazione richiesta",
-        },
         4: {
             "en": CHARGE_STATE_LABELS[4],
-            "es": "Cortocircuito en piloto de control",
-            "it": "Corto del pilot",
+            "es": "Fallo del sistema / fuga detectada",
+            "it": "Guasto di sistema / dispersione rilevata",
         },
         5: {
             "en": CHARGE_STATE_LABELS[5],
-            "es": "Fallo general",
-            "it": "Guasto generale",
+            "es": "Error de piloto de control (estado E) / fallo de tierra",
+            "it": "Errore control pilot (stato E) / guasto di terra",
+        },
+        6: {
+            "en": CHARGE_STATE_LABELS[6],
+            "es": "Ventilación requerida",
+            "it": "Ventilazione richiesta",
         },
     },
     "SlaveError": {
@@ -180,12 +199,12 @@ STATE_VALUE_LABELS: dict[str, dict[Any, dict[str, str]]] = {
             "es": "Potencia programada desactivada",
             "it": "Potenza programmata disattiva",
         },
-        2: {"en": "Exclusive PV mode", "es": "Modo FV exclusivo", "it": "Solo PV"},
-        3: {
+        2: {
             "en": "Minimum power mode",
             "es": "Modo potencia mínima",
             "it": "Modalità potenza minima",
         },
+        3: {"en": "Exclusive PV mode", "es": "Modo FV exclusivo", "it": "Solo PV"},
         4: {"en": "Grid + PV mode", "es": "Modo red + FV", "it": "Modalità rete + PV"},
         5: {"en": "Stop mode", "es": "Modo parado", "it": "Modalità stop"},
     },
@@ -365,6 +384,75 @@ REALTIME_SENSOR_DESCRIPTIONS: tuple[V2CLocalRealtimeSensorDescription, ...] = (
         unique_id_suffix="signal_status",
         value_fn=_as_int,
     ),
+    # Per-phase measurements. Documented in the LAN /RealTimeData payload
+    # (revision 14/07/26) and absent from every cloud endpoint, hence listed in
+    # local_api.LAN_ONLY_KEYS so they report Unavailable in cloud-only mode.
+    V2CLocalRealtimeSensorDescription(
+        key="IntensityMeasure_L1",
+        translation_key="intensity_l1",
+        icon="mdi:current-ac",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=(
+            UnitOfElectricCurrent.AMPERE if UnitOfElectricCurrent else "A"
+        ),
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="intensity_l1",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="IntensityMeasure_L2",
+        translation_key="intensity_l2",
+        icon="mdi:current-ac",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=(
+            UnitOfElectricCurrent.AMPERE if UnitOfElectricCurrent else "A"
+        ),
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="intensity_l2",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="IntensityMeasure_L3",
+        translation_key="intensity_l3",
+        icon="mdi:current-ac",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=(
+            UnitOfElectricCurrent.AMPERE if UnitOfElectricCurrent else "A"
+        ),
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="intensity_l3",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="VoltageMeasure_L1",
+        translation_key="voltage_l1",
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="voltage_l1",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="VoltageMeasure_L2",
+        translation_key="voltage_l2",
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="voltage_l2",
+        value_fn=_as_float,
+    ),
+    V2CLocalRealtimeSensorDescription(
+        key="VoltageMeasure_L3",
+        translation_key="voltage_l3",
+        icon="mdi:sine-wave",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfVoltage.VOLT if UnitOfVoltage else "V",
+        state_class=SensorStateClass.MEASUREMENT,
+        unique_id_suffix="voltage_l3",
+        value_fn=_as_float,
+    ),
 )
 
 
@@ -398,6 +486,7 @@ async def async_setup_entry(
             V2CLocalRealtimeSensor(runtime_data, coordinator, device_id, description)
             for description in REALTIME_SENSOR_DESCRIPTIONS
         )
+        entities.append(V2CTransportSensor(runtime_data, coordinator, device_id))
 
     async_add_entities(entities)
 
@@ -429,12 +518,26 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
 
     @property
     def available(self) -> bool:
-        """Return False for LAN-only keys when the entry is cloud-only."""
-        if (
-            self._runtime_data.cloud_only
-            and self.entity_description.key in LAN_ONLY_KEYS
-        ):
+        """
+        Report unavailable rather than unknown when there is simply no data.
+
+        Three distinct situations used to collapse into a bare "unknown":
+        a LAN-only quantity on a cloud-only entry, a cloud outage that left
+        the synthesis with nothing at all, and a LAN-only quantity while the
+        payload is being synthesised from the cloud. None of them means "the
+        charger reports an unknown value" — they mean "this reading cannot
+        exist right now", which is what Unavailable is for.
+        """
+        key = self.entity_description.key
+        if self._runtime_data.cloud_only and key in LAN_ONLY_KEYS:
             return False
+
+        data = self.coordinator.data
+        if payload_is_empty(data):
+            return False
+        if key in LAN_ONLY_KEYS and payload_is_cloud_synthesised(data):
+            return False
+
         return self.coordinator.last_update_success
 
     @property
@@ -451,3 +554,62 @@ class V2CLocalRealtimeSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEnt
         if localized is not None:
             return localized
         return value
+
+
+class V2CTransportSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEntity):
+    """
+    Diagnostic sensor naming the transport currently carrying the data.
+
+    Exists because the failure mode in issue #54 was invisible: a Wi-Fi
+    install silently fell back to cloud synthesis, and the only clue was that
+    every LAN reading went Unknown. The state answers "LAN, cloud, or nothing",
+    and the attributes say which address is in use and where it came from.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        runtime_data: V2CEntryRuntimeData,
+        coordinator: DataUpdateCoordinator,
+        device_id: str,
+    ) -> None:
+        """Initialise the diagnostic transport sensor for one charger."""
+        super().__init__(coordinator)
+        self._runtime_data = runtime_data
+        self._device_id = device_id
+        self._attr_translation_key = "active_transport"
+        self._attr_unique_id = f"{device_id}_active_transport"
+        self._attr_icon = "mdi:transit-connection-variant"
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["lan", "cloud", "offline"]
+        if EntityCategory is not None:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return registry information for the underlying charger."""
+        return build_device_info(self._runtime_data.coordinator, self._device_id)
+
+    @property
+    def available(self) -> bool:
+        """Always available: "offline" is itself the useful answer."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """Return `lan`, `cloud` or `offline`."""
+        return active_transport(self._runtime_data, self._device_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the address in use and which source supplied it."""
+        ip, source = describe_ip_source(self._runtime_data, self._device_id)
+        entry_data = self._runtime_data.coordinator.config_entry.data
+        return {
+            "ip_address": ip,
+            "ip_source": source,
+            "cloud_only": bool(entry_data.get("cloud_only")),
+            "lan_only": bool(entry_data.get("lan_only")),
+        }

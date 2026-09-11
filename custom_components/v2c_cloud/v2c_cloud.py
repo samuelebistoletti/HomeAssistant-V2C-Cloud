@@ -6,6 +6,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import re
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from typing import Any
 
 import async_timeout
 from aiohttp import ClientError, ClientSession
+
+from .const import DEFAULT_TIMER_DAYS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -626,22 +629,34 @@ class V2CClient:
         *,
         time_start: str,
         time_end: str,
-        active: bool,
+        days_of_week: str = DEFAULT_TIMER_DAYS,
     ) -> Any:
-        """Configure a timer slot on the charger."""
-        timer_value = str(timer_id)
-        params = {"timerId": timer_value, "timer id": timer_value}
+        """
+        Configure a timer slot on the charger.
+
+        Sends exactly the body documented for `POST /device/timer`:
+        `timeStart`, `timeEnd` and `daysOfWeek` (digits 1-7, 1 = Monday).
+        Earlier revisions also sent guessed `start_time` / `end_time` aliases,
+        an undocumented `active` flag and a bogus `"timer id"` query parameter,
+        and omitted `daysOfWeek` entirely — so a timer programmed from Home
+        Assistant had no days assigned. Enabling/disabling the timers is a
+        separate control: the LAN `Timer` keyword (1 = on, 0 = off).
+        """
+        if not re.fullmatch(r"[1-7]{1,7}", days_of_week):
+            raise V2CRequestError(
+                f"Invalid daysOfWeek {days_of_week!r}; expected 1-7 digits"
+                " where 1 = Monday (e.g. '123' for Mon-Wed)",
+                status=None,
+            )
         body = {
-            "start_time": time_start,
-            "end_time": time_end,
             "timeStart": time_start,
             "timeEnd": time_end,
-            "active": active,
+            "daysOfWeek": days_of_week,
         }
         return await self._device_command(
             "/device/timer",
             device_id,
-            extra_params=params,
+            extra_params={"timerId": str(timer_id)},
             json_body=body,
         )
 
@@ -794,9 +809,10 @@ class V2CClient:
         """
         Toggle the logo-LED.
 
-        Endpoint `/device/logo_led` is undocumented but reachable: confirmed
-        2026-05-19 via direct probe (HTTP 200) against a Trydan XQUXDU on
-        firmware 2.4.6. Mirrors the documented LAN keyword `LogoLED`.
+        `POST /device/logo_led` (value=0|1) is part of the published V2C Cloud
+        OpenAPI spec as of 2026-09-08. It was originally found by direct probe
+        (HTTP 200 against a Trydan XQUXDU on firmware 2.4.6, 2026-05-19) while
+        still undocumented. Mirrors the LAN keyword `LogoLED`.
         """
         return await self._device_command(
             "/device/logo_led",

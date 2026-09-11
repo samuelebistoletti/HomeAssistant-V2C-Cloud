@@ -26,6 +26,55 @@ def _install_compat_stubs() -> None:
         sys.modules["async_timeout"] = at
 
 
+def _install_aioresponses_compat() -> None:
+    """
+    Let aioresponses build mocked responses on aiohttp >= 3.14.
+
+    aiohttp 3.14 made ``ClientResponse.__init__`` require a keyword-only
+    ``stream_writer``; aioresponses 0.7.9 (its latest release) never passes it,
+    so every mocked response raises ``TypeError: ClientResponse.__init__()
+    missing 1 required keyword-only argument: 'stream_writer'``.
+
+    aioresponses always builds responses with ``writer=None`` — aiohttp's
+    "request already sent" path — where the only thing read off the stream
+    writer is ``output_size``. A stub carrying that single attribute is
+    therefore sufficient; nothing in the response-reading path touches the
+    writer again.
+
+    aioresponses resolves the response class from
+    ``aioresponses.core.ClientResponse`` whenever a match does not override it,
+    so patching that one name covers every mock in the suite. The shim is a
+    no-op on aiohttp < 3.14, where the kwarg does not exist.
+
+    Remove this once aioresponses ships a release that passes ``stream_writer``
+    itself.
+    """
+    import inspect
+
+    try:
+        from aioresponses import core as aioresponses_core
+    except ImportError:  # pragma: no cover - aioresponses not installed
+        return
+
+    base = aioresponses_core.ClientResponse
+    if "stream_writer" not in inspect.signature(base.__init__).parameters:
+        return  # aiohttp < 3.14 — nothing to shim
+
+    class _StreamWriterStub:
+        """Minimal ``AbstractStreamWriter`` stand-in for mocked responses."""
+
+        output_size = 0
+
+    class _CompatClientResponse(base):  # type: ignore[misc, valid-type]
+        """ClientResponse that supplies the stream writer aioresponses omits."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            kwargs.setdefault("stream_writer", _StreamWriterStub())
+            super().__init__(*args, **kwargs)
+
+    aioresponses_core.ClientResponse = _CompatClientResponse
+
+
 def _install_ha_stubs() -> None:
     """Inject minimal homeassistant stubs into sys.modules."""
 
@@ -114,6 +163,15 @@ def _install_ha_stubs() -> None:
                 self, *, step_id: str, data_schema: Any = None, errors: Any = None
             ) -> dict:
                 return {"type": "form", "step_id": step_id}
+
+            def async_show_menu(
+                self, *, step_id: str, menu_options: Any = None
+            ) -> dict:
+                return {
+                    "type": "menu",
+                    "step_id": step_id,
+                    "menu_options": menu_options,
+                }
 
             def async_update_reload_and_abort(
                 self, entry: Any, *, data_updates: Any = None
@@ -267,6 +325,33 @@ def _install_ha_stubs() -> None:
 
         ha_dr.DeviceInfo = DeviceInfo
 
+    # homeassistant.helpers.issue_registry (repairs)
+    ha_ir = _mod("homeassistant.helpers.issue_registry")
+    if not hasattr(ha_ir, "async_create_issue"):
+
+        class IssueSeverity:
+            CRITICAL = "critical"
+            ERROR = "error"
+            WARNING = "warning"
+
+        ha_ir.IssueSeverity = IssueSeverity
+        # Recorded so tests can assert which repair issues were raised/cleared.
+        ha_ir.created_issues = {}
+        ha_ir.deleted_issues = []
+
+        def _async_create_issue(hass, domain, issue_id, **kwargs):
+            ha_ir.created_issues[(domain, issue_id)] = kwargs
+
+        def _async_delete_issue(hass, domain, issue_id):
+            ha_ir.created_issues.pop((domain, issue_id), None)
+            ha_ir.deleted_issues.append((domain, issue_id))
+
+        ha_ir.async_create_issue = _async_create_issue
+        ha_ir.async_delete_issue = _async_delete_issue
+
+    # Make `from homeassistant.helpers import issue_registry as ir` resolve.
+    sys.modules["homeassistant.helpers"].issue_registry = ha_ir
+
     # homeassistant.helpers.config_validation (cv)
     ha_cv = _mod("homeassistant.helpers.config_validation")
     ha_cv.string = str
@@ -336,6 +421,7 @@ def _install_ha_stubs() -> None:
 
 
 _install_compat_stubs()
+_install_aioresponses_compat()
 _install_ha_stubs()
 
 

@@ -24,8 +24,13 @@ from homeassistant.helpers.selector import (
 from ._net import validate_private_ip
 from ._pairings import _normalise_pairings
 from .const import (
+    ATTR_IP_ADDRESS,
     CONF_API_KEY,
+    CONF_CACHED_PAIRINGS,
+    CONF_CLOUD_ONLY,
+    CONF_LAN_ONLY,
     CONF_LOCAL_UPDATE_INTERVAL,
+    CONF_MANUAL_IPS,
     DEFAULT_LOCAL_INTERVAL,
     DOMAIN,
     MAX_LOCAL_INTERVAL,
@@ -92,6 +97,50 @@ async def _probe_local_api(
         return None, "cannot_connect_local"
 
 
+def _known_device_ids(entry: ConfigEntry) -> list[str]:
+    """Return every charger id the entry knows about, cache plus overrides."""
+    ids = [
+        pairing["deviceId"]
+        for pairing in _normalise_pairings(entry.data.get(CONF_CACHED_PAIRINGS))
+    ]
+    overrides = entry.data.get(CONF_MANUAL_IPS)
+    if isinstance(overrides, dict):
+        ids.extend(device_id for device_id in overrides if device_id not in ids)
+    return ids
+
+
+def _manual_ip_field(device_id: str) -> str:
+    """Return the options-flow field name carrying a charger's IP override."""
+    return f"manual_ip_{device_id}"
+
+
+def _collect_manual_ips(
+    user_input: dict[str, Any],
+    device_ids: list[str],
+    errors: dict[str, str],
+) -> dict[str, str]:
+    """
+    Read the per-charger IP overrides out of the submitted form.
+
+    An empty field clears the override for that charger (back to whatever the
+    cloud reports). A non-empty one must pass the same private-address policy
+    the write path enforces, so a typo cannot turn into an outbound request to
+    an arbitrary host.
+    """
+    overrides: dict[str, str] = {}
+    for device_id in device_ids:
+        field = _manual_ip_field(device_id)
+        raw = str(user_input.get(field, "") or "").strip()
+        if not raw:
+            continue
+        is_safe, error_key = validate_private_ip(raw)
+        if not is_safe:
+            errors[field] = error_key or "cannot_connect_local"
+            continue
+        overrides[device_id] = raw
+    return overrides
+
+
 class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for V2C Cloud."""
 
@@ -111,10 +160,62 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self,
+        _user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """
+        Ask whether to set the integration up with or without a V2C account.
+
+        The LAN-only branch exists because the cloud is not always available:
+        during the 2026-09 V2C authentication outage a fresh install was
+        impossible even for chargers sitting on the same network as Home
+        Assistant (issue #54).
+        """
+        return self.async_show_menu(step_id="user", menu_options=["cloud", "lan_only"])
+
+    async def async_step_lan_only(
+        self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """
-        Handle the initial step.
+        Set the integration up against a charger on the LAN, with no account.
+
+        The charger's own ``/RealTimeData`` response supplies the device id, so
+        the user only has to provide an address. No cloud call is made here or
+        later: cloud-only controls stay unavailable for this entry.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            ip = str(user_input[ATTR_IP_ADDRESS]).strip()
+            device_id, error_key = await _probe_local_api(self.hass, ip)
+            if error_key or not device_id:
+                errors["base"] = error_key or "cannot_connect_local"
+            else:
+                await self.async_set_unique_id(f"lan:{device_id}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=f"V2C {device_id} (LAN)",
+                    data={
+                        CONF_API_KEY: "",
+                        CONF_LAN_ONLY: True,
+                        CONF_CLOUD_ONLY: False,
+                        CONF_CACHED_PAIRINGS: [{"deviceId": device_id, "ip": ip}],
+                        CONF_MANUAL_IPS: {device_id: ip},
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="lan_only",
+            data_schema=vol.Schema({vol.Required(ATTR_IP_ADDRESS): str}),
+            errors=errors,
+        )
+
+    async def async_step_cloud(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """
+        Handle the cloud-account step.
 
         Requires the cloud to be reachable: the API key is validated and the
         full pairings list (every charger linked to the account) is captured
@@ -180,8 +281,10 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 title="V2C Cloud",
                 data={
                     CONF_API_KEY: self._api_key,
-                    "cached_pairings": cached_pairings,
-                    "cloud_only": connection == "cloud_only",
+                    CONF_CACHED_PAIRINGS: cached_pairings,
+                    CONF_CLOUD_ONLY: connection == "cloud_only",
+                    CONF_LAN_ONLY: False,
+                    CONF_MANUAL_IPS: {},
                 },
             )
 
@@ -330,6 +433,9 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         current_data = self._config_entry.data
         current_mode = _infer_connection_type(current_data)
         current_options = self._config_entry.options or {}
+        device_ids = _known_device_ids(self._config_entry)
+        current_manual = self._config_entry.data.get(CONF_MANUAL_IPS)
+        current_manual = current_manual if isinstance(current_manual, dict) else {}
         current_interval = int(
             current_options.get(CONF_LOCAL_UPDATE_INTERVAL, DEFAULT_LOCAL_INTERVAL)
         )
@@ -348,9 +454,11 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
             new_data = dict(current_data)
             mode_changed = new_mode != current_mode
+            manual_ips = _collect_manual_ips(user_input, device_ids, errors)
 
             if not errors:
-                new_data["cloud_only"] = new_mode == "cloud_only"
+                new_data[CONF_CLOUD_ONLY] = new_mode == "cloud_only"
+                new_data[CONF_MANUAL_IPS] = manual_ips
 
                 new_options = dict(current_options)
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
@@ -392,6 +500,17 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     vol.Coerce(int),
                     vol.Range(min=MIN_LOCAL_INTERVAL, max=MAX_LOCAL_INTERVAL),
                 ),
+                # One optional IP override per known charger. Filled in, it
+                # wins over anything the cloud reports — and it is the only
+                # address source that works when the cloud cannot be reached
+                # at all. Left empty, the cloud stays in charge.
+                **{
+                    vol.Optional(
+                        _manual_ip_field(device_id),
+                        description={"suggested_value": current_manual.get(device_id)},
+                    ): str
+                    for device_id in device_ids
+                },
             }
         )
         return self.async_show_form(

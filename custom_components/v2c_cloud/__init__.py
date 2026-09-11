@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 from collections.abc import Callable, Iterable
@@ -19,6 +20,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import (
@@ -52,6 +54,7 @@ from .const import (
     ATTR_TIME_END,
     ATTR_TIME_START,
     ATTR_TIMER_ACTIVE,
+    ATTR_TIMER_DAYS,
     ATTR_TIMER_ID,
     ATTR_UPDATED_AT,
     ATTR_VOLTAGE,
@@ -59,6 +62,11 @@ from .const import (
     ATTR_WIFI_PASSWORD,
     ATTR_WIFI_SSID,
     CONF_API_KEY,
+    CONF_CACHED_PAIRINGS,
+    CONF_CLOUD_ONLY,
+    CONF_LAN_ONLY,
+    CONF_MANUAL_IPS,
+    DEFAULT_TIMER_DAYS,
     DEFAULT_UPDATE_INTERVAL,
     DENKA_POWER_MAX,
     DENKA_POWER_MIN,
@@ -72,6 +80,7 @@ from .const import (
     INSTALLATION_VOLTAGE_MIN,
     INTENSITY_MAX,
     INTENSITY_MIN,
+    ISSUE_CLOUD_AUTH_DEGRADED,
     MAX_RATE_LIMIT_INTERVAL,
     MIN_UPDATE_INTERVAL,
     RATE_LIMIT_COMMAND_RESERVE,
@@ -156,6 +165,148 @@ PLATFORMS: list[Platform] = [
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
+def _lan_addressable_records(entry: ConfigEntry) -> list[dict[str, str]]:
+    """
+    Return every ``(deviceId, ip)`` record reachable without the cloud.
+
+    Merges the persisted ``cached_pairings`` with the user's ``manual_ips``
+    overrides, the override winning. This is the address book the integration
+    falls back to when the V2C Cloud cannot be reached or authenticated.
+    """
+    records: dict[str, str] = {
+        pairing["deviceId"]: pairing.get("ip", "")
+        for pairing in _normalise_pairings(entry.data.get(CONF_CACHED_PAIRINGS))
+        if pairing.get("deviceId")
+    }
+
+    overrides = entry.data.get(CONF_MANUAL_IPS)
+    if isinstance(overrides, dict):
+        records.update(
+            {
+                device_id: ip
+                for device_id, ip in overrides.items()
+                if isinstance(device_id, str)
+                and isinstance(ip, str)
+                and device_id
+                and ip
+            }
+        )
+
+    return [{"deviceId": dev, "ip": ip} for dev, ip in records.items()]
+
+
+def _may_degrade_to_lan(entry: ConfigEntry) -> bool:
+    """
+    Return True when the entry can keep working with the cloud unreachable.
+
+    A cloud-only (4G) charger has no second transport, so a cloud outage is
+    fatal for it by definition and must still surface as a reauth. A LAN
+    entry, on the other hand, only needs an address: as long as one is known
+    the integration keeps polling and controlling the charger over HTTP while
+    the cloud is down.
+    """
+    if entry.data.get(CONF_CLOUD_ONLY):
+        return False
+    return any(record.get("ip") for record in _lan_addressable_records(entry))
+
+
+def _async_flag_cloud_auth_degraded(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """
+    Raise a repair issue instead of tearing the entry down.
+
+    On a LAN-capable entry an authentication failure must not trigger
+    `ConfigEntryAuthFailed`: that unloads everything, including the local
+    coordinators that are still perfectly able to reach the charger. The user
+    still needs to know, so a repair issue is raised and cleared automatically
+    once the cloud authenticates again. The reauth flow stays reachable from
+    the issue itself.
+    """
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_CLOUD_AUTH_DEGRADED}_{entry.entry_id}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_CLOUD_AUTH_DEGRADED,
+        translation_placeholders={"title": entry.title},
+        learn_more_url="https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/issues/54",
+    )
+
+
+def _async_clear_cloud_auth_degraded(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop the degraded-cloud repair issue once authentication succeeds."""
+    ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_CLOUD_AUTH_DEGRADED}_{entry.entry_id}")
+
+
+def _cached_fallback_payload(
+    entry: ConfigEntry,
+    coordinator: DataUpdateCoordinator,
+    reason: str,
+) -> dict[str, object] | None:
+    """
+    Return the best payload available without a working cloud call.
+
+    Prefers whatever the coordinator already holds; otherwise synthesises one
+    from the offline address book (cached pairings plus manual overrides) so
+    every known charger stays addressable over the LAN. None means there is
+    nothing to fall back to and the caller should fail the refresh.
+    """
+    if coordinator.data is not None:
+        return coordinator.data
+    records = _lan_addressable_records(entry)
+    if records:
+        _LOGGER.warning(
+            "V2C Cloud %s; using %s known address(es) from the offline cache",
+            reason,
+            len(records),
+        )
+        return _build_synthetic_fallback(records)
+    return None
+
+
+@dataclass
+class _CloudAuthState:
+    """Tracks whether the entry is currently running without cloud auth."""
+
+    degraded: bool = False
+
+
+def _degraded_cloud_payload(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: DataUpdateCoordinator,
+    state: _CloudAuthState,
+    err: Exception,
+) -> dict[str, object] | None:
+    """
+    Return degraded coordinator data, or None when the entry must reauth.
+
+    The V2C Cloud can reject a perfectly valid API key for days at a time
+    (issue #54). On a LAN-capable entry that must not unload the integration:
+    the charger is still reachable over HTTP. A repair issue is raised, the
+    previous data is kept, and polling carries on. A cloud-only entry has no
+    alternative transport, so None is returned and the caller raises
+    ConfigEntryAuthFailed exactly as before.
+    """
+    if not _may_degrade_to_lan(entry):
+        return None
+
+    if not state.degraded:
+        _LOGGER.warning(
+            "V2C Cloud authentication failed (%s); continuing over LAN. "
+            "Cloud-only controls are unavailable until it recovers.",
+            type(err).__name__,
+        )
+        state.degraded = True
+        _async_flag_cloud_auth_degraded(hass, entry)
+    else:
+        _LOGGER.debug("V2C Cloud still unauthenticated; staying on LAN")
+
+    if coordinator.data is not None:
+        return coordinator.data
+    return _build_synthetic_fallback(_lan_addressable_records(entry))
+
+
 def _build_synthetic_fallback(
     cached_pairings: list[dict[str, str]],
 ) -> dict[str, object]:
@@ -189,6 +340,26 @@ def _build_synthetic_fallback(
             "additional": {"static_ip": ip} if ip else {},
         }
     return {"pairings": pairings, "devices": devices}
+
+
+def _migrate_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Translate a v2 ``entry.data`` dict to the v3 schema.
+
+    v3 adds two keys and changes nothing that already existed:
+
+    - ``manual_ips``: ``{deviceId: ip}`` overrides the user can now set from
+      the options flow. They take precedence over every discovered address and
+      are the only source that survives a cloud outage on an entry that has
+      never seen a successful ``/pairings/me``.
+    - ``lan_only``: marks an entry created without a V2C account at all. Every
+      migrated entry is False — it was created through the cloud flow, which
+      is the only one that existed in v2.
+    """
+    new = dict(data)
+    new.setdefault(CONF_MANUAL_IPS, {})
+    new.setdefault(CONF_LAN_ONLY, False)
+    return new
 
 
 def _migrate_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
@@ -250,6 +421,7 @@ def _migrate_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
 # them so a future v3 only needs to register `(2, 3): _migrate_v2_to_v3`.
 _MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
     1: _migrate_v1_to_v2,
+    2: _migrate_v2_to_v3,
 }
 
 
@@ -300,11 +472,64 @@ async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
     return True
 
 
+async def _async_fetch_initial_pairings(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    client: V2CClient,
+    has_cache: bool,
+) -> list[dict[str, Any]]:
+    """
+    Fetch ``/pairings/me`` at setup, tolerating a cloud that is down.
+
+    Returns an empty list (rather than raising) whenever the entry can carry on
+    without the cloud, so setup completes and the LAN coordinators start. Only
+    an entry with no alternative — a cloud-only charger, or one with no known
+    address at all — fails setup.
+    """
+    try:
+        return await client.async_get_pairings()
+    except V2CAuthError as err:
+        # A cloud-only charger has no other transport: the entry genuinely
+        # cannot work, so ask for a new key. A LAN entry with a known address
+        # keeps running over HTTP and only raises a repair issue — tearing it
+        # down here is what made a V2C-side auth outage look like a total
+        # integration failure on Wi-Fi installs (issue #54).
+        if not _may_degrade_to_lan(entry):
+            raise ConfigEntryAuthFailed("Invalid V2C Cloud API key") from err
+        _LOGGER.warning(
+            "V2C Cloud rejected the API key at startup; continuing over LAN "
+            "with %s known address(es). Cloud-only controls stay unavailable "
+            "until the cloud authenticates again.",
+            len(_lan_addressable_records(entry)),
+        )
+        _async_flag_cloud_auth_degraded(hass, entry)
+        return []
+    except V2CRequestError as err:
+        if not has_cache:
+            raise ConfigEntryNotReady(f"Unable to contact V2C Cloud: {err}") from err
+        if isinstance(err, V2CRateLimitError):
+            _LOGGER.warning(
+                "V2C Cloud rate-limited at startup; proceeding with cached pairings",
+            )
+        else:
+            _LOGGER.warning(
+                "V2C Cloud unreachable at startup; proceeding with cached pairings: %s",
+                type(err).__name__,
+            )
+        return []
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
     """Set up V2C Cloud from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    api_key: str = entry.data[CONF_API_KEY]
+    # A LAN-only entry was created without a V2C account: there is no API key
+    # and no cloud call must ever be attempted for it. The client is still
+    # constructed so the entity and service layers keep a uniform shape; any
+    # cloud-only service invoked against such an entry fails loudly rather
+    # than silently doing nothing.
+    lan_only = bool(entry.data.get(CONF_LAN_ONLY))
+    api_key: str = entry.data.get(CONF_API_KEY, "")
 
     session = async_get_clientsession(hass)
     client = V2CClient(session, api_key)
@@ -325,23 +550,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     has_cache = bool(cached_pairings)
 
     # Validate credentials and initial connectivity by requesting pairings.
-    try:
-        pairings = await client.async_get_pairings()
-    except V2CAuthError as err:
-        raise ConfigEntryAuthFailed("Invalid V2C Cloud API key") from err
-    except V2CRequestError as err:
-        if not has_cache:
-            raise ConfigEntryNotReady(f"Unable to contact V2C Cloud: {err}") from err
-        if isinstance(err, V2CRateLimitError):
-            _LOGGER.warning(
-                "V2C Cloud rate-limited at startup; proceeding with cached pairings",
-            )
-        else:
-            _LOGGER.warning(
-                "V2C Cloud unreachable at startup; proceeding with cached pairings: %s",
-                type(err).__name__,
-            )
+    if lan_only:
+        _LOGGER.debug(
+            "LAN-only entry: skipping cloud pairings fetch, using %s local address(es)",
+            len(_lan_addressable_records(entry)),
+        )
         pairings = []
+    else:
+        pairings = await _async_fetch_initial_pairings(hass, entry, client, has_cache)
 
     if not pairings and not has_cache:
         _LOGGER.warning("No V2C devices associated with this API key")
@@ -360,7 +576,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         seconds = max(seconds, min_seconds)
         return timedelta(seconds=seconds)
 
-    async def _async_update_data() -> dict[str, object]:  # noqa: PLR0911
+    auth_state = _CloudAuthState()
+
+    async def _async_update_data() -> dict[str, object]:
         """Fetch the latest data from the API."""
 
         def _restore_default_interval(reason: str) -> None:
@@ -396,19 +614,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             latest_pairings = await client.async_get_pairings()
         except V2CAuthError as err:
             _restore_default_interval("authentication failure")
+            degraded = _degraded_cloud_payload(
+                hass, entry, coordinator, auth_state, err
+            )
+            if degraded is not None:
+                return degraded
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
         except V2CRateLimitError as err:
             _back_off_on_rate_limit()
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
-            if coordinator.data is not None:
-                return coordinator.data
-            cached = _normalise_pairings(entry.data.get("cached_pairings"))
-            if cached:
-                _LOGGER.warning(
-                    "V2C Cloud rate-limited at startup; using cached pairings (%s device(s))",
-                    len(cached),
-                )
-                return _build_synthetic_fallback(cached)
+            payload = _cached_fallback_payload(entry, coordinator, "rate-limited")
+            if payload is not None:
+                return payload
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
             cached = _normalise_pairings(entry.data.get("cached_pairings"))
@@ -445,35 +662,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             )
         except V2CAuthError as err:
             _restore_default_interval("authentication failure")
+            degraded = _degraded_cloud_payload(
+                hass, entry, coordinator, auth_state, err
+            )
+            if degraded is not None:
+                return degraded
             raise ConfigEntryAuthFailed("Authentication lost with V2C Cloud") from err
         except V2CRateLimitError as err:
             _back_off_on_rate_limit()
             _LOGGER.warning("V2C Cloud rate limit reached; keeping previous data")
-            if coordinator.data is not None:
-                return coordinator.data
-            cached = _normalise_pairings(entry.data.get("cached_pairings"))
-            if cached:
-                _LOGGER.warning(
-                    "V2C Cloud rate-limited at startup; using cached pairings (%s device(s))",
-                    len(cached),
-                )
-                return _build_synthetic_fallback(cached)
+            payload = _cached_fallback_payload(entry, coordinator, "rate-limited")
+            if payload is not None:
+                return payload
             raise UpdateFailed("Rate limited by V2C Cloud API") from err
         except V2CError as err:
             _restore_default_interval("communication failure")
-            if coordinator.data is not None:
-                _LOGGER.warning(
-                    "V2C Cloud device fetch failed; keeping previous data: %s", err
-                )
-                return coordinator.data
-            cached = _normalise_pairings(entry.data.get("cached_pairings"))
-            if cached:
-                _LOGGER.warning(
-                    "V2C Cloud unavailable at first refresh; using cached pairings (%s device(s)): %s",
-                    len(cached),
-                    err,
-                )
-                return _build_synthetic_fallback(cached)
+            payload = _cached_fallback_payload(
+                entry, coordinator, f"device fetch failed ({type(err).__name__})"
+            )
+            if payload is not None:
+                return payload
             raise UpdateFailed(f"Failed to update V2C data: {err}") from err
 
         device_count = len(devices)
@@ -506,6 +714,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             )
             coordinator.update_interval = new_interval
 
+        if auth_state.degraded:
+            _LOGGER.info("V2C Cloud authentication recovered; leaving degraded mode")
+            auth_state.degraded = False
+            _async_clear_cloud_auth_degraded(hass, entry)
+
         result: dict[str, object] = {
             "pairings": latest_pairings,
             "devices": devices,
@@ -515,11 +728,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
         return result
 
+    async def _async_update_lan_only() -> dict[str, object]:
+        """
+        Build coordinator data for an entry that has no V2C account.
+
+        There is nothing to fetch: the address book comes from the user's
+        configuration, and the per-charger LAN coordinators do all the real
+        polling. Kept separate from the cloud update function so that path
+        cannot accidentally issue a request on behalf of an account-less entry.
+        """
+        return _build_synthetic_fallback(_lan_addressable_records(entry))
+
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name="V2C Cloud data",
-        update_method=_async_update_data,
+        update_method=_async_update_lan_only if lan_only else _async_update_data,
         update_interval=DEFAULT_UPDATE_INTERVAL,
     )
 
@@ -597,9 +821,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if runtime_data is not None:
             # Cancel the scheduled polling task for every local coordinator so that
             # orphaned asyncio handles do not keep the objects alive after removal.
+            #
+            # `DataUpdateCoordinator.async_shutdown` is a COROUTINE function: it
+            # must be awaited or nothing is cancelled at all and Python emits
+            # "RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown'
+            # was never awaited" (reported from a user log in issue #54). The
+            # isawaitable guard keeps stub/mock coordinators that expose a plain
+            # synchronous attribute working.
             for coord in runtime_data.local_coordinators.values():
-                if hasattr(coord, "async_shutdown"):
-                    coord.async_shutdown()
+                shutdown = getattr(coord, "async_shutdown", None)
+                if shutdown is not None:
+                    result = shutdown()
+                    if inspect.isawaitable(result):
+                        await result
                 elif hasattr(coord, "_unsub_refresh") and coord._unsub_refresh:  # noqa: SLF001
                     coord._unsub_refresh()  # noqa: SLF001
         hass.data[DOMAIN].pop(entry.entry_id, None)
@@ -729,7 +963,17 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         timer_id = call.data[ATTR_TIMER_ID]
         time_start = call.data[ATTR_TIME_START]
         time_end = call.data[ATTR_TIME_END]
-        active = call.data.get(ATTR_TIMER_ACTIVE, True)
+        days_of_week = call.data.get(ATTR_TIMER_DAYS, DEFAULT_TIMER_DAYS)
+        if ATTR_TIMER_ACTIVE in call.data:
+            _LOGGER.warning(
+                "The '%s' field of %s.%s is deprecated and ignored: the"
+                " documented POST /device/timer body has no such field. Use the"
+                " Timer switch (LAN keyword 'Timer') to enable or disable the"
+                " programmed timers",
+                ATTR_TIMER_ACTIVE,
+                DOMAIN,
+                SERVICE_PROGRAM_TIMER,
+            )
 
         entry_data = await _async_get_entry_for_device(device_id)
         await _execute_and_refresh(
@@ -739,7 +983,7 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
                 timer_id,
                 time_start=time_start,
                 time_end=time_end,
-                active=bool(active),
+                days_of_week=days_of_week,
             ),
         )
 
@@ -757,7 +1001,12 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
                 vol.Required(ATTR_TIME_END): cv.matches_regex(
                     r"^([01]\d|2[0-3]):[0-5]\d$"
                 ),
-                vol.Optional(ATTR_TIMER_ACTIVE, default=True): cv.boolean,
+                vol.Optional(
+                    ATTR_TIMER_DAYS, default=DEFAULT_TIMER_DAYS
+                ): cv.matches_regex(r"^[1-7]{1,7}$"),
+                # Deprecated: accepted so existing automations keep working,
+                # but never sent — the documented timer body has no such field.
+                vol.Optional(ATTR_TIMER_ACTIVE): cv.boolean,
             }
         ),
     )

@@ -164,7 +164,7 @@ class TestRouterNoCloudEndpoint:
             )
         msg = str(excinfo.value)
         assert "LightLED" in msg
-        assert "cloud-only" in msg.lower()
+        assert "cloud only" in msg.lower()
 
     async def test_lan_only_with_none_cloud_call_uses_lan(
         self, monkeypatch, runtime_data

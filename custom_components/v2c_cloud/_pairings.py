@@ -85,3 +85,34 @@ def _persist_pairings_if_changed(
     new_data = dict(entry.data)
     new_data["cached_pairings"] = normalised
     hass.config_entries.async_update_entry(entry, data=new_data)
+
+
+def _persist_lan_observed_ip(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_id: str,
+    ip: str,
+) -> None:
+    """
+    Record an address proven to work over the LAN into the pairings cache.
+
+    The cloud is normally the only writer of ``cached_pairings``, which leaves
+    the cache frozen (or empty) for as long as ``/pairings/me`` is unreachable.
+    A successful ``/RealTimeData`` fetch is direct evidence that ``ip`` reaches
+    ``device_id`` right now, so it is worth persisting: the entry then survives
+    a Home Assistant restart during a cloud outage instead of losing the only
+    address it had.
+
+    No-op unless something actually changes, so the normal polling loop never
+    writes to the config entry.
+    """
+    if not device_id or not ip:
+        return
+    current = _normalise_pairings(entry.data.get("cached_pairings"))
+    merged = [dict(record) for record in current if record.get("deviceId") != device_id]
+    merged.append({"deviceId": device_id, "ip": ip})
+    if not _pairings_changed(current, _normalise_pairings(merged)):
+        return
+    new_data = dict(entry.data)
+    new_data["cached_pairings"] = _normalise_pairings(merged)
+    hass.config_entries.async_update_entry(entry, data=new_data)

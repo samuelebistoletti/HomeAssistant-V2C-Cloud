@@ -33,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -70,7 +70,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -83,32 +83,20 @@ jobs:
 
       # Test dependencies are NOT shipped to users: the integration declares
       # `"requirements": []` in manifest.json — aiohttp is provided by Home
-      # Assistant core at runtime, not by this package. aiohttp is pinned to
-      # <3.14 here ONLY for the test harness, because aioresponses 0.7.8 (its
-      # latest release) has an ABI break with aiohttp 3.14+ (missing
-      # `stream_writer` kwarg — see requirements_test.txt). That pin holds
-      # aiohttp at the 3.13.x line, which carries the advisories below — every
-      # one is fixed only in aiohttp 3.14.0/3.14.1. They are ignored on the
-      # test-deps audit ONLY, until aioresponses ships a 3.14-compatible release.
-      # End users are unaffected (HA core provides a patched aiohttp at runtime).
-      # The runtime audit above stays --strict with zero ignores.
-      # NOTE: this ignore list grows each time a new aiohttp advisory lands while
-      # the 3.14 upgrade stays blocked — the durable fix is migrating off
-      # aioresponses (see Task Board backlog).
+      # Assistant core at runtime, not by this package. Even so, the test-deps
+      # audit runs --strict with ZERO ignores, same as the runtime audit above.
+      #
+      # History: from 1.3.2 to 1.4.0 this step carried a growing --ignore-vuln
+      # list (14 aiohttp advisories by 2026-09-08, the last one high severity)
+      # because aiohttp was held at <3.14 for the test harness: aiohttp 3.14
+      # made `ClientResponse.__init__` require a keyword-only `stream_writer`
+      # that aioresponses never passes. That is now handled by
+      # `tests/conftest.py::_install_aioresponses_compat`, so aiohttp is pinned
+      # >=3.14.3 and every one of those advisories is genuinely resolved rather
+      # than suppressed. Do not reintroduce ignores here: if a new advisory
+      # lands, bump the pin.
       - name: Audit test dependencies
-        run: |
-          pip-audit -r requirements_test.txt --format=columns --strict \
-            --ignore-vuln CVE-2026-34993 \
-            --ignore-vuln CVE-2026-47265 \
-            --ignore-vuln CVE-2026-50269 \
-            --ignore-vuln CVE-2026-54273 \
-            --ignore-vuln CVE-2026-54274 \
-            --ignore-vuln CVE-2026-54275 \
-            --ignore-vuln CVE-2026-54276 \
-            --ignore-vuln CVE-2026-54277 \
-            --ignore-vuln CVE-2026-54278 \
-            --ignore-vuln CVE-2026-54279 \
-            --ignore-vuln CVE-2026-54280
+        run: pip-audit -r requirements_test.txt --format=columns --strict
 
   gitleaks:
     name: Secret scanning (gitleaks)

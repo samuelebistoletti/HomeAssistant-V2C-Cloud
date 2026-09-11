@@ -2,6 +2,76 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.1] - 2026-09-11
+
+> **Breaking (auto-migrated):** the config entry schema is upgraded from v2 to
+> v3 on first load. No user action is required.
+
+### Added
+
+- **Local-only setup.** The integration can be configured without a V2C
+  account: enter the charger's IP address and the device id is read from the
+  charger itself. Such an entry never calls the cloud; cloud-only controls are
+  unavailable on it.
+- **Per-charger IP overrides** in the integration options. A configured
+  address takes precedence over cloud discovery and is validated against the
+  private-address policy; an empty field returns control to the cloud.
+- **LAN entries keep working while the V2C Cloud is unavailable or rejects
+  authentication.** Polling and control continue over the local network and a
+  repair issue is raised, clearing automatically when the cloud recovers.
+  Cloud-only (4G) entries still require reauthentication.
+- **`Active transport` diagnostic sensor** per charger — `Local network`,
+  `V2C Cloud` or `Offline` — exposing the address in use and its source
+  (manual, cloud, cache, charger) as attributes.
+- **Six per-phase measurement sensors**: `IntensityMeasure_L1/L2/L3` (A) and
+  `VoltageMeasure_L1/L2/L3` (V). LAN-only, so they report as unavailable in
+  cloud-only mode.
+- **`days_of_week` field on `v2c_cloud.program_timer`** — digits 1-7 with
+  1 = Monday (e.g. `"123"` = Mon+Tue+Wed), defaulting to every day.
+
+### Changed
+
+- Config entry schema v2 → v3, adding `manual_ips` and `lan_only`.
+- The connection type stored on the entry is the only thing that selects the
+  transport. LAN entries keep their LAN polling interval regardless of cloud
+  availability.
+- A successful LAN fetch persists the address it used, keeping the cached
+  address book current without the cloud.
+- `ChargeState` follows the LAN enum (`0/1/2/4/5/6`, no code 3); cloud values
+  are translated onto it during cloud→LAN synthesis.
+- `DynamicPowerMode`: 2 = minimum power mode, 3 = exclusive PV mode.
+- `POST /device/timer` sends exactly `timeStart`, `timeEnd` and `daysOfWeek`
+  with `timerId` as a query parameter, and rejects malformed day strings.
+- `IntensityMeasure_L1y` is normalised onto the documented
+  `IntensityMeasure_L1`.
+- Entities report `Unavailable` instead of `Unknown` when the reading cannot
+  be produced by the active transport.
+- `/device/logo_led` is documented in the published cloud spec.
+- Dependencies: `aiohttp` >=3.14.3, `aioresponses` >=0.7.9, `colorlog` 6.12.0,
+  `ruff` 0.16.6, `pip` >=26.2.1, and `pytest-cov` now pinned in
+  `requirements_test.txt`. Actions: `actions/setup-python` v7, `actions/stale`
+  v11.0.0, `softprops/action-gh-release` v3.0.3, `home-assistant/actions/hassfest`
+  SHA refresh.
+- Dependabot additionally tracks the `devcontainers` and `docker` ecosystems.
+- `.ruff.toml` ignores `CPY001`.
+
+### Deprecated
+
+- **`active` field of `v2c_cloud.program_timer`** — accepted for compatibility
+  but ignored. Use the Timer switch to enable or disable programmed timers.
+
+### Fixed
+
+- `async_shutdown` is awaited on config-entry unload, so each local
+  coordinator's scheduled refresh is cancelled.
+- Control errors distinguish a cloud-only entry from an unreachable charger
+  and point at the manual-IP option.
+
+### Security
+
+- `pip-audit` runs `--strict` with zero ignored advisories on both runtime and
+  test dependencies.
+
 ## [1.3.5] - 2026-06-26
 
 ### Fixed

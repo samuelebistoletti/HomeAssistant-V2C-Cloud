@@ -126,7 +126,7 @@ Changes are applied to all per-device local coordinators immediately; no integra
 | Service | Endpoint | Description |
 | --- | --- | --- |
 | `v2c_cloud.set_wifi_credentials` | `/device/wifi` | Update SSID and password. |
-| `v2c_cloud.program_timer` | `/device/timer` | Configure start/end time and active flag for a timer slot. |
+| `v2c_cloud.program_timer` | `/device/timer` | Configure start/end time and active week days (`days_of_week`, 1 = Monday) for a timer slot. |
 | `v2c_cloud.set_ocpp_enabled` | `/device/ocpp` | Enable or disable OCPP connectivity. |
 | `v2c_cloud.set_ocpp_id` | `/device/ocpp_id` | Set the OCPP charge point identifier. |
 | `v2c_cloud.set_ocpp_address` | `/device/ocpp_addr` | Configure the central OCPP server URL. |
@@ -207,7 +207,7 @@ pip install -r requirements_test.txt
 python -m pytest tests/ -v
 ```
 
-The suite (~470 tests as of 1.3.0) runs entirely without a live Home Assistant instance or a real charger. It covers:
+The suite (~563 tests as of 1.4.0-beta.1) runs entirely without a live Home Assistant instance or a real charger. It covers:
 
 - **HTTP client** – cloud API calls, authentication, retry and rate-limit handling, pairings cache
 - **Device state gathering** – `async_gather_devices_state`, per-device fetch parallelism, fallback to previous data on transient errors

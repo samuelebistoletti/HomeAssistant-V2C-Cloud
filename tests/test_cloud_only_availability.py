@@ -30,6 +30,12 @@ def test_lan_only_keys_set() -> None:
                 "ChargeMode",
                 "DynamicPowerMode",
                 "PauseDynamic",
+                "IntensityMeasure_L1",
+                "IntensityMeasure_L2",
+                "IntensityMeasure_L3",
+                "VoltageMeasure_L1",
+                "VoltageMeasure_L2",
+                "VoltageMeasure_L3",
             }
         )
         == LAN_ONLY_KEYS

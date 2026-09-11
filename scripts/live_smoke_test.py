@@ -99,7 +99,7 @@ async def _local_write(
         return resp.status, await resp.text()
 
 
-async def _cloud_request(  # noqa: PLR0913
+async def _cloud_request(  # noqa: PLR0913, PLR0917
     session: aiohttp.ClientSession,
     api_key: str,
     method: str,

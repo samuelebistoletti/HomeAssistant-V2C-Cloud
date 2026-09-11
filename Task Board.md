@@ -1,21 +1,43 @@
 # Task Board
 
-## Today
-- [ ] **User: testare in HA UI** in cloud-only mode (4G). Slider Intensity / Min/MaxIntensity / Dynamic / Locked / Paused / LogoLED → riflesso V2C app; LightLED + ContractedPower → error toast.
-- [ ] Triage di eventuale feedback comunitario su v1.3.0 / v1.3.1.
-- [ ] (se nessuna issue in arrivo) valutare un refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data`.
+## Today (090926 — priorità per domani)
+- [ ] **Mergiare PR #55 quando l'utente dà il via** → pubblica la release 1.4.0 (manifest già bumpato; tag-and-release si triggera dal push di manifest.json su main). Valutare lo squash: il branch contiene `2f89a67` (aggiunge 14 CVE ignorate) poi `11afbd9` (le rimuove).
+- [ ] **Approvare/rifiutare le 3 revisioni SOP proposte dall'auditor** (vedi sotto in Note SOP) — richiedono ok utente prima di toccare `knowledge-base.md`.
+- [ ] Valutare se i 5 commit README (promo sconto Trydan) su main richiedono una entry CHANGELOG/release, o restano solo docs.
+
+## Note SOP in attesa di approvazione (auditor, 090826)
+1. Riscrivere la entry `[060926]` di `knowledge-base.md` sul pip-audit come **SUPERSEDED**: preferire il fix di versione reale alla ignore-list quando è raggiungibile; ignore scoped solo se non esiste fix.
+2. Nuova entry *Testing Gotchas*: "HTTP 200 non è prova di conformità" per ogni endpoint il cui body è stato inferito senza spec.
+3. Nuova entry *Project Patterns*: la traduzione cloud→LAN di enum/unità va applicata **una sola volta** allo stesso confine di sintesi (`_build_realtime_from_reported`), citando il rischio di auto-annullamento dello swap ChargeState.
 
 ## This Week
-- [ ] Raccogliere feedback comunitario su `v1.3.0` stable.
-- [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.3.0 è stable.
+- [ ] (se nessuna issue in arrivo) refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data` — rinviato: la giornata è andata su conformità API + dipendenze.
+- [ ] Rimuovere lo shim `_install_aioresponses_compat` quando aioresponses pubblicherà una release che passa `stream_writer` da sola.
+- [ ] Raccogliere feedback comunitario su `v1.3.5` stable.
+- [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.3.0+ è stable.
 
 ## Backlog
 - [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826).
-- [ ] Future: implement V2C cloud webhooks (startCharge/endCharge) — quando V2C documenta meccanismo di firma/auth.
+- [ ] Future: implement V2C cloud webhooks (startCharge/endCharge). **Sbloccato a metà (090826):** la spec OpenAPI ora documenta il payload (`idCharge`, `deviceId`, `method`, `datetime`, `energy`, `energyByHour`, `rfidCode`), ma NON c'è meccanismo di firma/auth e l'URL si registra solo dal portale V2C → payload da trattare come untrusted con validazione `deviceId`.
+- [ ] ~~Migrare via da `aioresponses`~~ — non più necessario per aiohttp 3.14 (risolto con lo shim in conftest, 090826). Resta valido solo se aioresponses venisse abbandonato a monte.
 - [ ] Future: refactor del service dispatcher in `__init__.py` (~640 righe ripetitive → ServiceSpec data-driven).
 - [ ] Future: split di `_async_update_data` (136 righe) in 3 helper.
 
 ## Done
+- [x] **PR #55 aperta verso main** — 5 commit, CI 13/13 verde, `mergeable: clean`; NON mergiata (l'utente dà il via) — 090826
+- [x] **aiohttp 3.14.3 sbloccato + 14 CVE ignorate rimosse** — shim `_install_aioresponses_compat` in conftest; entrambi i gate pip-audit `--strict` con zero ignore; suite verde su 3.14.3 e 3.13.5 (`11afbd9`) — 090826
+- [x] **Check completo di tutte le dipendenze** — Python e Action tutte all'ultima versione; `pytest-cov` tracciato in requirements_test.txt (era ad-hoc, invisibile a pip-audit e Dependabot); Dependabot esteso a `devcontainers` + `docker` (`4526222`) — 090826
+- [x] **Fix gate `pip-audit` fallito in CI** — 3 advisory aiohttp nuove del 04/08 con ID PYSEC; prima soppresse (`2f89a67`), poi risolte davvero dal bump — 090826
+- [x] Audit giornaliero auditor: PASS con warning; 4 nomination confermate + 3 revisioni SOP proposte — 090826
+- [x] **Implementata 1.4.0 (branch `fix/1.4.0-api-doc-conformance`, non pushata):** fix DynamicPowerMode 2/3, ChargeState enum LAN canonico + traduzione cloud→LAN, body `/device/timer` conforme (+`days_of_week`, `active` deprecato), 6 sensori per-fase con traduzioni en/it/es, alias `IntensityMeasure_L1y`; CHANGELOG + manifest 1.4.0 + README; 515 test verdi, ruff/JSON/YAML/parity traduzioni OK; commit `fe90dea` — 090826
+- [x] **Incidente:** cartella `custom_components/` cancellata per errore dall'utente a metà sessione; ripristinata con `git checkout --` e ripristino verificato file per file (0 file mancanti, 9 moduli non toccati identici a origin/main, 6 edit rifatti) — 090826
+- [x] **Merge 4 Dependabot PR** (#48 aioresponses 0.7.9, #51 colorlog+ruff 0.15.22, #49 hassfest SHA, #53 action-gh-release 3.0.2) — squash su main `f5376ba`; 479 test + ruff verdi in locale; 0 PR aperte — 090826
+- [x] **Verifica aiohttp 3.14 + aioresponses 0.7.9** → ancora incompatibile (`stream_writer` mancante, 57 test rotti); pin `<3.14` + CVE ignore-list confermati necessari — 090826
+- [x] **Audit codice vs nuova doc API** (OpenAPI cloud v1.0.0 + sheet LAN rev. 14/07/26): 40/40 endpoint coperti, 3 bug trovati (DynamicPowerMode 2/3 invertiti, ChargeState enum LAN≠cloud, body `/device/timer` non conforme) — 090826
+- [x] **Test HA UI cloud-only mode (4G) writer via router** — confermato OK dall'utente — 090826
+- [x] Triage feedback comunitario su v1.3.5 — confermato OK dall'utente — 090826
+- [x] **Release v1.3.5** — fix cloud-only kW→W scaling per ChargePower/HousePower/FVPower/BatteryPower/GridPower, unconditional (era gated da un `voltage` field incidentale) (#42/#43); rimossi asset SBOM dalle release (HACS `download_count` leggeva l'asset sbagliato, hacs/integration#4438) — solo `v2c_cloud.zip` da ora; superseeded 2 tentativi falliti di 1.3.4 (`deed6b8`/`a1dc471`) — 062626
+- [x] **Release v1.3.3** — supersede di 1.3.2 (mai taggata, gate security fallito su nuovo batch CVE aiohttp test-only); bump routine ruff/pip/pytest/pytest-asyncio/codecov-action v7/gitleaks-action v3; aiohttp confermato ancora incompatibile con aioresponses 0.7.8 su 3.14, resta pinnato <3.14 — 061726
 - [x] **Release v1.3.1** — merge Dependabot #26 (ruff 0.15.16) + #29 (action-gh-release v2.5.0→v3.0.0 Node24); fix commento `# v2`→`# v3.0.0`; manifest 1.3.1 + CHANGELOG `[1.3.1]`; commit `765774b`; release+SBOM pubblicati (prerelease:false); 0 PR aperte — 060926
 - [x] **Release v1.3.0 STABLE** — manifest bump, CHANGELOG consolidato `[1.3.0]`, README; commit `c311e27`; tag-and-release auto-pubblica tag+Release+SBOM (prerelease:false); 9/9 gate verdi — 060926
 - [x] Fix CI failure `Security/pip-audit` (CVE aiohttp test-only → --ignore-vuln su test-deps step) — 060926

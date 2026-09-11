@@ -13,7 +13,6 @@ python3 -m pip install --requirement requirements.txt
 # devcontainer comes up without pytest, breaking the inline test discovery in
 # VSCode.
 python3 -m pip install --requirement requirements_test.txt
-python3 -m pip install pytest-cov
 
 # MCP proxy (Streamable HTTP/SSE bridge) for Claude Code → Home Assistant /api/mcp.
 # Install uv if not already available (devcontainer feature or prior run).

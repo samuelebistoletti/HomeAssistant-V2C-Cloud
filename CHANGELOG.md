@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.4] - 2026-09-11
+
+### Changed
+
+- The manual IP opt-in in the integration options now reflects the stored
+  configuration: it is ticked whenever addresses are set, each charger's form
+  opens on the address in force, and clearing the box removes every override
+  and returns the addresses to cloud discovery. Switching to Cloud only (4G)
+  keeps them.
+- The integration options list the addresses currently in use.
+
+### Fixed
+
+- Opting into manual addresses on an entry that knows no charger yet saved
+  nothing without explanation; it now reports the reason.
+
 ## [1.4.0-beta.3] - 2026-09-11
 
 ### Fixed

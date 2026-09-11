@@ -98,6 +98,21 @@ async def _probe_local_api(
         return None, "cannot_connect_local"
 
 
+def _describe_overrides(manual_ips: dict[str, str]) -> str:
+    """
+    Render the stored address overrides for the options dialog.
+
+    The options form is the only place these addresses can be seen, so it
+    shows them rather than merely offering to change them. The em dash stands
+    in for "none set" because a placeholder cannot be translated.
+    """
+    if not manual_ips:
+        return "—"
+    return ", ".join(
+        f"{device_id} → {ip}" for device_id, ip in sorted(manual_ips.items())
+    )
+
+
 def _known_device_ids(entry: ConfigEntry) -> list[str]:
     """Return every charger id the entry knows about, cache plus overrides."""
     ids = [
@@ -531,14 +546,18 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
 
                 # An address override is only ever read by the LAN transport,
-                # so the DESTINATION mode decides whether to ask — not the
+                # so the DESTINATION mode decides what the box means — not the
                 # current one. That is what lets a 4G entry be switched to
                 # Wi-Fi and given its address in a single pass, which matters
-                # most when the cloud is down and cannot supply one.
-                wants_manual = (
-                    user_input.get(CONF_SET_MANUAL_IPS) and not changes[CONF_CLOUD_ONLY]
-                )
-                if wants_manual and device_ids:
+                # most when the cloud is down and cannot supply one. Switching
+                # the other way leaves stored overrides alone: they cost
+                # nothing while unused and are still there on the way back.
+                is_lan = not changes[CONF_CLOUD_ONLY]
+                wants_manual = is_lan and bool(user_input.get(CONF_SET_MANUAL_IPS))
+
+                if wants_manual and not device_ids:
+                    errors[CONF_SET_MANUAL_IPS] = "no_known_devices"
+                elif wants_manual:
                     # Nothing is persisted yet: forms are still to come, and
                     # abandoning the flow half-way must leave the entry exactly
                     # as it was.
@@ -548,8 +567,13 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     self._pending_options = new_options
                     self._mode_changed = mode_changed
                     return await self.async_step_manual_ip()
-
-                return self._apply(changes, new_options, mode_changed=mode_changed)
+                else:
+                    if is_lan and current_manual:
+                        # The box now mirrors what is stored, so clearing it is
+                        # the gesture that drops every override and hands the
+                        # addresses back to cloud discovery.
+                        changes[CONF_MANUAL_IPS] = {}
+                    return self._apply(changes, new_options, mode_changed=mode_changed)
 
         schema = vol.Schema(
             {
@@ -567,15 +591,24 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     vol.Coerce(int),
                     vol.Range(min=MIN_LOCAL_INTERVAL, max=MAX_LOCAL_INTERVAL),
                 ),
-                # Opting in leads to one form per charger. The address fields
-                # cannot live here: Home Assistant resolves field labels from
-                # static translation keys, and a key built from the device id
-                # would surface in the UI as the raw `manual_ip_<id>` string.
-                vol.Optional(CONF_SET_MANUAL_IPS, default=False): bool,
+                # Ticked whenever overrides are stored, so the box reports the
+                # entry's state instead of resetting to "off" on every visit.
+                # Opting in leads to one form per charger, each pre-filled with
+                # the address in force. The address fields cannot live here:
+                # Home Assistant resolves field labels from static translation
+                # keys, and a key built from the device id would surface in the
+                # UI as the raw `manual_ip_<id>` string.
+                vol.Optional(
+                    CONF_SET_MANUAL_IPS,
+                    default=bool(current_manual),
+                ): bool,
             }
         )
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
+            description_placeholders={
+                "manual_ips": _describe_overrides(current_manual)
+            },
             errors=errors,
         )

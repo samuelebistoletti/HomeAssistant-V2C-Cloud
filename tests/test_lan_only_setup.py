@@ -402,6 +402,129 @@ class TestManualIpSteps:
         assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
         assert written[CONF_CLOUD_ONLY] is False
 
+    # -- the box reports state, it is not just a door ------------------------
+
+    @staticmethod
+    def _checkbox_default(result: dict[str, Any]) -> bool:
+        """Read the rendered default of the manual-IP checkbox."""
+        for key in result["data_schema"].schema:
+            if str(key) == CONF_SET_MANUAL_IPS:
+                default = key.default
+                return bool(default() if callable(default) else default)
+        raise AssertionError(f"{CONF_SET_MANUAL_IPS} missing from the options form")
+
+    async def test_box_is_ticked_when_overrides_are_stored(self):
+        """
+        Regression: the box used to default to off on every visit.
+
+        It read as "manual addresses are not configured" to anyone reopening
+        the dialog, even with addresses stored and in use.
+        """
+        flow = self._flow(self._entry_with(DEVICE_ID, manual={DEVICE_ID: LAN_IP}))
+        result = await flow.async_step_init()
+
+        assert self._checkbox_default(result) is True
+
+    async def test_box_is_clear_when_no_override_is_stored(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        result = await flow.async_step_init()
+
+        assert self._checkbox_default(result) is False
+
+    async def test_stored_addresses_are_shown_in_the_form(self):
+        """The options dialog is the only place these addresses can be read."""
+        flow = self._flow(
+            self._entry_with(
+                DEVICE_ID,
+                "SECOND",
+                manual={DEVICE_ID: LAN_IP, "SECOND": "192.168.1.60"},
+            )
+        )
+        result = await flow.async_step_init()
+
+        shown = result["description_placeholders"]["manual_ips"]
+        assert DEVICE_ID in shown
+        assert LAN_IP in shown
+        assert "SECOND" in shown
+        assert "192.168.1.60" in shown
+
+    async def test_no_stored_addresses_reads_as_none(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        result = await flow.async_step_init()
+
+        assert result["description_placeholders"]["manual_ips"] == "—"
+
+    async def test_prefills_the_address_already_in_force(self):
+        flow = self._flow(self._entry_with(DEVICE_ID, manual={DEVICE_ID: LAN_IP}))
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        result = await flow.async_step_manual_ip()
+
+        key = next(iter(result["data_schema"].schema))
+        assert key.description == {"suggested_value": LAN_IP}
+
+    async def test_clearing_the_box_drops_every_override(self):
+        """Unticking is how an address goes back to cloud discovery."""
+        flow = self._flow(
+            self._entry_with(
+                DEVICE_ID,
+                "SECOND",
+                manual={DEVICE_ID: LAN_IP, "SECOND": "192.168.1.60"},
+            )
+        )
+        result = await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: False,
+            }
+        )
+
+        assert result["type"] == "create_entry"
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {}
+
+    async def test_switching_to_cloud_only_keeps_the_overrides(self):
+        """
+        A 4G stint must not cost the addresses.
+
+        They are inert while the entry is cloud-only and are needed again the
+        moment it goes back to Wi-Fi — which is exactly when the cloud may be
+        unable to supply them.
+        """
+        flow = self._flow(self._entry_with(DEVICE_ID, manual={DEVICE_ID: LAN_IP}))
+        await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: False,
+            }
+        )
+
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
+
+    async def test_opting_in_with_no_known_charger_reports_an_error(self):
+        """Silently saving nothing would look like the box never stuck."""
+        flow = self._flow(_entry(**{CONF_CLOUD_ONLY: False}))
+        result = await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "init"
+        assert result["errors"] == {CONF_SET_MANUAL_IPS: "no_known_devices"}
+        flow.hass.config_entries.async_update_entry.assert_not_called()
+
     def test_known_ids_merge_cache_and_overrides(self):
         entry = _entry(
             **{

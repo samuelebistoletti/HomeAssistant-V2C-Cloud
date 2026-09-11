@@ -65,10 +65,12 @@ class TestOptionsFlowConnectionTypeToggle:
             side_effect=lambda *, title, data: {"type": "create_entry", "data": data}
         )
         flow.async_show_form = MagicMock(
-            side_effect=lambda *, step_id, data_schema, errors=None: {
+            side_effect=lambda *, step_id, data_schema, errors=None, **extra: {
                 "type": "form",
                 "step_id": step_id,
+                "data_schema": data_schema,
                 "errors": errors or {},
+                **extra,
             }
         )
         return flow, hass, entry

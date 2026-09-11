@@ -61,7 +61,7 @@
     "step": {
       "init": {
         "title": "V2C Cloud options",
-        "description": "Local (Wi-Fi) prefers the charger's own HTTP API and falls back to the cloud; Cloud only (4G) always uses the cloud. Tick the box below to enter a fixed IP address for each charger — needed when the V2C cloud is unreachable or reports the wrong address.",
+        "description": "Local (Wi-Fi) prefers the charger's own HTTP API and falls back to the cloud; Cloud only (4G) always uses the cloud.\n\nManual IP addresses in use: {manual_ips}\n\nTick the box below to enter or change a fixed IP address for each charger — needed when the V2C cloud is unreachable or reports the wrong address. Clear it to remove every manual address and let the cloud supply them again.",
         "data": {
           "connection_type": "Connection type",
           "local_update_interval": "Local refresh interval (seconds)",
@@ -77,7 +77,8 @@
       }
     },
     "error": {
-      "invalid_interval": "Refresh interval must be an integer between 5 and 300 seconds."
+      "invalid_interval": "Refresh interval must be an integer between 5 and 300 seconds.",
+      "no_known_devices": "This entry does not know about any charger yet, so there is no address to override."
     }
   },
   "selector": {

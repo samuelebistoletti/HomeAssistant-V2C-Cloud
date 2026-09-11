@@ -61,7 +61,7 @@
     "step": {
       "init": {
         "title": "Opzioni V2C Cloud",
-        "description": "Locale (Wi-Fi) preferisce l'API HTTP della wallbox e ripiega sul cloud; Solo cloud (4G) usa sempre il cloud. Spunta la casella qui sotto per inserire un indirizzo IP fisso per ogni wallbox — serve quando il cloud V2C non è raggiungibile o riporta un indirizzo sbagliato.",
+        "description": "Locale (Wi-Fi) preferisce l'API HTTP della wallbox e ripiega sul cloud; Solo cloud (4G) usa sempre il cloud.\n\nIndirizzi IP manuali in uso: {manual_ips}\n\nSpunta la casella qui sotto per inserire o modificare un indirizzo IP fisso per ogni wallbox — serve quando il cloud V2C non è raggiungibile o riporta un indirizzo sbagliato. Togli la spunta per rimuoverli tutti e tornare agli indirizzi forniti dal cloud.",
         "data": {
           "connection_type": "Tipo di connessione",
           "local_update_interval": "Intervallo refresh locale (secondi)",
@@ -77,7 +77,8 @@
       }
     },
     "error": {
-      "invalid_interval": "L'intervallo di refresh deve essere un intero tra 5 e 300 secondi."
+      "invalid_interval": "L'intervallo di refresh deve essere un intero tra 5 e 300 secondi.",
+      "no_known_devices": "Questa configurazione non conosce ancora nessuna wallbox, quindi non c'è nessun indirizzo da impostare."
     }
   },
   "selector": {

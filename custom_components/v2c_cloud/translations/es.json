@@ -61,7 +61,7 @@
     "step": {
       "init": {
         "title": "Opciones V2C Cloud",
-        "description": "Local (Wi-Fi) prefiere la API HTTP del propio cargador y recurre a la nube; Solo nube (4G) usa siempre la nube. Marca la casilla de abajo para introducir una dirección IP fija para cada cargador — necesario cuando la nube de V2C no está accesible o informa una dirección incorrecta.",
+        "description": "Local (Wi-Fi) prefiere la API HTTP del propio cargador y recurre a la nube; Solo nube (4G) usa siempre la nube.\n\nDirecciones IP manuales en uso: {manual_ips}\n\nMarca la casilla de abajo para introducir o cambiar una dirección IP fija para cada cargador — necesario cuando la nube de V2C no está accesible o informa una dirección incorrecta. Desmárcala para eliminar todas las direcciones manuales y volver a las de la nube.",
         "data": {
           "connection_type": "Tipo de conexión",
           "local_update_interval": "Intervalo de refresco local (segundos)",
@@ -77,7 +77,8 @@
       }
     },
     "error": {
-      "invalid_interval": "El intervalo de refresco debe ser un entero entre 5 y 300 segundos."
+      "invalid_interval": "El intervalo de refresco debe ser un entero entre 5 y 300 segundos.",
+      "no_known_devices": "Esta configuración aún no conoce ningún cargador, así que no hay ninguna dirección que establecer."
     }
   },
   "selector": {

@@ -378,9 +378,8 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
         await self._async_call(state=False)
 
     async def _async_call(self, state: bool) -> None:
-        previous_state = self._optimistic_state
         self._optimistic_state = state
-        self._record_command()
+        token = self._record_command()
         self.async_write_ha_state()
         try:
             await self._async_call_and_refresh(
@@ -392,9 +391,23 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
             # would land. It did not, so the assumption has to go with it —
             # otherwise the switch shows what was asked for, for the whole hold
             # window (90 s on the cloud-only ones), as if it had worked.
-            self._optimistic_state = previous_state
-            self._clear_command()
-            self.async_write_ha_state()
+            #
+            # Dropped rather than rolled back to the previous value: what was
+            # there before may itself have been another command's unconfirmed
+            # guess, and restoring it would let two refused commands leave a
+            # state on screen that neither of them ever achieved. With nothing
+            # held, `is_on` re-reads the payload — the real value if there is
+            # one, Unknown if there is not, which is the honest answer when no
+            # command was ever delivered.
+            #
+            # Only while this is still the latest command, though: a newer call
+            # that started while this one was on the wire owns the display now,
+            # and clearing its state or its hold would leave the UI stale even
+            # when that newer command succeeds.
+            if self._is_latest_command(token):
+                self._optimistic_state = None
+                self._clear_command()
+                self.async_write_ha_state()
             raise
         if self._trigger_local_refresh:
             await async_request_local_refresh(self._runtime_data, self._device_id)

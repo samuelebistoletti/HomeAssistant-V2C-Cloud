@@ -141,10 +141,26 @@ class _OptimisticHoldMixin:
 
     _OPTIMISTIC_HOLD_SECONDS: float = 20.0
     _last_command_ts: float | None  # initialised by subclass
+    _command_seq: int = 0
 
-    def _record_command(self) -> None:
-        """Mark that a command was issued; starts the optimistic hold window."""
+    def _record_command(self) -> int:
+        """
+        Mark that a command was issued; starts the optimistic hold window.
+
+        Returns a token identifying this command. Two service calls can be in
+        flight on the same entity at once — two automations firing together,
+        say — and the second one owns the display from the moment it starts.
+        An invocation that wants to undo its own bookkeeping later must check
+        the token first with ``_is_latest_command``, or it will trample a
+        newer command that is still pending.
+        """
         self._last_command_ts = time.monotonic()
+        self._command_seq += 1
+        return self._command_seq
+
+    def _is_latest_command(self, token: int) -> bool:
+        """Return True when no further command has been issued since ``token``."""
+        return self._command_seq == token
 
     def _clear_command(self) -> None:
         """Clear the hold so the entity reads real state on next coordinator update."""

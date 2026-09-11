@@ -6,8 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- When two commands for the same switch overlap, a failure of the earlier one
-  no longer discards the state and hold window established by the later one.
+- A switch whose command fails no longer keeps a state that was never
+  confirmed: it falls back to the value the charger reports, or to Unknown when
+  there is none. Overlapping commands are handled individually, so a failure no
+  longer discards the state established by a later command, nor leaves behind a
+  state that neither command achieved.
 
 ## [1.4.0-beta.7] - 2026-09-11
 

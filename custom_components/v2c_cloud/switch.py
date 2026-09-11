@@ -378,7 +378,6 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
         await self._async_call(state=False)
 
     async def _async_call(self, state: bool) -> None:
-        previous_state = self._optimistic_state
         self._optimistic_state = state
         token = self._record_command()
         self.async_write_ha_state()
@@ -393,13 +392,20 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
             # otherwise the switch shows what was asked for, for the whole hold
             # window (90 s on the cloud-only ones), as if it had worked.
             #
-            # Only if this is still the latest command, though: a newer call
+            # Dropped rather than rolled back to the previous value: what was
+            # there before may itself have been another command's unconfirmed
+            # guess, and restoring it would let two refused commands leave a
+            # state on screen that neither of them ever achieved. With nothing
+            # held, `is_on` re-reads the payload — the real value if there is
+            # one, Unknown if there is not, which is the honest answer when no
+            # command was ever delivered.
+            #
+            # Only while this is still the latest command, though: a newer call
             # that started while this one was on the wire owns the display now,
-            # and restoring a state captured before it began — or clearing the
-            # hold it started — would leave the UI stale even when the newer
-            # command succeeds.
+            # and clearing its state or its hold would leave the UI stale even
+            # when that newer command succeeds.
             if self._is_latest_command(token):
-                self._optimistic_state = previous_state
+                self._optimistic_state = None
                 self._clear_command()
                 self.async_write_ha_state()
             raise

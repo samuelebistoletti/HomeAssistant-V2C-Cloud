@@ -61,10 +61,18 @@
     "step": {
       "init": {
         "title": "Opzioni V2C Cloud",
-        "description": "Locale (Wi-Fi) preferisce l'API HTTP della wallbox e ripiega sul cloud; Solo cloud (4G) usa sempre il cloud. I campi IP qui sotto (uno per identificativo di wallbox) hanno la precedenza sull'indirizzo rilevato dal cloud: compilane uno se il cloud non è raggiungibile o se l'indirizzo è sbagliato. Lascia vuoto per lasciar decidere al cloud.",
+        "description": "Locale (Wi-Fi) preferisce l'API HTTP della wallbox e ripiega sul cloud; Solo cloud (4G) usa sempre il cloud. Spunta la casella qui sotto per inserire un indirizzo IP fisso per ogni wallbox — serve quando il cloud V2C non è raggiungibile o riporta un indirizzo sbagliato.",
         "data": {
           "connection_type": "Tipo di connessione",
-          "local_update_interval": "Intervallo refresh locale (secondi)"
+          "local_update_interval": "Intervallo refresh locale (secondi)",
+          "set_manual_ips": "Imposta manualmente gli indirizzi IP"
+        }
+      },
+      "manual_ip": {
+        "title": "Indirizzo IP di {device}",
+        "description": "Inserisci l'indirizzo della wallbox {device} sulla tua rete locale. Ha la precedenza sull'indirizzo rilevato dal cloud. Lascia vuoto per rimuovere l'impostazione manuale e lasciar decidere al cloud.",
+        "data": {
+          "ip_address": "Indirizzo IP"
         }
       }
     },

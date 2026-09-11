@@ -15,17 +15,17 @@ import pytest
 from custom_components.v2c_cloud.config_flow import (
     V2CConfigFlow,
     V2COptionsFlow,
-    _collect_manual_ips,
     _known_device_ids,
-    _manual_ip_field,
 )
 from custom_components.v2c_cloud.const import (
+    ATTR_IP_ADDRESS,
     CONF_API_KEY,
     CONF_CACHED_PAIRINGS,
     CONF_CLOUD_ONLY,
     CONF_LAN_ONLY,
     CONF_LOCAL_UPDATE_INTERVAL,
     CONF_MANUAL_IPS,
+    CONF_SET_MANUAL_IPS,
     SCHEMA_VERSION,
 )
 
@@ -105,48 +105,257 @@ class TestLanOnlyConfigFlow:
 # ---------------------------------------------------------------------------
 
 
-class TestManualIpCollection:
-    """Overrides are validated with the same policy as the write path."""
+class TestManualIpSteps:
+    """
+    One form per charger, so the address field keeps a translatable label.
 
-    def test_valid_private_ip_is_kept(self):
-        errors: dict[str, str] = {}
-        result = _collect_manual_ips(
-            {_manual_ip_field(DEVICE_ID): LAN_IP}, [DEVICE_ID], errors
-        )
-        assert result == {DEVICE_ID: LAN_IP}
-        assert errors == {}
+    The first attempt put one field per charger in the main options form, with
+    keys built from the device id. Home Assistant resolves field labels from
+    static translation keys, so the UI rendered the raw `manual_ip_<id>` string.
+    """
 
-    def test_empty_field_clears_the_override(self):
-        errors: dict[str, str] = {}
-        result = _collect_manual_ips(
-            {_manual_ip_field(DEVICE_ID): "   "}, [DEVICE_ID], errors
+    def _flow(self, entry: MagicMock) -> V2COptionsFlow:
+        flow = V2COptionsFlow(entry)
+        flow.hass = MagicMock()
+        flow.hass.config_entries.async_update_entry = MagicMock()
+        return flow
+
+    def _entry_with(self, *device_ids: str, manual: dict[str, str] | None = None):
+        return _entry(
+            **{
+                CONF_CLOUD_ONLY: False,
+                CONF_CACHED_PAIRINGS: [
+                    {"deviceId": d, "ip": "192.168.1.9"} for d in device_ids
+                ],
+                CONF_MANUAL_IPS: manual or {},
+            }
         )
-        assert result == {}
-        assert errors == {}
+
+    async def test_init_form_has_no_device_specific_keys(self):
+        """Regression: no schema key may carry a device id."""
+        flow = self._flow(self._entry_with(DEVICE_ID, "SECOND"))
+        result = await flow.async_step_init()
+
+        assert result["type"] == "form"
+        keys = {str(k) for k in result["data_schema"].schema}
+        assert not any(DEVICE_ID in k or "SECOND" in k for k in keys)
+        assert CONF_SET_MANUAL_IPS in keys
+
+    async def test_opting_out_saves_without_extra_steps(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        result = await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: False,
+            }
+        )
+        assert result["type"] == "create_entry"
+
+    async def test_opting_in_asks_per_charger(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        result = await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert result["type"] == "form"
+        assert result["step_id"] == "manual_ip"
+        # The field itself is a static key; the charger id travels separately.
+        assert (
+            list(result["data_schema"].schema) == [ATTR_IP_ADDRESS]
+            or str(next(iter(result["data_schema"].schema))) == ATTR_IP_ADDRESS
+        )
+
+    async def test_charger_id_travels_as_a_placeholder(self):
+        """The id must reach the UI as a placeholder, not as a field name."""
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        result = await flow.async_step_manual_ip()
+
+        assert result["description_placeholders"] == {"device": DEVICE_ID}
+
+    async def test_address_is_persisted(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        result = await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+
+        assert result["type"] == "create_entry"
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
+
+    async def test_every_charger_is_asked_in_turn(self):
+        flow = self._flow(self._entry_with(DEVICE_ID, "SECOND"))
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        first = await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        assert first["step_id"] == "manual_ip"  # still asking, second charger
+
+        second = await flow.async_step_manual_ip({ATTR_IP_ADDRESS: "192.168.1.60"})
+        assert second["type"] == "create_entry"
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {
+            DEVICE_ID: LAN_IP,
+            "SECOND": "192.168.1.60",
+        }
 
     @pytest.mark.parametrize(
-        "bad_ip", ["8.8.8.8", "127.0.0.1", "169.254.1.5", "0.0.0.0", "not-an-ip"]
+        "bad_ip", ["8.8.8.8", "127.0.0.1", "169.254.1.5", "not-an-ip"]
     )
-    def test_non_private_or_malformed_is_rejected(self, bad_ip):
-        errors: dict[str, str] = {}
-        result = _collect_manual_ips(
-            {_manual_ip_field(DEVICE_ID): bad_ip}, [DEVICE_ID], errors
-        )
-        assert result == {}
-        assert _manual_ip_field(DEVICE_ID) in errors
-
-    def test_one_bad_entry_does_not_discard_the_others(self):
-        errors: dict[str, str] = {}
-        result = _collect_manual_ips(
+    async def test_invalid_address_is_refused(self, bad_ip):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        await flow.async_step_init(
             {
-                _manual_ip_field(DEVICE_ID): LAN_IP,
-                _manual_ip_field("SECOND"): "8.8.8.8",
-            },
-            [DEVICE_ID, "SECOND"],
-            errors,
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
         )
-        assert result == {DEVICE_ID: LAN_IP}
-        assert list(errors) == [_manual_ip_field("SECOND")]
+        result = await flow.async_step_manual_ip({ATTR_IP_ADDRESS: bad_ip})
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "manual_ip"
+
+    async def test_empty_address_clears_the_override(self):
+        flow = self._flow(self._entry_with(DEVICE_ID, manual={DEVICE_ID: LAN_IP}))
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        await flow.async_step_manual_ip({ATTR_IP_ADDRESS: ""})
+
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_MANUAL_IPS] == {}
+
+    async def test_cloud_only_entry_is_still_offered_manual_ips(self):
+        """
+        The checkbox must be available on a 4G entry too.
+
+        Converting a cloud-only entry to Wi-Fi is exactly when the address has
+        to be typed by hand — the cloud that would otherwise supply it is the
+        thing that is down. Hiding the checkbox based on the *current* mode
+        forced the user to save, reload and reopen Options first.
+        """
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+            }
+        )
+        result = await self._flow(entry).async_step_init()
+
+        assert CONF_SET_MANUAL_IPS in {str(k) for k in result["data_schema"].schema}
+
+    async def test_switching_from_cloud_only_to_local_asks_for_the_address(self):
+        """The whole conversion happens in one pass."""
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": ""}],
+            }
+        )
+        flow = self._flow(entry)
+        result = await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert result["step_id"] == "manual_ip"
+
+        final = await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        assert final["type"] == "create_entry"
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        assert written[CONF_CLOUD_ONLY] is False
+        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
+
+    async def test_switching_to_cloud_only_skips_the_forms(self):
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        result = await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert result["type"] == "create_entry"
+
+    async def test_nothing_is_persisted_until_the_flow_completes(self):
+        """
+        Abandoning a later form must leave the entry untouched.
+
+        The mode change used to be written — and the reload scheduled — as
+        soon as the first step was submitted, so a user who closed the dialog
+        on the address form ended up with a half-applied configuration and an
+        integration reloading underneath the open flow.
+        """
+        flow = self._flow(self._entry_with(DEVICE_ID))
+        await flow.async_step_init(
+            {
+                "connection_type": "cloud_only",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: False,
+            }
+        )
+        flow.hass.config_entries.async_update_entry.reset_mock()
+
+        flow2 = self._flow(self._entry_with(DEVICE_ID))
+        await flow2.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        # Still inside the manual-IP form: nothing written, no reload queued.
+        flow2.hass.config_entries.async_update_entry.assert_not_called()
+        flow2.hass.async_create_task.assert_not_called()
+
+        await flow2.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        flow2.hass.config_entries.async_update_entry.assert_called_once()
+
+    async def test_reload_is_scheduled_once_at_the_end(self):
+        entry = _entry(
+            **{
+                CONF_CLOUD_ONLY: True,
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
+            }
+        )
+        flow = self._flow(entry)
+        await flow.async_step_init(
+            {
+                "connection_type": "local",
+                CONF_LOCAL_UPDATE_INTERVAL: 30,
+                CONF_SET_MANUAL_IPS: True,
+            }
+        )
+        assert flow.hass.async_create_task.call_count == 0
+
+        await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
+        assert flow.hass.async_create_task.call_count == 1
 
     def test_known_ids_merge_cache_and_overrides(self):
         entry = _entry(
@@ -156,69 +365,3 @@ class TestManualIpCollection:
             }
         )
         assert set(_known_device_ids(entry)) == {DEVICE_ID, "SECOND"}
-
-
-class TestOptionsFlowPersistsOverrides:
-    """The options flow writes overrides into entry.data, where the resolver reads them."""
-
-    async def _submit(self, entry: MagicMock, user_input: dict[str, Any]) -> Any:
-        flow = V2COptionsFlow(entry)
-        flow.hass = MagicMock()
-        flow.hass.config_entries.async_update_entry = MagicMock()
-        result = await flow.async_step_init(user_input)
-        return flow, result
-
-    async def test_override_is_written_to_entry_data(self):
-        entry = _entry(
-            **{
-                CONF_CLOUD_ONLY: False,
-                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": "192.168.1.9"}],
-            }
-        )
-        flow, _ = await self._submit(
-            entry,
-            {
-                "connection_type": "local",
-                CONF_LOCAL_UPDATE_INTERVAL: 30,
-                _manual_ip_field(DEVICE_ID): LAN_IP,
-            },
-        )
-        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
-        assert written[CONF_MANUAL_IPS] == {DEVICE_ID: LAN_IP}
-
-    async def test_invalid_override_blocks_the_save(self):
-        entry = _entry(
-            **{
-                CONF_CLOUD_ONLY: False,
-                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
-            }
-        )
-        flow, result = await self._submit(
-            entry,
-            {
-                "connection_type": "local",
-                CONF_LOCAL_UPDATE_INTERVAL: 30,
-                _manual_ip_field(DEVICE_ID): "8.8.8.8",
-            },
-        )
-        assert result["type"] == "form"
-        flow.hass.config_entries.async_update_entry.assert_not_called()
-
-    async def test_clearing_the_field_removes_the_override(self):
-        entry = _entry(
-            **{
-                CONF_CLOUD_ONLY: False,
-                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LAN_IP}],
-                CONF_MANUAL_IPS: {DEVICE_ID: LAN_IP},
-            }
-        )
-        flow, _ = await self._submit(
-            entry,
-            {
-                "connection_type": "local",
-                CONF_LOCAL_UPDATE_INTERVAL: 30,
-                _manual_ip_field(DEVICE_ID): "",
-            },
-        )
-        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
-        assert written[CONF_MANUAL_IPS] == {}

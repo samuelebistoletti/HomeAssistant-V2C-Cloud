@@ -31,6 +31,7 @@ from .const import (
     CONF_LAN_ONLY,
     CONF_LOCAL_UPDATE_INTERVAL,
     CONF_MANUAL_IPS,
+    CONF_SET_MANUAL_IPS,
     DEFAULT_LOCAL_INTERVAL,
     DOMAIN,
     MAX_LOCAL_INTERVAL,
@@ -107,38 +108,6 @@ def _known_device_ids(entry: ConfigEntry) -> list[str]:
     if isinstance(overrides, dict):
         ids.extend(device_id for device_id in overrides if device_id not in ids)
     return ids
-
-
-def _manual_ip_field(device_id: str) -> str:
-    """Return the options-flow field name carrying a charger's IP override."""
-    return f"manual_ip_{device_id}"
-
-
-def _collect_manual_ips(
-    user_input: dict[str, Any],
-    device_ids: list[str],
-    errors: dict[str, str],
-) -> dict[str, str]:
-    """
-    Read the per-charger IP overrides out of the submitted form.
-
-    An empty field clears the override for that charger (back to whatever the
-    cloud reports). A non-empty one must pass the same private-address policy
-    the write path enforces, so a typo cannot turn into an outbound request to
-    an arbitrary host.
-    """
-    overrides: dict[str, str] = {}
-    for device_id in device_ids:
-        field = _manual_ip_field(device_id)
-        raw = str(user_input.get(field, "") or "").strip()
-        if not raw:
-            continue
-        is_safe, error_key = validate_private_ip(raw)
-        if not is_safe:
-            errors[field] = error_key or "cannot_connect_local"
-            continue
-        overrides[device_id] = raw
-    return overrides
 
 
 class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -423,6 +392,97 @@ class V2COptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialise options flow."""
         self._config_entry = config_entry
+        self._pending_devices: list[str] = []
+        self._manual_ips: dict[str, str] = {}
+        self._pending_data: dict[str, Any] = {}
+        self._pending_options: dict[str, Any] = {}
+        self._mode_changed: bool = False
+
+    def _apply(
+        self,
+        new_data: dict[str, Any],
+        new_options: dict[str, Any],
+        *,
+        mode_changed: bool,
+    ) -> FlowResult:
+        """
+        Commit the whole options flow at once, as its final act.
+
+        Persisting earlier would leave the entry half-updated if the user
+        abandons a later step, and would reload the integration while the flow
+        is still open — rebuilding the coordinators without the addresses the
+        user is in the middle of typing.
+
+        ``entry.data`` goes through async_update_entry; ``entry.options`` is
+        written by the async_create_entry return value, the canonical HA
+        pattern for options-flow output (passing ``data={}`` there would
+        overwrite the options just set).
+        """
+        self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+
+        if mode_changed:
+            # Switching modes restructures the coordinator topology (cloud-only
+            # vs LAN polling), so the entry must be reloaded. Scheduled rather
+            # than awaited: reloading inline re-enters the still-open flow.
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(self._config_entry.entry_id)
+            )
+
+        return self.async_create_entry(title="", data=new_options)
+
+    async def async_step_manual_ip(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """
+        Ask for one charger's IP override, one charger per form.
+
+        A separate step per charger is what makes the field translatable: the
+        charger id travels in the step title as a placeholder, leaving the
+        field itself on a static key.
+        """
+        errors: dict[str, str] = {}
+        device_id = self._pending_devices[0]
+
+        if user_input is not None:
+            raw = str(user_input.get(ATTR_IP_ADDRESS, "") or "").strip()
+            if not raw:
+                self._manual_ips.pop(device_id, None)
+            else:
+                is_safe, error_key = validate_private_ip(raw)
+                if not is_safe:
+                    errors[ATTR_IP_ADDRESS] = error_key or "cannot_connect_local"
+                else:
+                    self._manual_ips[device_id] = raw
+
+            if not errors:
+                self._pending_devices.pop(0)
+                if self._pending_devices:
+                    return await self.async_step_manual_ip()
+
+                new_data = dict(self._pending_data)
+                new_data[CONF_MANUAL_IPS] = self._manual_ips
+                return self._apply(
+                    new_data,
+                    self._pending_options,
+                    mode_changed=self._mode_changed,
+                )
+
+        return self.async_show_form(
+            step_id="manual_ip",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        ATTR_IP_ADDRESS,
+                        description={
+                            "suggested_value": self._manual_ips.get(device_id)
+                        },
+                    ): str
+                }
+            ),
+            description_placeholders={"device": device_id},
+            errors=errors,
+        )
 
     async def async_step_init(
         self,
@@ -454,35 +514,34 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
             new_data = dict(current_data)
             mode_changed = new_mode != current_mode
-            manual_ips = _collect_manual_ips(user_input, device_ids, errors)
 
             if not errors:
                 new_data[CONF_CLOUD_ONLY] = new_mode == "cloud_only"
-                new_data[CONF_MANUAL_IPS] = manual_ips
 
                 new_options = dict(current_options)
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
 
-                # Persist entry.data via async_update_entry; entry.options is
-                # written by the async_create_entry return below — passing
-                # ``data=new_options`` to async_create_entry is the canonical
-                # HA pattern to store options flow output. Passing ``data={}``
-                # here would OVERWRITE the options the user just set.
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data
+                # An address override is only ever read by the LAN transport,
+                # so the DESTINATION mode decides whether to ask — not the
+                # current one. That is what lets a 4G entry be switched to
+                # Wi-Fi and given its address in a single pass, which matters
+                # most when the cloud is down and cannot supply one.
+                wants_manual = (
+                    user_input.get(CONF_SET_MANUAL_IPS)
+                    and not new_data[CONF_CLOUD_ONLY]
                 )
+                if wants_manual and device_ids:
+                    # Nothing is persisted yet: forms are still to come, and
+                    # abandoning the flow half-way must leave the entry exactly
+                    # as it was.
+                    self._pending_devices = list(device_ids)
+                    self._manual_ips = dict(current_manual)
+                    self._pending_data = new_data
+                    self._pending_options = new_options
+                    self._mode_changed = mode_changed
+                    return await self.async_step_manual_ip()
 
-                if mode_changed:
-                    # Switching modes restructures the coordinator topology
-                    # (cloud-only vs LAN polling). Schedule a reload so the
-                    # change takes effect immediately.
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(
-                            self._config_entry.entry_id
-                        )
-                    )
-
-                return self.async_create_entry(title="", data=new_options)
+                return self._apply(new_data, new_options, mode_changed=mode_changed)
 
         schema = vol.Schema(
             {
@@ -500,17 +559,11 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     vol.Coerce(int),
                     vol.Range(min=MIN_LOCAL_INTERVAL, max=MAX_LOCAL_INTERVAL),
                 ),
-                # One optional IP override per known charger. Filled in, it
-                # wins over anything the cloud reports — and it is the only
-                # address source that works when the cloud cannot be reached
-                # at all. Left empty, the cloud stays in charge.
-                **{
-                    vol.Optional(
-                        _manual_ip_field(device_id),
-                        description={"suggested_value": current_manual.get(device_id)},
-                    ): str
-                    for device_id in device_ids
-                },
+                # Opting in leads to one form per charger. The address fields
+                # cannot live here: Home Assistant resolves field labels from
+                # static translation keys, and a key built from the device id
+                # would surface in the UI as the raw `manual_ip_<id>` string.
+                vol.Optional(CONF_SET_MANUAL_IPS, default=False): bool,
             }
         )
         return self.async_show_form(

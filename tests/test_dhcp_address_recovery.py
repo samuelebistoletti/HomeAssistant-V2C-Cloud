@@ -94,7 +94,9 @@ class TestLanVerifiedOutranksCloud:
 
     def test_proven_address_beats_stale_cached_pairing(self):
         runtime = _runtime(
-            entry_data={CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": STALE_IP}]},
+            entry_data={
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": STALE_IP}]
+            },
             local_data={"_static_ip": LIVE_IP, "ChargeState": 2},
         )
         assert resolve_static_ip(runtime, DEVICE_ID) == LIVE_IP
@@ -173,18 +175,16 @@ class TestCandidateIps:
                 CONF_MANUAL_IPS: {DEVICE_ID: STALE_IP},
                 CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LIVE_IP}],
             },
-            coordinator_data={
-                "devices": {DEVICE_ID: {"reported": {"ip": THIRD_IP}}}
-            },
+            coordinator_data={"devices": {DEVICE_ID: {"reported": {"ip": THIRD_IP}}}},
         )
         assert candidate_ips(runtime, DEVICE_ID) == [STALE_IP]
 
     def test_every_known_address_is_offered_best_first(self):
         runtime = _runtime(
-            entry_data={CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": THIRD_IP}]},
-            coordinator_data={
-                "devices": {DEVICE_ID: {"reported": {"ip": STALE_IP}}}
+            entry_data={
+                CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": THIRD_IP}]
             },
+            coordinator_data={"devices": {DEVICE_ID: {"reported": {"ip": STALE_IP}}}},
             local_data={"_static_ip": LIVE_IP, "ChargeState": 2},
         )
         assert candidate_ips(runtime, DEVICE_ID) == [LIVE_IP, STALE_IP, THIRD_IP]
@@ -192,9 +192,7 @@ class TestCandidateIps:
     def test_duplicates_collapse(self):
         runtime = _runtime(
             entry_data={CONF_CACHED_PAIRINGS: [{"deviceId": DEVICE_ID, "ip": LIVE_IP}]},
-            coordinator_data={
-                "devices": {DEVICE_ID: {"reported": {"ip": LIVE_IP}}}
-            },
+            coordinator_data={"devices": {DEVICE_ID: {"reported": {"ip": LIVE_IP}}}},
             local_data={"_static_ip": LIVE_IP, "ChargeState": 2},
         )
         assert candidate_ips(runtime, DEVICE_ID) == [LIVE_IP]

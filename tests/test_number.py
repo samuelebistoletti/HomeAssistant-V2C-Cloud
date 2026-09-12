@@ -15,6 +15,9 @@ def _make_number(
     reported_value=None,
     source_to_native=None,
     value_to_api=None,
+    minimum=6.0,
+    maximum=32.0,
+    step=1.0,
 ):
     from custom_components.v2c_cloud.number import V2CNumberEntity
 
@@ -64,9 +67,9 @@ def _make_number(
         reported_keys=reported_keys,
         setter=setter,
         native_unit="A",
-        minimum=6.0,
-        maximum=32.0,
-        step=1.0,
+        minimum=minimum,
+        maximum=maximum,
+        step=step,
         local_key=local_key,
         refresh_after_call=False,
     )
@@ -186,3 +189,51 @@ class TestV2CNumberEntityAvailability:
         number._local_coordinator = None
         number.coordinator.last_update_success = True
         assert number.available is True
+
+
+class TestContractedPowerNegativeRange:
+    """
+    Contracted power must reach below zero.
+
+    On a Trydan a negative ContractedPower tells the dynamic-power algorithm
+    to reserve headroom for the rest of the installation rather than to
+    declare a contract size. The register is signed, but the Number entity
+    used to clamp at 1 kW, which put that configuration out of reach from
+    Home Assistant entirely.
+    """
+
+    def test_bounds_span_minus_five_to_twenty_two_kw(self):
+        from custom_components.v2c_cloud.number import POWER_MAX, POWER_MIN, POWER_STEP
+
+        assert POWER_MIN == -5.0
+        assert POWER_MAX == 22.0
+        # -5.0 must land exactly on a step boundary, or the slider cannot reach it.
+        assert (POWER_MIN % POWER_STEP) == 0
+
+    def test_minus_five_kw_is_written_as_minus_five_thousand_watts(self):
+        from custom_components.v2c_cloud.number import POWER_MAX, POWER_MIN
+
+        number, setter = _make_number(
+            local_key="ContractedPower",
+            reported_keys=("contractedpower",),
+            minimum=POWER_MIN,
+            maximum=POWER_MAX,
+            step=0.5,
+            value_to_api=lambda value: round(value * 1000),
+            source_to_native=lambda raw: raw / 1000 if raw else raw,
+        )
+        assert number._attr_native_min_value == -5.0
+
+        import asyncio
+
+        asyncio.run(number.async_set_native_value(-5.0))
+        setter.assert_awaited_once_with(-5000)
+
+    def test_a_negative_reading_renders_as_negative_kilowatts(self):
+        number, _ = _make_number(
+            local_key="ContractedPower",
+            reported_keys=("contractedpower",),
+            local_value=-5000,
+            source_to_native=lambda raw: raw / 1000 if raw else raw,
+        )
+        assert number.native_value == -5.0

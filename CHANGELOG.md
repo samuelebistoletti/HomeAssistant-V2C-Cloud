@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.9] - 2026-09-12
+
+### Fixed
+
+- **A charger whose LAN address changes is found again on its own.** When DHCP
+  moved a charger to a new address, the integration kept calling the old one
+  until somebody set the address by hand: every poll tried a single address,
+  and an address the cloud advertised outranked one the charger had actually
+  answered on — so even after a successful local fetch recorded the working
+  address, the stale one won again on the next cycle. Address selection now
+  puts a LAN-verified address above anything the cloud reports, and a poll that
+  fails falls through to the other addresses it knows before giving up on the
+  local connection. A manual override is still absolute: it is tried alone, so
+  a wrong pinned address fails visibly instead of being silently worked around.
+- Within the cloud's own data, the address the charger reports for itself is
+  now preferred over the static address registered in the V2C portal, which
+  only changes when somebody edits it and is the one that goes stale.
+- A local response is accepted only when it actually looks like Trydan
+  real-time data. A released DHCP lease is often picked up by some other
+  device, and a neighbour serving JSON can no longer be mistaken for the
+  charger.
+
+### Changed
+
+- **Contracted power can now be set down to -5 kW** (previously the slider
+  stopped at 1 kW). A negative contracted power is how an installation tells
+  the dynamic-power algorithm to reserve headroom for the rest of the house
+  rather than to declare a contract size; the local register is signed, but the
+  entity's lower bound put that configuration out of reach.
+
 ## [1.4.0-beta.8] - 2026-09-11
 
 ### Fixed

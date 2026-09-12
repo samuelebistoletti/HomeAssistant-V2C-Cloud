@@ -54,9 +54,14 @@ LOCAL_WRITE_RETRY_DELAY = 5
 # Cloud-only mode (4G Trydan, no LAN reachability)
 CLOUD_ONLY_UPDATE_INTERVAL = timedelta(seconds=120)
 
-# Power limits (kW)
-MAX_POWER_MIN_KW = 1.0
-MAX_POWER_MAX_KW = 22.0
+# Contracted-power limits (kW) for the ContractedPower number entity.
+# The lower bound is deliberately negative: on a Trydan, a negative
+# ContractedPower is how an installation tells the dynamic-power algorithm to
+# reserve headroom for the rest of the house rather than to declare a contract
+# size, and the LAN /write/ContractedPower register accepts the signed value.
+# Clamping at 1 kW made that configuration unreachable from Home Assistant.
+CONTRACTED_POWER_MIN_KW = -5.0
+CONTRACTED_POWER_MAX_KW = 22.0
 INSTALLATION_VOLTAGE_MIN = 100.0
 INSTALLATION_VOLTAGE_MAX = 450.0
 

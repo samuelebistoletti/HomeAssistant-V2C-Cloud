@@ -94,7 +94,9 @@ The V2C Cloud is not always reachable — rate limits, connectivity issues, or a
 An account can be added later by re-running setup with the cloud path — the two are independent entries, not a migration.
 
 ### Pin a manual IP address
-For an existing **Local (Wi-Fi)** entry, go to **Settings → Devices & Services → V2C Cloud → Configure**, tick **Set charger IP addresses manually**, and enter an address for each charger (one form per charger, so the field stays properly labelled). Precedence is: **manual override → address discovered from the cloud → cached address → address seen in the last local payload.**
+For an existing **Local (Wi-Fi)** entry, go to **Settings → Devices & Services → V2C Cloud → Configure**, tick **Set charger IP addresses manually**, and enter an address for each charger (one form per charger, so the field stays properly labelled). Precedence is: **manual override → address last verified on the LAN → address discovered from the cloud → cached address → address seen in the last local payload.**
+
+A manual override is absolute: it is the only address tried, so a wrong entry fails visibly rather than being worked around. Without one, a poll that cannot reach the charger tries the other addresses it knows before falling back to cloud data, so a charger moved by DHCP is picked up again without intervention.
 
 This matters most when the cloud can't currently supply an address — which is exactly when you'd otherwise have no way to tell the integration where the charger is. The options dialog shows the addresses currently on file; leaving the box ticked with an empty field, or unticking it, removes the override and hands the address back to cloud discovery.
 
@@ -104,7 +106,7 @@ This matters most when the cloud can't currently supply an address — which is 
 - **Either way, controls with no local equivalent go unavailable** rather than silently failing: OCPP, the RFID reader, installation type, slave device, language, the reboot and firmware-update buttons, and the cloud-connection binary sensor. They recover automatically as soon as the cloud does.
 
 ### `Active transport` diagnostic sensor
-One per charger, reporting `Local network`, `V2C Cloud`, or `Offline`, with the address in use and where it came from (`manual`, `cloud`, `cache`, or the last local payload) exposed as attributes. It's the fastest way to see, at a glance, what the integration is actually doing for a given charger right now.
+One per charger, reporting `Local network`, `V2C Cloud`, or `Offline`, with the address in use and where it came from (`manual`, `lan` for an address verified on the local network, `cloud`, `cache`, or the last local payload) exposed as attributes. It's the fastest way to see, at a glance, what the integration is actually doing for a given charger right now.
 
 ## Entity Overview
 
@@ -145,7 +147,9 @@ Entities backed by a cloud-only endpoint (marked *cloud* below, plus the diagnos
 - Current intensity (local `/write/Intensity`)
 - Minimum intensity (local `/write/MinIntensity`)
 - Maximum intensity (local `/write/MaxIntensity`)
-- Contracted power (local `/write/ContractedPower`, auto-converted between watts and kW)
+- Contracted power — -5 to 22 kW (local `/write/ContractedPower`, auto-converted
+  between watts and kW). Negative values reserve headroom for the rest of the
+  installation instead of declaring a contract size.
 - Light LED intensity — 0-100 % (local `/write/LightLED`)
 
 ### Buttons

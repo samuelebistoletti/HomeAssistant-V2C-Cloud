@@ -1,9 +1,14 @@
 # Task Board
 
-## Today (090926 — priorità per domani)
-- [ ] **Mergiare PR #55 quando l'utente dà il via** → pubblica la release 1.4.0 (manifest già bumpato; tag-and-release si triggera dal push di manifest.json su main). Valutare lo squash: il branch contiene `2f89a67` (aggiunge 14 CVE ignorate) poi `11afbd9` (le rimuove).
-- [ ] **Approvare/rifiutare le 3 revisioni SOP proposte dall'auditor** (vedi sotto in Note SOP) — richiedono ok utente prima di toccare `knowledge-base.md`.
-- [ ] Valutare se i 5 commit README (promo sconto Trydan) su main richiedono una entry CHANGELOG/release, o restano solo docs.
+## Today (091226 — sabato)
+- [x] **1.4.0-beta.9 rilasciata** (PR #68, squash): auto-recupero dell'indirizzo LAN dopo un cambio DHCP + slider potenza contrattuale esteso a -5 kW — 091226
+- [ ] **Verificare sul vivo la beta.9 su XQUXDU**: (a) togliere l'IP manuale 10.35.0.50 dalle opzioni e controllare che `sensor.garage_xquxdu_trasporto_attivo` resti `lan` con `ip_source` = `lan`/`cloud`/`cache` invece di `manual`; (b) provare a portare lo slider **Potenza contrattuale** a un valore negativo e confermare che il Trydan lo accetti (il registro è signed e l'integrazione non impone range, ma l'accettazione lato firmware non è verificata da qui).
+- [ ] **Punto 3 del documento (collisione unique_id) — IN STANDBY su richiesta utente.** Evento singolo l'11/09 18:32, ~35 righe ERROR, nessun danno: le entità esistenti sono sopravvissute. Sospetto doppio setup nello stesso reload con due schemi di unique_id (`v2c_XQUXDU_house_power` vs `XQUXDU_active_transport`). Da guardare in `async_setup_entry` / discovery multi-charger quando si riprende.
+- [ ] **Promuovere 1.4.0-beta.9 → stable** dopo conferma dell'utente sui test dal vivo (device XQUXDU): IP manuale, sopravvivenza all'outage cloud, disponibilità onesta dei controlli cloud-only, auto-recupero dell'indirizzo LAN.
+- [ ] **Approvare/rifiutare le 3 revisioni SOP proposte dall'auditor il 090826** (vedi sotto in Note SOP) — richiedono ok utente prima di toccare `knowledge-base.md`. **Correzione emersa dall'audit 091126: la revisione #1 come scritta è sbagliata** — dice di riscrivere come SUPERSEDED la entry `[060926]` di `knowledge-base.md`, ma quella entry non esiste nella KB: è rimasta solo una nomination, mai promossa. Va promossa direttamente con linguaggio "supersede", non riscritta.
+- [ ] **Monitorare issue #54**: aggiornamento pubblicato il 091126 (nessuna risposta da V2C); ripubblicare quando V2C risponde o quando 1.4.0 diventa stable.
+- [ ] **Bug trovato 091126, NON ancora fissato (segnalato dall'utente, fix rimandato apposta):** `config_flow.py::async_step_cloud` mostra la propria form con `step_id="user"` invece di `step_id="cloud"` (riga 241). Effetto visibile: il passo "Con un account V2C" mostra titolo e descrizione del menu precedente ("Come vuoi collegarti?" + il testo che spiega le due opzioni) invece di quelli propri dello step cloud ("V2C Cloud account" / "Enter the API key..."), e il campo `api_key` appare senza etichetta perché lo step "user" in strings.json non ha una sezione `data` con quella chiave — HA mostra il nome grezzo del campo. Fix: cambiare `step_id="user"` → `step_id="cloud"` alla riga 241 di `async_step_cloud`.
+- [ ] **Secondo bug trovato 091126, stessa richiesta di rimando:** la translation key `cannot_connect_local` è usata in 5 punti (`_net.py::validate_private_ip` ×3, `config_flow.py::_probe_local_api` ×2) e propagata a `errors["base"]`/`errors[ATTR_IP_ADDRESS]` in **due schermate diverse** — lo step di setup "Solo locale" (riga 176) e la form "IP address for {device}" nelle opzioni (riga 479) — ma la chiave **non è mai stata definita**, in nessuna delle 4 sezioni `error` (`strings.json`, `en.json`, `it.json`, `es.json`). L'utente vede il testo grezzo `cannot_connect_local` invece di un messaggio (visto nello screenshot: IP non raggiungibile durante il setup LAN-only). Fix: aggiungere la entry mancante alle 4 sezioni `error` di `config` (serve anche in `options.error` se `_probe_local_api`/`validate_private_ip` sono richiamati anche lì — verificare). **Nota sistemica:** il test di parità traduzioni (`test_manifest_hygiene.py::TestTranslationsParity`) controlla solo che le 3 lingue combacino *tra loro*, non che ogni chiave usata nel codice Python esista in `strings.json` — per questo il buco è invisibile ai test esistenti su tutte e 4 le lingue contemporaneamente. Andrebbe aggiunto un test che estrae ogni literal passata a `errors[...]` nel codice e verifica che esista in `strings.json`.
 
 ## Note SOP in attesa di approvazione (auditor, 090826)
 1. Riscrivere la entry `[060926]` di `knowledge-base.md` sul pip-audit come **SUPERSEDED**: preferire il fix di versione reale alla ignore-list quando è raggiungibile; ignore scoped solo se non esiste fix.
@@ -11,12 +16,15 @@
 3. Nuova entry *Project Patterns*: la traduzione cloud→LAN di enum/unità va applicata **una sola volta** allo stesso confine di sintesi (`_build_realtime_from_reported`), citando il rischio di auto-annullamento dello swap ChargeState.
 
 ## This Week
-- [ ] (se nessuna issue in arrivo) refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data` — rinviato: la giornata è andata su conformità API + dipendenze.
+- [ ] (se nessuna issue in arrivo) refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data` — rinviato di nuovo, la settimana è andata su conformità API + resilienza cloud-outage.
 - [ ] Rimuovere lo shim `_install_aioresponses_compat` quando aioresponses pubblicherà una release che passa `stream_writer` da sola.
-- [ ] Raccogliere feedback comunitario su `v1.3.5` stable.
-- [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.3.0+ è stable.
+- [ ] Raccogliere feedback comunitario sulla 1.4.0 una volta stable.
+- [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.4.0 è vicina alla stable.
+- [ ] Smaltire il backlog di `knowledge-nominations.md` — 34 in sospeso (060126/060926/090826/091126). Audit 091126: 9 sono duplicati esatti di entry già promosse (051926/052126) e scartabili subito; 3 si sovrappongono alle SOP in attesa sopra (non promuovere due volte); ~19 restano candidate genuine per un passaggio completo.
+- [ ] Nuova SOP da proporre: "dopo ogni bump minor di ruff con `select=ALL`, girare `ruff check . --statistics` prima di toccare codice" — il pattern si è ripetuto 3 volte (D213, PLW0108, CPY001/PLR0917), soglia raggiunta per una regola formale (segnalato dall'audit 091126).
 
 ## Backlog
+- [ ] Valutare se i 5 commit README (promo sconto Trydan) su main richiedono una entry CHANGELOG/release, o restano solo docs. Spostato in Backlog il 091226 dopo 3+ rinvii — bassa priorità.
 - [ ] Answer Claudify tailoring questions → update memory + skills (deferred from 031826).
 - [ ] Future: implement V2C cloud webhooks (startCharge/endCharge). **Sbloccato a metà (090826):** la spec OpenAPI ora documenta il payload (`idCharge`, `deviceId`, `method`, `datetime`, `energy`, `energyByHour`, `rfidCode`), ma NON c'è meccanismo di firma/auth e l'URL si registra solo dal portale V2C → payload da trattare come untrusted con validazione `deviceId`.
 - [ ] ~~Migrare via da `aioresponses`~~ — non più necessario per aiohttp 3.14 (risolto con lo shim in conftest, 090826). Resta valido solo se aioresponses venisse abbandonato a monte.
@@ -24,103 +32,19 @@
 - [ ] Future: split di `_async_update_data` (136 righe) in 3 helper.
 
 ## Done
-- [x] **PR #55 aperta verso main** — 5 commit, CI 13/13 verde, `mergeable: clean`; NON mergiata (l'utente dà il via) — 090826
-- [x] **aiohttp 3.14.3 sbloccato + 14 CVE ignorate rimosse** — shim `_install_aioresponses_compat` in conftest; entrambi i gate pip-audit `--strict` con zero ignore; suite verde su 3.14.3 e 3.13.5 (`11afbd9`) — 090826
-- [x] **Check completo di tutte le dipendenze** — Python e Action tutte all'ultima versione; `pytest-cov` tracciato in requirements_test.txt (era ad-hoc, invisibile a pip-audit e Dependabot); Dependabot esteso a `devcontainers` + `docker` (`4526222`) — 090826
-- [x] **Fix gate `pip-audit` fallito in CI** — 3 advisory aiohttp nuove del 04/08 con ID PYSEC; prima soppresse (`2f89a67`), poi risolte davvero dal bump — 090826
-- [x] Audit giornaliero auditor: PASS con warning; 4 nomination confermate + 3 revisioni SOP proposte — 090826
-- [x] **Implementata 1.4.0 (branch `fix/1.4.0-api-doc-conformance`, non pushata):** fix DynamicPowerMode 2/3, ChargeState enum LAN canonico + traduzione cloud→LAN, body `/device/timer` conforme (+`days_of_week`, `active` deprecato), 6 sensori per-fase con traduzioni en/it/es, alias `IntensityMeasure_L1y`; CHANGELOG + manifest 1.4.0 + README; 515 test verdi, ruff/JSON/YAML/parity traduzioni OK; commit `fe90dea` — 090826
-- [x] **Incidente:** cartella `custom_components/` cancellata per errore dall'utente a metà sessione; ripristinata con `git checkout --` e ripristino verificato file per file (0 file mancanti, 9 moduli non toccati identici a origin/main, 6 edit rifatti) — 090826
-- [x] **Merge 4 Dependabot PR** (#48 aioresponses 0.7.9, #51 colorlog+ruff 0.15.22, #49 hassfest SHA, #53 action-gh-release 3.0.2) — squash su main `f5376ba`; 479 test + ruff verdi in locale; 0 PR aperte — 090826
-- [x] **Verifica aiohttp 3.14 + aioresponses 0.7.9** → ancora incompatibile (`stream_writer` mancante, 57 test rotti); pin `<3.14` + CVE ignore-list confermati necessari — 090826
-- [x] **Audit codice vs nuova doc API** (OpenAPI cloud v1.0.0 + sheet LAN rev. 14/07/26): 40/40 endpoint coperti, 3 bug trovati (DynamicPowerMode 2/3 invertiti, ChargeState enum LAN≠cloud, body `/device/timer` non conforme) — 090826
-- [x] **Test HA UI cloud-only mode (4G) writer via router** — confermato OK dall'utente — 090826
-- [x] Triage feedback comunitario su v1.3.5 — confermato OK dall'utente — 090826
-- [x] **Release v1.3.5** — fix cloud-only kW→W scaling per ChargePower/HousePower/FVPower/BatteryPower/GridPower, unconditional (era gated da un `voltage` field incidentale) (#42/#43); rimossi asset SBOM dalle release (HACS `download_count` leggeva l'asset sbagliato, hacs/integration#4438) — solo `v2c_cloud.zip` da ora; superseeded 2 tentativi falliti di 1.3.4 (`deed6b8`/`a1dc471`) — 062626
-- [x] **Release v1.3.3** — supersede di 1.3.2 (mai taggata, gate security fallito su nuovo batch CVE aiohttp test-only); bump routine ruff/pip/pytest/pytest-asyncio/codecov-action v7/gitleaks-action v3; aiohttp confermato ancora incompatibile con aioresponses 0.7.8 su 3.14, resta pinnato <3.14 — 061726
-- [x] **Release v1.3.1** — merge Dependabot #26 (ruff 0.15.16) + #29 (action-gh-release v2.5.0→v3.0.0 Node24); fix commento `# v2`→`# v3.0.0`; manifest 1.3.1 + CHANGELOG `[1.3.1]`; commit `765774b`; release+SBOM pubblicati (prerelease:false); 0 PR aperte — 060926
-- [x] **Release v1.3.0 STABLE** — manifest bump, CHANGELOG consolidato `[1.3.0]`, README; commit `c311e27`; tag-and-release auto-pubblica tag+Release+SBOM (prerelease:false); 9/9 gate verdi — 060926
-- [x] Fix CI failure `Security/pip-audit` (CVE aiohttp test-only → --ignore-vuln su test-deps step) — 060926
-- [x] Fix CI failure `Close inactive issues` (lock-threads v6.0.0→v6.0.2 #55 + stale v9→v10.3.0 Node24); verificato via workflow_dispatch — 060926
-- [x] Verificata SBOM (SPDX 52KB + CycloneDX 28KB) allegata a release v1.3.0 — 060926
-- [x] Set up project with Claudify (`/start`) — 031726
-- [x] Full /review pass + all fixes (critical/high/medium/low) across 9 files — 031826
-- [x] System audit (grade A, 9/9 checks passed) — 031826
-- [x] Commit all review changes — 031826
-- [x] Write test suite: 350 tests, 10 modules, all green — 031826/031926
-- [x] Update both READMEs (Development & Testing section) — 031826/031926
-- [x] Fix SSRF link-local guard (169.254.x.x) — 031926
-- [x] Release 1.1.3: CHANGELOG, manifest bump, README update, commit+push — 031926
-- [x] Fix 3 CodeQL clear-text logging alerts (#5, #6, #7) — 031926
-- [x] Release 1.1.4: CHANGELOG, manifest bump, commit+push — 031926
-- [x] Diagnose persistent rate-limit loop from user live log — 032326
-- [x] Fix 1: Remove retry-on-429 in v2c_cloud.py — 032326
-- [x] Fix 2: Coordinator exponential backoff on rate limit — 032326
-- [x] Fix 3: Proactive pacing via RateLimit-Remaining — 032326
-- [x] Update tests (352 total, all green) — 032326
-- [x] Release 1.1.5: CHANGELOG + manifest, commit+push — 032326/032426
-- [x] Fix raw reconfigure_successful key shown in UI post-reconfigure — 032426
-- [x] Fix Gitleaks CI false positive (.gitleaks.toml) — 032426
-- [x] Full translation key audit (config_flow.py vs strings.json) — 032426
-- [x] Fix reauth flow: wrong abort message (missing reason= arg) — 032426
-- [x] Remove orphaned cannot_connect key from strings + translations — 032426
-- [x] Release 1.1.6: CHANGELOG, manifest, commit+push — 032426
-- [x] Comprehensive code review + security audit (3 Explore agents + Plan agent) — 051826
-- [x] Add 10 new cloud client methods + 10 new HA services + smart LAN-vs-cloud router — 051826
-- [x] Add ChargeMode select + LightLED number entities — 051826
-- [x] Add user-configurable local_update_interval (5-300 s, default 30) — 051826
-- [x] Extract SSRF guard into shared _net.py helper — 051826
-- [x] Add WRITEABLE_KEYWORDS whitelist for LAN writes — 051826
-- [x] Create translations/es.json (235 keys parity with en/it) — 051826
-- [x] Create scripts/live_smoke_test.py with snapshot/restore — 051826
-- [x] Live smoke test against real Trydan (10.35.0.50) + cloud: 25/25 endpoints OK, restore verified — 051826
-- [x] Write 47 new unit tests (cloud endpoints, router, options flow, manifest hygiene) — 051826
-- [x] Fix 2 pre-existing test failures (test_gather + test_init rate-limit) — 051826
-- [x] CI: Python matrix 3.12/3.13/3.14, ruff lint + format gate, coverage Codecov, concurrency, persist-credentials, Dependabot — 051826
-- [x] Devcontainer: bump to python:3.14, scripts/setup installs test deps, VSCode pytest discovery — 051826
-- [x] SBOM generation (SPDX + CycloneDX) on tag-and-release — 051826
-- [x] security.yaml workflow_call reuse in tag-and-release — 051826
-- [x] Bump version 1.1.6 → 1.3.0, CHANGELOG entry — 051826
-- [x] Update README/TECHNICAL_NOTES/SECURITY/CONTRIBUTING/bug_report.yml — 051826
-- [x] Commit + push feat/1.3.0-omnibus + open PR #12 — 051926
-- [x] Diagnose + fix 3 CI gate failures: bandit B104 nosec, pytest CVE-2025-71176, hassfest unknown min_ha_version field — 051926
-- [x] Diagnose + fix pytest-asyncio 0.x incompat with pytest 9 — 051926
-- [x] Diagnose + fix GitHub Advanced Security review: 3 unpinned 3rd-party actions → SHA-pinned — 051926
-- [x] Lock tag-and-release.yaml to branches:[main] (prevent feature-branch auto-release) — 051926
-- [x] PR #12 all 5 CI gates green on HEAD 839ae24 — 051926
-- [x] Merge PR #12 → main (dddc1d9) — 051926
-- [x] Fix security.yaml concurrency conflict + auto-detect prerelease in tag-and-release.yaml — 051926
-- [x] Bump to 1.3.0-beta.1 (pre-release channel) + push tag v1.3.0-beta.1 — 051926
-- [x] Merge 12 Dependabot PRs (#13-#24) — 051926
-- [x] i18n: translate `connection_type` radio + fix "Intensità LED" Italian + clarify LAN→cloud description (7589b23) — 051926
-- [x] Phase A: `connection_type` toggle in options flow with mode-switch reload + 12 tests — 051926
-- [x] Capture real `/device/reported` + `/device/currentstatecharge` payloads + exhaustive entity-vs-payload audit — 051926
-- [x] Phase B1: extend `_REPORTED_TO_REALTIME` + string passthrough + `wifi_info` JSON parse + 20 tests (93b91da) — 051926
-- [x] Phase B2: 6 LAN-only entities advertise `available=False` in cloud-only mode + 14 tests (b14a491) — 051926
-- [x] Dev-env: companion HA container on `v2c-dev` Docker network with `restart: "no"`, Node.js LTS, `mcp-proxy`, unified `.env.dev` secrets — 051926/052126
-- [x] Docs aligned (CONTRIBUTING/SECURITY/TECHNICAL_NOTES §8/CHANGELOG `[Unreleased] → Developer Experience`) — 051926
-- [x] Commit + push dev-env / MCP / secrets-consolidation work (020ceb9) — 052126
-- [x] Rebuild devcontainer; HA MCP server reachable from inside (GetDateTime round-trip OK); v2c integration configured + 37 entities reading via `_build_realtime_from_reported` — 052126
-- [x] Full HA-vs-cloud audit (25 mappings cross-referenced live): only LightLED + ContractedPower + VoltageInstallation diverged — 052126
-- [x] Fix VoltageInstallation: drop cloud `voltage` field; remap `cp_level → VoltageInstallation` (9e74e9a) — 052126
-- [x] Fix ContractedPower: cloud encodes as W/100, multiplier corrected ×1000 → ×100 (7c935dd → 85b0fcc) — 052126
-- [x] Fix LightLED: cloud serialises as 0-1 fraction; ×100 multiplier (7c935dd) — 052126
-- [x] CI fix: drop ambiguous × character in test comment (RUF003) (6b05ff7) — 052126
-- [x] Probe undocumented cloud endpoints: only `/device/logo_led` returns HTTP 200 — 052126
-- [x] Smart router promoted from private `__init__._async_route_local_or_cloud` to public `local_api.async_route_local_or_cloud`, with `cloud_call=None` support — 052126
-- [x] Convert all 13 writeable entity setters to use the router; add `async_cloud_set_logo_led` (5a8e8d4) — 052126
-- [x] Add 10 new tests (router cloud_call=None + LightLED + voltage regression); full suite 446 → 456 — 052126
-- [x] Update `PreToolUse:Bash` hook to allow `.env*.{example,sample,template,dist}` template files — 052126
-- [x] Exclude `/config` directory from git entirely — 052126
-- [x] feat(config-entry)! multi-device auto-discovery + cleanup of fallback_ip (f457e1f); schema v1→v2; 456 → 466 test — 052426
-- [x] /review pass (security + perf + architecture) su 8 commit `v1.3.0-beta.1..HEAD`; 3 HIGH + 5 MEDIUM + 5 LOW findings — 060126
-- [x] Extract `_pairings.py` (single source per `_normalise_pairings`/`_pairings_changed`/`_persist_pairings_if_changed`) + cap `_MAX_CACHED_PAIRINGS=64` + doc "pure" — 060126
-- [x] `SCHEMA_VERSION=2` const in `const.py`; `config_flow.VERSION` e migration target ne dipendono — 060126
-- [x] Migration registry `_MIGRATIONS = {1: _migrate_v1_to_v2}` + loop versionato + sentinel vestigiale `fallback_ip=""` per HACS downgrade safety + warning su `fallback_ip` orfani — 060126
-- [x] Setup hardened contro `cached_pairings` malformati (normalise raw on read) + 2 nuovi test (`TestSetupRobustness`) — 060126
-- [x] Router refactor: `cloud_call: Callable[[], Awaitable]` factory (era pre-costruita coroutine); 12 caller siti riavvolti con lambda; test aggiornati — 060126
-- [x] `_LOGGER.exception → _LOGGER.error(type)` in 3 siti config_flow per evitare leak api_key in traceback (+ `# noqa: TRY400`) — 060126
-- [x] Parallel `asyncio.gather` per first-refresh LAN coordinator in sensor.py — 060126
-- [x] CHANGELOG `[Unreleased]` → `1.3.0-beta.3` (2026-06-01) con sezione Hardening + Warning HACS downgrade — 060126
-- [x] Manifest bump 1.3.0-beta.2 → 1.3.0-beta.3 — 060126
-- [x] 466 → 474 test verdi; ruff lint + format puliti — 060126
+_(cleared 091126 — venerdì; storico completo in Daily Notes/ e git log)_
+
+- [x] **1.4.0-beta.1 rilasciata** (PR #55, squash): schema v3, setup LAN-only senza account, override IP manuale per-charger, degrade-invece-di-teardown con repair issue, sensore diagnostico `Active transport`, 6 sensori per-fase, fix `async_shutdown` mai awaited, campo `days_of_week` — 091126
+- [x] Merge 2 PR Dependabot (#56 devcontainers/node, #57 hassfest SHA) — 091126
+- [x] **Bug critico trovato e fisso**: `isinstance(entry.data, dict)` scartava IP manuali e cache pairing su ogni istanza reale (HA espone `MappingProxyType`, non `dict`) pur passando 568 test con dict finti; fix con `Mapping` — beta.3, PR #60 — 091126
+- [x] Commit atomico dell'options flow (merge dei delta sull'entry corrente, non su uno snapshot) — beta.3, PR #60 — 091126
+- [x] UX checkbox IP manuale sistemata su più giri: label rotta, gestione cloud-only, specchio dello stato salvato, elenco indirizzi in uso, errore se nessun charger noto — PR #58/#59/#61 — 091126
+- [x] **Disponibilità onesta dei controlli cloud-only** (OCPP, RFID, tipo installazione, slave, lingua, riavvio, aggiornamento firmware, sensore connessione) quando il cloud non risponde — beta.5, PR #62 — 091126
+- [x] **Bug trovato e fisso**: `V2CAuthError` inghiottita da `asyncio.gather(return_exceptions=True)` a due livelli, mascherava l'outage per un'ora dopo ogni riavvio — beta.6, PR #63 — 091126
+- [x] 2 rilievi Codex risolti (clear IP su entry 4G, refresh del coordinator dopo comando rifiutato, rollback dello switch su fallimento) — beta.7, PR #64 — 091126
+- [x] Race su comandi sovrapposti risolta in due giri di revisione Codex (token per-comando + drop-non-restore sullo stato ottimistico) — beta.8, PR #65 — 091126
+- [x] Entrambi i README riscritti per il set di feature 1.4.0 + nuova sezione "Running without the cloud" — PR #66 — 091126
+- [x] Aggiornata la issue #54 con un riepilogo per gli utenti coinvolti; nessuna risposta ancora da V2C — 091126
+- [x] Rimossi tutti i riferimenti all'incidente specifico (issue #54, date) da codice/commenti/test/README su richiesta dell'utente — PR #67 — 091126
+- [x] Fine giornata: 0 PR aperte, 614 test verdi, main a `1.4.0-beta.8` — 091126
+

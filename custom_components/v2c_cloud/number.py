@@ -15,9 +15,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONTRACTED_POWER_MAX_KW,
+    CONTRACTED_POWER_MIN_KW,
     DOMAIN,
-    MAX_POWER_MAX_KW,
-    MAX_POWER_MIN_KW,
 )
 from .entity import V2CEntity, _OptimisticHoldMixin
 from .local_api import (
@@ -36,8 +36,8 @@ if TYPE_CHECKING:
 CURRENT_MIN = 6.0
 CURRENT_MAX = 32.0
 CURRENT_STEP = 1.0
-POWER_MIN = MAX_POWER_MIN_KW
-POWER_MAX = MAX_POWER_MAX_KW
+POWER_MIN = CONTRACTED_POWER_MIN_KW
+POWER_MAX = CONTRACTED_POWER_MAX_KW
 POWER_STEP = 0.5
 
 

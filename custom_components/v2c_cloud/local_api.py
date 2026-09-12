@@ -433,6 +433,28 @@ def _ip_from_manual_override(
     return manual_ip_for(runtime_data, device_id)
 
 
+def _ip_from_lan_verified(
+    runtime_data: V2CEntryRuntimeData, device_id: str
+) -> str | None:
+    """
+    The address that most recently answered ``/RealTimeData`` on the LAN.
+
+    ``_static_ip`` is stamped onto the payload only by a successful local
+    fetch, so its presence on a non-synthesised payload is direct evidence
+    that this address reached this charger. Everything below this source is
+    hearsay by comparison — the cloud repeats what it was last told, and the
+    cache repeats what the cloud last said — which is why a DHCP move used to
+    strand the integration on a dead address: the proven one was persisted
+    into ``cached_pairings``, a source the stale cloud value outranks.
+    """
+    local_coordinator = runtime_data.local_coordinators.get(device_id)
+    data = getattr(local_coordinator, "data", None) if local_coordinator else None
+    if not isinstance(data, dict) or payload_is_cloud_synthesised(data):
+        return None
+    verified = data.get("_static_ip")
+    return verified if isinstance(verified, str) and verified else None
+
+
 def _ip_from_cloud_runtime(
     runtime_data: V2CEntryRuntimeData, device_id: str
 ) -> str | None:
@@ -440,17 +462,21 @@ def _ip_from_cloud_runtime(
     device_state = get_device_state_from_coordinator(
         runtime_data.coordinator, device_id
     )
-    additional = device_state.get("additional")
-    if isinstance(additional, dict):
-        static_ip = additional.get("static_ip")
-        if isinstance(static_ip, str) and static_ip:
-            return static_ip
-
+    # The charger re-uploads its own address on every cloud check-in, whereas
+    # ``additional.static_ip`` is a registration field that only changes when
+    # somebody edits it in the V2C portal. When the two disagree it is the
+    # portal that has gone stale, so the self-report is consulted first.
     reported = device_state.get("reported")
     if isinstance(reported, dict):
         candidate = reported.get("ip") or reported.get("wifi_ip")
         if isinstance(candidate, str) and candidate:
             return candidate
+
+    additional = device_state.get("additional")
+    if isinstance(additional, dict):
+        static_ip = additional.get("static_ip")
+        if isinstance(static_ip, str) and static_ip:
+            return static_ip
 
     data = getattr(runtime_data.coordinator, "data", None)
     pairings = data.get("pairings") if isinstance(data, dict) else None
@@ -493,14 +519,19 @@ def _ip_in_records(records: object, device_id: str) -> str | None:
 
 
 # Address sources in priority order. The user's explicit override wins, then
-# live cloud data, then the persisted cache, then whatever the charger last
-# told us about itself. Steps 1 and 3 are what keep the LAN transport alive
-# during a total cloud outage: without them every source would be derived
-# from live cloud data, so an authentication failure would leave the
-# integration with no address at all and silently degrade a LAN install to
-# cloud-only behaviour.
+# an address that has actually answered on the LAN, then live cloud data, then
+# the persisted cache, then whatever the charger last told us about itself.
+# Steps 1, 2 and 4 are what keep the LAN transport alive during a total cloud
+# outage: without them every source would be derived from live cloud data, so
+# an authentication failure would leave the integration with no address at all
+# and silently degrade a LAN install to cloud-only behaviour.
+#
+# Ordering rule: evidence outranks hearsay. Only the manual override sits above
+# the LAN-verified address, because that override is a deliberate statement by
+# the user rather than a guess the integration made on its own.
 _IP_SOURCES: tuple[Callable[[V2CEntryRuntimeData, str], str | None], ...] = (
     _ip_from_manual_override,
+    _ip_from_lan_verified,
     _ip_from_cloud_runtime,
     _ip_from_offline_cache,
     _ip_from_local_payload,
@@ -510,6 +541,7 @@ _IP_SOURCES: tuple[Callable[[V2CEntryRuntimeData, str], str | None], ...] = (
 # Human-readable label per address source, for the diagnostic sensor.
 _IP_SOURCE_LABELS: dict[str, str] = {
     "_ip_from_manual_override": "manual",
+    "_ip_from_lan_verified": "lan",
     "_ip_from_cloud_runtime": "cloud",
     "_ip_from_offline_cache": "cache",
     "_ip_from_local_payload": "charger",
@@ -525,6 +557,18 @@ def describe_ip_source(
         if candidate:
             return candidate, _IP_SOURCE_LABELS.get(source.__name__)
     return None, None
+
+
+def _looks_like_realtime(payload: dict[str, Any]) -> bool:
+    """
+    True when a parsed payload really came from a Trydan charger.
+
+    Used before adopting an address that is not the charger's best-known one:
+    any host can serve JSON, and a DHCP lease that has moved on to some other
+    device must not be mistaken for the charger.
+    """
+    index = payload.get("_lower_index")
+    return isinstance(index, dict) and "chargestate" in index
 
 
 def payload_is_cloud_synthesised(data: object) -> bool:
@@ -572,6 +616,36 @@ def resolve_static_ip(runtime_data: V2CEntryRuntimeData, device_id: str) -> str 
         if candidate:
             return candidate
     return None
+
+
+def candidate_ips(runtime_data: V2CEntryRuntimeData, device_id: str) -> list[str]:
+    """
+    Return every address worth trying for a charger, best first.
+
+    A manual override is returned alone. The user pinned that address on
+    purpose, so quietly succeeding against a different one would hide the very
+    misconfiguration the override exists to express — better to fail visibly.
+
+    Otherwise the known addresses are returned in source order, de-duplicated
+    and filtered through the SSRF guard. Having more than one matters when the
+    charger's address changes under DHCP: the stale entry is tried first and
+    fails, and the poll can still find the charger at one of the others
+    instead of waiting for a human to notice.
+    """
+    manual = _ip_from_manual_override(runtime_data, device_id)
+    if manual:
+        is_safe, _err = validate_private_ip(manual)
+        return [manual] if is_safe else []
+
+    candidates: list[str] = []
+    for source in _IP_SOURCES:
+        candidate = source(runtime_data, device_id)
+        if not candidate or candidate in candidates:
+            continue
+        is_safe, _err = validate_private_ip(candidate)
+        if is_safe:
+            candidates.append(candidate)
+    return candidates
 
 
 def get_local_data(
@@ -794,6 +868,77 @@ async def async_route_local_or_cloud(  # noqa: PLR0913
     _LOGGER.debug("V2C router: cloud path used for %s/%s", device_id, keyword)
 
 
+async def _async_fetch_realtime(
+    session: ClientSession, device_id: str, ip: str, retries: int
+) -> dict[str, Any]:
+    """
+    GET and parse ``/RealTimeData`` from one address.
+
+    Raises ``UpdateFailed`` when the address does not answer within ``retries``
+    attempts, or answers with something that is not a usable RealTimeData
+    document.
+    """
+    url = f"http://{ip}/RealTimeData"
+    attempt = 1
+    last_error: Exception | None = None
+    while True:
+        try:
+            async with (
+                async_timeout.timeout(LOCAL_TIMEOUT),
+                session.get(url) as response,
+            ):
+                text = await response.text()
+            break
+        except TimeoutError as err:
+            last_error = err
+            error_message = "Timeout while fetching local real-time data"
+        except ClientError as err:
+            last_error = err
+            error_message = f"Error while fetching local real-time data: {err}"
+
+        if attempt >= retries:
+            raise UpdateFailed(
+                f"{error_message} after {retries} attempt(s)"
+            ) from last_error
+
+        delay = LOCAL_RETRY_BACKOFF * attempt
+        _LOGGER.debug(
+            "Local realtime fetch failed for %s at %s (attempt %s/%s): %s. "
+            "Retrying in %.1f s",
+            device_id,
+            ip,
+            attempt,
+            retries,
+            last_error,
+            delay,
+        )
+        attempt += 1
+        await asyncio.sleep(delay)
+
+    payload_text = text.strip().rstrip("%").strip()
+    if not payload_text:
+        raise UpdateFailed("Empty response from local RealTimeData endpoint")
+
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError as err:
+        raise UpdateFailed(
+            f"Invalid JSON response from local endpoint: {payload_text}"
+        ) from err
+
+    if not isinstance(payload, dict):
+        raise UpdateFailed("Unexpected payload type from local endpoint")
+
+    payload["_static_ip"] = ip
+
+    # Normalise documented key spellings before anything reads the payload.
+    _normalise_realtime_keys(payload)
+
+    # Pre-build a lowercase-key → original-key index for O(1) case-insensitive lookups.
+    payload["_lower_index"] = {k.lower(): k for k in payload if not k.startswith("_")}
+    return payload
+
+
 async def async_get_or_create_local_coordinator(
     hass: HomeAssistant,
     runtime_data: V2CEntryRuntimeData,
@@ -818,84 +963,62 @@ async def async_get_or_create_local_coordinator(
         if entry_data.get("cloud_only"):
             return _build_realtime_from_reported(runtime_data, device_id)
 
-        static_ip = resolve_static_ip(runtime_data, device_id)
-        if not static_ip:
-            # No IP found anywhere → cloud-only fallback
-            return _build_realtime_from_reported(runtime_data, device_id)
-        is_safe, _err = validate_private_ip(static_ip)
-        if not is_safe:
-            # Invalid / non-routable IP → cloud-only fallback
+        candidates = candidate_ips(runtime_data, device_id)
+        if not candidates:
+            # No usable IP found anywhere → cloud-only fallback
             return _build_realtime_from_reported(runtime_data, device_id)
 
-        url = f"http://{static_ip}/RealTimeData"
-        attempt = 1
-        last_error: Exception | None = None
-        while True:
+        payload: dict[str, Any] | None = None
+        static_ip = ""
+        last_failure: UpdateFailed | None = None
+        for index, ip in enumerate(candidates):
+            # Only the best candidate gets the full retry budget. The rest are
+            # long shots on an already-failing poll and are tried once each, so
+            # a charger that moved is still found without the fetch outlasting
+            # the poll interval.
+            retries = LOCAL_MAX_RETRIES if index == 0 else 1
             try:
-                async with (
-                    async_timeout.timeout(LOCAL_TIMEOUT),
-                    session.get(url) as response,
-                ):
-                    text = await response.text()
-                break
-            except TimeoutError as err:
-                last_error = err
-                error_message = "Timeout while fetching local real-time data"
-            except ClientError as err:
-                last_error = err
-                error_message = f"Error while fetching local real-time data: {err}"
+                found = await _async_fetch_realtime(session, device_id, ip, retries)
+            except UpdateFailed as err:
+                last_failure = err
+                continue
+            if not _looks_like_realtime(found):
+                # Something answered, but it is not the charger. A vacated DHCP
+                # lease gets handed to another device, and that device may well
+                # serve JSON of its own — adopting it would fill the entities
+                # with a stranger's data.
+                _LOGGER.debug(
+                    "V2C %s: %s answered but the payload is not RealTimeData; ignoring",
+                    device_id,
+                    ip,
+                )
+                continue
+            if index:
+                _LOGGER.info(
+                    "V2C %s: %s stopped answering; found the charger at %s instead "
+                    "and adopted the new address",
+                    device_id,
+                    candidates[0],
+                    ip,
+                )
+            payload, static_ip = found, ip
+            break
 
-            if attempt >= LOCAL_MAX_RETRIES:
-                failure_count += 1
-                # Fall back to cloud data instead of failing entirely
-                cloud_payload = _build_realtime_from_reported(runtime_data, device_id)
-                if cloud_payload.get("_data_source") != "cloud_reported_empty":
-                    _LOGGER.debug(
-                        "Local API unreachable for %s after %s attempt(s), "
-                        "falling back to cloud reported data",
-                        device_id,
-                        LOCAL_MAX_RETRIES,
-                    )
-                    return cloud_payload
-                raise UpdateFailed(
-                    f"{error_message} after {LOCAL_MAX_RETRIES} attempt(s)"
-                ) from last_error
-
-            delay = LOCAL_RETRY_BACKOFF * attempt
-            _LOGGER.debug(
-                "Local realtime fetch failed for %s (attempt %s/%s): %s. Retrying in %.1f s",
-                device_id,
-                attempt,
-                LOCAL_MAX_RETRIES,
-                last_error,
-                delay,
+        if payload is None:
+            failure_count += 1
+            # Fall back to cloud data instead of failing entirely
+            cloud_payload = _build_realtime_from_reported(runtime_data, device_id)
+            if cloud_payload.get("_data_source") != "cloud_reported_empty":
+                _LOGGER.debug(
+                    "Local API unreachable for %s at %s, falling back to cloud "
+                    "reported data",
+                    device_id,
+                    ", ".join(candidates),
+                )
+                return cloud_payload
+            raise last_failure or UpdateFailed(
+                "Local RealTimeData unreachable and no cloud data available"
             )
-            attempt += 1
-            await asyncio.sleep(delay)
-
-        payload_text = text.strip().rstrip("%").strip()
-        if not payload_text:
-            raise UpdateFailed("Empty response from local RealTimeData endpoint")
-
-        try:
-            payload = json.loads(payload_text)
-        except json.JSONDecodeError as err:
-            raise UpdateFailed(
-                f"Invalid JSON response from local endpoint: {payload_text}"
-            ) from err
-
-        if not isinstance(payload, dict):
-            raise UpdateFailed("Unexpected payload type from local endpoint")
-
-        payload["_static_ip"] = static_ip
-
-        # Normalise documented key spellings before anything reads the payload.
-        _normalise_realtime_keys(payload)
-
-        # Pre-build a lowercase-key → original-key index for O(1) case-insensitive lookups.
-        payload["_lower_index"] = {
-            k.lower(): k for k in payload if not k.startswith("_")
-        }
 
         # Fetch writable keys absent from /RealTimeData (e.g. LogoLED)
         extra = await asyncio.gather(

@@ -1,9 +1,8 @@
 # Task Board
 
 ## Today (091626 — mercoledì)
-- [ ] **Verificare sul vivo la 1.4.0 stable su XQUXDU** (aggiornamento da beta.11, nessun code change nel mezzo, ma non ancora confermato dal vivo su questa specifica build): (a) `sensor.garage_xquxdu_trasporto_attivo` mantiene lo stesso `entity_id`/storico dopo l'update (migrazione unique_id in `async_setup_entry`); (b) cambiare `connection_type` dalle opzioni e confermare che il reload avvenga ancora correttamente (ora pianificato dall'update-listener, non più dal flow). **Nota: l'utente ha chiesto il cut a stable prima che questa verifica specifica su beta.11 fosse completata** — il codice è identico a beta.10 (già verificato OK) + i 2 fix di beta.11, entrambi coperti da test automatici, ma la conferma dal vivo di questi 2 punti resta da fare.
-- [ ] **Decidere se mantenere/chiudere il canale HACS beta** ora che 1.4.0 è stable (vedi This Week).
-- [ ] **Monitorare issue #54 fino a chiusura**: aspettare conferma dalla community che rigenerare la API key ora funziona davvero (V2C ha dichiarato il fix delle 17:40 — vedi Done), poi chiudere l'issue.
+- [x] **Verifica sul vivo confermata dall'utente**: tutti i punti di beta.11 (migrazione unique_id, reload su cambio connection_type) erano già stati testati — "beta era stabile". Nessun gap residuo prima del cut a stable.
+- [x] **Issue #54 chiusa** — la community ha confermato (s50u, koiottech) che rigenerare l'API key ha risolto dopo il fix di V2C delle 17:40. Pubblicato commento di chiusura con riepilogo (causa V2C-side + cosa migliora 1.4.0 per questa classe di outage in futuro) e chiusa via API (`state_reason: completed`).
 - [x] **1.4.0 promossa a stable** (nessuna modifica di codice rispetto a beta.11) — manifest bump diretto su `main` (senza PR, come da precedente per 1.3.0), CHANGELOG aggregato/sintetizzato: un'unica entry `[1.4.0]` con tutto il cumulativo beta.1→beta.11, gli 11 beta ridotti a puntatori "Folded into [1.4.0]". README (entrambe le copie) aggiornati: conteggio test 614→641. — 091626
 - [x] **`entity_id` con prefissi diversi (`trydan_`/`xquxdu_`/`garage_xquxdu_`) sulle entità XQUXDU — SPIEGATO, non è un bug, nessuna azione.** Controllate via MCP tutte le 45 entità del device: i prefissi diversi riflettono il nome/area del dispositivo al MOMENTO in cui ciascuna entità è stata creata per la prima volta (Trydan → XQUXDU → area Garage assegnata) — HA genera `entity_id` una sola volta e non lo aggiorna mai retroattivamente; il codice dell'integrazione non lo imposta mai direttamente. Diverso e indipendente dal fix dell'unique_id (quello sì era un bug di codice). Utente ha detto esplicitamente di non fare nulla — non riproporre un rename di massa senza richiesta esplicita. — 091626
 - [x] **Deprecation warning HA 2026.12.0 fissato**: rimossa la doppia pianificazione di reload (update-listener + `async_reload()` manuale nell'options flow su cambio `connection_type`). Ora solo l'update-listener (`_async_options_updated`) decide se ricaricare, confrontando `cloud_only` prima/dopo. — PR #71, beta.11 — 091626
@@ -17,6 +16,7 @@
 - [x] **Verifica sul vivo beta.10 su XQUXDU completata e OK**: HACS aggiornato + restart, IP manuale rimosso (`ip_source` non più `manual`), slider potenza contrattuale negativo accettato, repair `cloud_auth_degraded` pulito, nuova API key rigenerata e funzionante — 091626
 
 ## This Week
+- [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.4.0 è stable.
 - [ ] (se nessuna issue in arrivo) refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data` — rinviato di nuovo, la settimana è andata su conformità API + resilienza cloud-outage.
 - [ ] Rimuovere lo shim `_install_aioresponses_compat` quando aioresponses pubblicherà una release che passa `stream_writer` da sola.
 - [ ] Raccogliere feedback comunitario sulla 1.4.0 una volta stable.

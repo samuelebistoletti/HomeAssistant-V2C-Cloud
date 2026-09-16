@@ -1,4 +1,4 @@
 colorlog==6.12.0
 pip>=26.2.1
-ruff==0.16.6
+ruff==0.16.7
 pyyaml>=6.0.3,<7

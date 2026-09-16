@@ -8,6 +8,7 @@
     "error": {
       "invalid_api_key": "La API key fornita non è valida.",
       "cannot_connect": "Impossibile raggiungere l'API V2C Cloud. Verifica la connessione a internet e riprova.",
+      "cannot_connect_local": "Impossibile raggiungere la wallbox a quell'indirizzo IP sulla rete locale.",
       "unknown": "Si è verificato un errore imprevisto",
       "no_device_id": "La wallbox ha risposto ma non ha comunicato un identificativo."
     },
@@ -78,7 +79,8 @@
     },
     "error": {
       "invalid_interval": "L'intervallo di refresh deve essere un intero tra 5 e 300 secondi.",
-      "no_known_devices": "Questa configurazione non conosce ancora nessuna wallbox, quindi non c'è nessun indirizzo da impostare."
+      "no_known_devices": "Questa configurazione non conosce ancora nessuna wallbox, quindi non c'è nessun indirizzo da impostare.",
+      "cannot_connect_local": "Impossibile raggiungere la wallbox a quell'indirizzo IP sulla rete locale."
     }
   },
   "selector": {
@@ -385,7 +387,7 @@
   "issues": {
     "cloud_auth_degraded": {
       "title": "Il cloud V2C non autentica — funzionamento in sola LAN",
-      "description": "Home Assistant non è riuscito ad autenticarsi sul cloud V2C per \"{title}\". L'integrazione continua a controllare la wallbox sulla rete locale, quindi non hai perso nulla, ma i controlli solo-cloud (RFID, OCPP, aggiornamento firmware, riavvio) restano non disponibili finché il cloud non torna.\n\nDi solito è un problema lato V2C e non una chiave sbagliata — a settembre 2026 l'API V2C ha rifiutato chiavi valide per giorni. Se persiste, reinserisci la API key dalla finestra Riconfigura dell'integrazione. Se la wallbox è sulla tua LAN ma non mostra dati, imposta manualmente il suo indirizzo IP nelle opzioni."
+      "description": "Home Assistant non è riuscito ad autenticarsi sul cloud V2C per \"{title}\". L'integrazione continua a controllare la wallbox sulla rete locale, quindi non hai perso nulla, ma i controlli solo-cloud (RFID, OCPP, aggiornamento firmware, riavvio) restano non disponibili finché il cloud non torna.\n\nDi solito è un problema temporaneo lato V2C piuttosto che una chiave sbagliata. Se persiste, reinserisci la API key dalla finestra Riconfigura dell'integrazione. Se la wallbox è sulla tua LAN ma non mostra dati, imposta manualmente il suo indirizzo IP nelle opzioni."
     }
   }
 }

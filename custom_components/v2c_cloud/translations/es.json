@@ -8,6 +8,7 @@
     "error": {
       "invalid_api_key": "La clave API proporcionada no es válida.",
       "cannot_connect": "No se pudo contactar con el API de V2C Cloud. Comprueba tu conexión a internet y vuelve a intentarlo.",
+      "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP de tu red local.",
       "unknown": "Se produjo un error inesperado",
       "no_device_id": "El cargador respondió pero no indicó un identificador."
     },
@@ -78,7 +79,8 @@
     },
     "error": {
       "invalid_interval": "El intervalo de refresco debe ser un entero entre 5 y 300 segundos.",
-      "no_known_devices": "Esta configuración aún no conoce ningún cargador, así que no hay ninguna dirección que establecer."
+      "no_known_devices": "Esta configuración aún no conoce ningún cargador, así que no hay ninguna dirección que establecer.",
+      "cannot_connect_local": "No se pudo contactar con el cargador en esa dirección IP de tu red local."
     }
   },
   "selector": {
@@ -385,7 +387,7 @@
   "issues": {
     "cloud_auth_degraded": {
       "title": "V2C Cloud no autentica — funcionando solo por LAN",
-      "description": "Home Assistant no ha podido autenticarse en V2C Cloud para \"{title}\". La integración sigue controlando el cargador por la red local, así que no se ha perdido nada, pero los controles solo-nube (RFID, OCPP, actualización de firmware, reinicio) no están disponibles hasta que la nube se recupere.\n\nSuele ser un problema del lado de V2C y no una clave incorrecta — en septiembre de 2026 la API de V2C rechazó claves válidas durante días. Si persiste, vuelve a introducir tu clave API desde el diálogo Reconfigurar. Si el cargador está en tu LAN pero no muestra datos, configura su IP manualmente en las opciones."
+      "description": "Home Assistant no ha podido autenticarse en V2C Cloud para \"{title}\". La integración sigue controlando el cargador por la red local, así que no se ha perdido nada, pero los controles solo-nube (RFID, OCPP, actualización de firmware, reinicio) no están disponibles hasta que la nube se recupere.\n\nSuele ser un problema temporal del lado de V2C y no una clave incorrecta. Si persiste, vuelve a introducir tu clave API desde el diálogo Reconfigurar. Si el cargador está en tu LAN pero no muestra datos, configura su IP manualmente en las opciones."
     }
   }
 }

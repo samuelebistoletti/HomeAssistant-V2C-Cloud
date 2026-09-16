@@ -268,6 +268,44 @@ class TestCoordinatorStartup:
             with pytest.raises(ConfigEntryAuthFailed):
                 await async_setup_entry(hass, entry)
 
+    async def test_stale_repair_issue_is_cleared_after_reload(self):
+        """
+        A reload builds a fresh ``_CloudAuthState`` with ``degraded=False``, so a
+        successful refresh must not depend on the in-memory flag flipping
+        True->False to clear a repair issue a PREVIOUS runtime left active —
+        that transition never happens in the new instance even though the
+        cloud is healthy again. Regression for the issue surviving forever
+        across a Reconfigure-triggered reload.
+        """
+        from homeassistant.helpers import issue_registry as ir
+
+        from custom_components.v2c_cloud.__init__ import async_setup_entry
+        from custom_components.v2c_cloud.const import ISSUE_CLOUD_AUTH_DEGRADED
+
+        ir.created_issues.clear()
+        ir.deleted_issues.clear()
+
+        hass = _make_hass()
+        entry = _make_entry()
+        client = _make_client()
+
+        issue_id = f"{ISSUE_CLOUD_AUTH_DEGRADED}_{entry.entry_id}"
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_CLOUD_AUTH_DEGRADED,
+        )
+        assert (DOMAIN, issue_id) in ir.created_issues
+
+        with _patch_setup(client):
+            result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        assert (DOMAIN, issue_id) not in ir.created_issues
+
 
 class TestBuildSyntheticFallback:
     """Unit tests for the _build_synthetic_fallback helper.

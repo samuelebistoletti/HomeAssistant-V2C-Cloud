@@ -48,6 +48,7 @@
     "error": {
       "invalid_api_key": "The provided API key is not valid.",
       "cannot_connect": "Could not reach the V2C Cloud API. Check your internet connection and try again.",
+      "cannot_connect_local": "Could not reach the charger at that IP address on your local network.",
       "unknown": "[%key:common::config_flow::error::unknown%]",
       "no_device_id": "The charger answered but did not report a device id."
     },
@@ -78,7 +79,8 @@
     },
     "error": {
       "invalid_interval": "Refresh interval must be an integer between 5 and 300 seconds.",
-      "no_known_devices": "This entry does not know about any charger yet, so there is no address to override."
+      "no_known_devices": "This entry does not know about any charger yet, so there is no address to override.",
+      "cannot_connect_local": "Could not reach the charger at that IP address on your local network."
     }
   },
   "selector": {
@@ -385,7 +387,7 @@
   "issues": {
     "cloud_auth_degraded": {
       "title": "V2C Cloud is not authenticating — running on LAN only",
-      "description": "Home Assistant could not authenticate against the V2C Cloud for \"{title}\". The integration is still controlling your charger over the local network, so nothing has been lost, but cloud-only controls (RFID, OCPP, firmware update, reboot) are unavailable until the cloud recovers.\n\nThis is usually a problem on V2C's side rather than a wrong key — the V2C API rejected valid keys for several days in September 2026. If it persists, re-enter your API key from the integration's Reconfigure dialog. If the charger is on your LAN but still shows no data, set its IP address manually in the integration options."
+      "description": "Home Assistant could not authenticate against the V2C Cloud for \"{title}\". The integration is still controlling your charger over the local network, so nothing has been lost, but cloud-only controls (RFID, OCPP, firmware update, reboot) are unavailable until the cloud recovers.\n\nThis is usually a temporary problem on V2C's side rather than a wrong key. If it persists, re-enter your API key from the integration's Reconfigure dialog. If the charger is on your LAN but still shows no data, set its IP address manually in the integration options."
     }
   }
 }

@@ -2,171 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0-beta.11] - 2026-09-16
+## [1.4.0] - 2026-09-16
 
-### Fixed
+Stable release. Promotes the `1.4.0` line to general availability after the
+public beta window (`beta.1` 2026-09-11 → `beta.11` 2026-09-16) closed with
+no unresolved regressions. **No code changes relative to `1.4.0-beta.11`.**
 
-- **The `Active transport` diagnostic sensor's unique_id is back on the same
-  `v2c_<device>_<key>` scheme every other entity uses.** 1.4.0-beta.1
-  introduced it without that prefix, an unrequested departure from the
-  project's descriptive naming convention. Anyone who already set up 1.4.0
-  keeps their entity_id, history and automations: the existing registry
-  entry is renamed in place on the next startup rather than being replaced
-  by an unrelated new entity.
-- **The options flow no longer reloads the entry itself when the
-  connection type changes**, which Home Assistant now treats as a
-  deprecated pattern for a config entry that also has an update listener
-  (warns on HA core 2026.9, breaks in 2026.12.0). The entry's own update
-  listener detects the change and reloads instead, so there is exactly one
-  reload path for every entry update, not two racing to happen at once.
-
-## [1.4.0-beta.10] - 2026-09-16
-
-### Fixed
-
-- **The "V2C Cloud is not authenticating" repair notice could stay open
-  forever even after the cloud started accepting the key again**, whenever
-  the recovery happened rthrough a reload (Reconfigure with a new API key, an
-  HA restart, …). The notice was only cleared when an in-memory flag flipped
-  from degraded back to healthy, but a reload always starts that flag
-  healthy — so the transition it was waiting for never occurred, even though
-  every subsequent cloud call was succeeding. The notice is now cleared on
-  every successful cloud cycle, regardless of what state a previous run of
-  the integration was in.
-- The "With a V2C account" step of the account-setup flow showed the wrong
-  title, description and unlabelled API key field — it was rendering the
-  connection-type menu's copy instead of its own.
-- A local charger that cannot be reached during setup, or from the
-  manual-IP option, now shows a proper message instead of the raw
-  `cannot_connect_local` translation key.
-
-### Changed
-
-- Reworded the repair notice raised on a cloud authentication failure so it
-  describes the failure mode generically instead of referencing a specific
-  past incident.
-
-## [1.4.0-beta.9] - 2026-09-12
-
-### Fixed
-
-- **A charger whose LAN address changes is found again on its own.** When DHCP
-  moved a charger to a new address, the integration kept calling the old one
-  until somebody set the address by hand: every poll tried a single address,
-  and an address the cloud advertised outranked one the charger had actually
-  answered on — so even after a successful local fetch recorded the working
-  address, the stale one won again on the next cycle. Address selection now
-  puts a LAN-verified address above anything the cloud reports, and a poll that
-  fails falls through to the other addresses it knows before giving up on the
-  local connection. A manual override is still absolute: it is tried alone, so
-  a wrong pinned address fails visibly instead of being silently worked around.
-- Within the cloud's own data, the address the charger reports for itself is
-  now preferred over the static address registered in the V2C portal, which
-  only changes when somebody edits it and is the one that goes stale.
-- A local response is accepted only when it actually looks like Trydan
-  real-time data. A released DHCP lease is often picked up by some other
-  device, and a neighbour serving JSON can no longer be mistaken for the
-  charger.
-
-### Changed
-
-- **Contracted power can now be set down to -5 kW** (previously the slider
-  stopped at 1 kW). A negative contracted power is how an installation tells
-  the dynamic-power algorithm to reserve headroom for the rest of the house
-  rather than to declare a contract size; the local register is signed, but the
-  entity's lower bound put that configuration out of reach.
-
-## [1.4.0-beta.8] - 2026-09-11
-
-### Fixed
-
-- A switch whose command fails no longer keeps a state that was never
-  confirmed: it falls back to the value the charger reports, or to Unknown when
-  there is none. Overlapping commands are handled individually, so a failure no
-  longer discards the state established by a later command, nor leaves behind a
-  state that neither command achieved.
-
-## [1.4.0-beta.7] - 2026-09-11
-
-### Fixed
-
-- Clearing the manual IP checkbox now removes the stored addresses on a Cloud
-  only (4G) entry as well. Switching from Local (Wi-Fi) to Cloud only still
-  keeps them.
-- A command refused by the cloud makes the integration re-check the connection
-  straight away, instead of leaving cloud-only controls operable until the next
-  scheduled refresh.
-- A switch whose command fails returns to its previous state instead of
-  displaying the requested one for the rest of the optimistic hold window.
-
-## [1.4.0-beta.6] - 2026-09-11
-
-### Fixed
-
-- A V2C Cloud authentication failure is now detected on every refresh, so the
-  repair notice appears and cloud-only controls report as unavailable as soon
-  as the cloud stops accepting the API key — including in the hour after a
-  restart, when the pairings cache could previously mask the outage entirely.
-
-## [1.4.0-beta.5] - 2026-09-11
-
-### Changed
-
-- Controls that exist only in the V2C cloud API report as unavailable while the
-  cloud is unauthenticated, or on an entry set up without an account: OCPP, the
-  RFID reader, installation type, slave device, language, the reboot and
-  firmware update buttons, and the cloud connectivity sensor. Everything served
-  over the local network keeps working.
-- A switch whose state has never been received reports Unknown instead of Off.
-
-### Fixed
-
-- A command the cloud refuses now surfaces a readable error instead of a
-  traceback, and no longer opens the re-authentication dialog from a service
-  call.
-
-## [1.4.0-beta.4] - 2026-09-11
-
-### Changed
-
-- The manual IP opt-in in the integration options now reflects the stored
-  configuration: it is ticked whenever addresses are set, each charger's form
-  opens on the address in force, and clearing the box removes every override
-  and returns the addresses to cloud discovery. Switching to Cloud only (4G)
-  keeps them.
-- The integration options list the addresses currently in use.
-
-### Fixed
-
-- Opting into manual addresses on an entry that knows no charger yet saved
-  nothing without explanation; it now reports the reason.
-
-## [1.4.0-beta.3] - 2026-09-11
-
-### Fixed
-
-- Manual IP overrides and the cached address book were never read on a running
-  Home Assistant instance, so a LAN entry stayed offline even with an address
-  configured. Home Assistant exposes `entry.data` as a `mappingproxy`, which is
-  not a `dict` subclass, and the type guard rejected it.
-- Chargers discovered by the cloud while the options dialog was open were
-  discarded when it was saved. The options flow now merges its own edits into
-  the current configuration instead of the snapshot taken when it opened.
-
-## [1.4.0-beta.2] - 2026-09-11
-
-### Fixed
-
-- The manual IP field in the integration options showed its internal key
-  (`manual_ip_<charger id>`) instead of a label. Addresses are now requested
-  one charger at a time, on a properly labelled field.
-- The manual IP opt-in is available on cloud-only entries too, so switching a
-  4G charger to Local (Wi-Fi) and giving it an address happens in one pass.
-- The options flow no longer writes the connection-mode change, nor reloads
-  the integration, until the flow completes; abandoning it part-way leaves the
-  entry untouched.
-
-## [1.4.0-beta.1] - 2026-09-11
+This is the cumulative `1.3.x` → `1.4.0` change set, developed and validated
+across the eleven pre-releases listed below. The integration gains
+account-free local-only setup, resilience to a V2C Cloud outage or
+authentication failure without losing LAN control, and a new diagnostic
+sensor for which transport is actually carrying the data.
 
 > **Breaking (auto-migrated):** the config entry schema is upgraded from v2 to
 > v3 on first load. No user action is required.
@@ -177,18 +23,20 @@ All notable changes to this project will be documented in this file.
   account: enter the charger's IP address and the device id is read from the
   charger itself. Such an entry never calls the cloud; cloud-only controls are
   unavailable on it.
-- **Per-charger IP overrides** in the integration options. Tick *Set charger
-  IP addresses manually* and the options flow asks for one address per
-  charger. A configured address takes precedence over cloud discovery and is
-  validated against the private-address policy; an empty field returns control
-  to the cloud.
-- **LAN entries keep working while the V2C Cloud is unavailable or rejects
-  authentication.** Polling and control continue over the local network and a
-  repair issue is raised, clearing automatically when the cloud recovers.
-  Cloud-only (4G) entries still require reauthentication.
+- **Per-charger manual IP override** in the integration options, for the
+  cases where the cloud can't currently supply — or supplies the wrong —
+  address for a charger.
+- **LAN entries keep working through a V2C Cloud outage or authentication
+  failure.** Polling and control continue over the local network, a repair
+  notice is raised, and it clears itself automatically as soon as the cloud
+  authenticates again — including after a Reconfigure or an HA restart, not
+  just within the same running session. Cloud-only (4G) entries, which have
+  no second transport, still require reauthentication.
 - **`Active transport` diagnostic sensor** per charger — `Local network`,
   `V2C Cloud` or `Offline` — exposing the address in use and its source
-  (manual, cloud, cache, charger) as attributes.
+  (manual, cloud, cache, charger) as attributes. A charger whose LAN address
+  changes after a DHCP renewal is found again automatically, without a
+  manual IP.
 - **Six per-phase measurement sensors**: `IntensityMeasure_L1/L2/L3` (A) and
   `VoltageMeasure_L1/L2/L3` (V). LAN-only, so they report as unavailable in
   cloud-only mode.
@@ -200,9 +48,27 @@ All notable changes to this project will be documented in this file.
 - Config entry schema v2 → v3, adding `manual_ips` and `lan_only`.
 - The connection type stored on the entry is the only thing that selects the
   transport. LAN entries keep their LAN polling interval regardless of cloud
-  availability.
-- A successful LAN fetch persists the address it used, keeping the cached
-  address book current without the cloud.
+  availability, and switching it in the integration options no longer needs
+  a separate reload step — the entry's own update listener handles it.
+- **Contracted power can now be set down to -5 kW** (previously the slider
+  stopped at 1 kW), for installations that use a negative value to reserve
+  headroom for the rest of the house.
+- Controls that exist only in the V2C Cloud API — OCPP, the RFID reader,
+  installation type, slave device, language, the reboot and firmware update
+  buttons, and the cloud connectivity sensor — honestly report as
+  unavailable while the cloud is unauthenticated, or on an entry set up
+  without an account, instead of offering a command that would be silently
+  dropped. Everything served over the local network keeps working.
+- A switch whose command fails falls back to the value the charger actually
+  reports (or Unknown if there is none) rather than keeping an unconfirmed
+  guess; overlapping commands are tracked individually so one failure can no
+  longer discard the state a later command established.
+- The manual-IP options UX reflects the stored configuration end to end:
+  the checkbox is ticked whenever addresses are set, each charger's form
+  opens on the address in force, the options list every address currently
+  in use, and clearing the box hands every override back to cloud discovery
+  (except when switching to Cloud only, where it is kept for the return
+  trip to Wi-Fi).
 - `ChargeState` follows the LAN enum (`0/1/2/4/5/6`, no code 3); cloud values
   are translated onto it during cloud→LAN synthesis.
 - `DynamicPowerMode`: 2 = minimum power mode, 3 = exclusive PV mode.
@@ -228,15 +94,113 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`entry.data` is read as a `Mapping`, not a `dict`.** Home Assistant hands
+  real config entries a `MappingProxyType`; an `isinstance(entry.data, dict)`
+  guard was silently discarding manual IPs and cached pairings on every real
+  instance while passing hundreds of tests built on dict test doubles.
+- **A V2C Cloud authentication failure is detected on every refresh.** It was
+  previously possible for the pairings cache to mask an outage for up to an
+  hour after a restart.
+- The Active Transport sensor's unique_id now carries the same `v2c_` prefix
+  every other entity uses; an existing installation is migrated onto it
+  automatically so entity_id, history and automations survive the update.
+- Two account-setup UI bugs: the "With a V2C account" step showed the wrong
+  title/description, and a local-connectivity error showed a raw translation
+  key instead of a message.
 - `async_shutdown` is awaited on config-entry unload, so each local
   coordinator's scheduled refresh is cancelled.
 - Control errors distinguish a cloud-only entry from an unreachable charger
   and point at the manual-IP option.
+- A handful of manual-IP options-flow edge cases: opting in with no known
+  charger now reports why nothing was saved, clearing the checkbox also
+  clears stored addresses on a Cloud only (4G) entry, and the flow no longer
+  writes anything (or reloads) until it actually completes.
+- A command the cloud refuses surfaces a readable error instead of a
+  traceback, no longer opens the reauthentication dialog from a service
+  call, and makes the integration re-check the connection immediately
+  rather than waiting for the next scheduled refresh.
 
 ### Security
 
 - `pip-audit` runs `--strict` with zero ignored advisories on both runtime and
   test dependencies.
+
+## [1.4.0-beta.11] - 2026-09-16
+
+Pre-release on the HACS beta channel. Restored the `v2c_` unique_id prefix on
+the Active Transport sensor (with an automatic entity-registry migration for
+existing installs) and fixed Home Assistant's 2026.12.0 double-reload
+deprecation by moving reload-on-mode-change into the entry's update
+listener. Folded into [1.4.0].
+
+## [1.4.0-beta.10] - 2026-09-16
+
+Pre-release on the HACS beta channel. Fixed the cloud-auth repair notice
+staying active forever after a successful reconnect through a reload; fixed
+2 account-setup UI bugs (wrong step shown, missing translation key); reworded
+the repair notice to describe the failure generically. Folded into [1.4.0].
+
+## [1.4.0-beta.9] - 2026-09-12
+
+Pre-release on the HACS beta channel. A charger whose LAN address changes
+after a DHCP renewal is found again on its own; contracted power can be set
+down to -5 kW. Folded into [1.4.0].
+
+## [1.4.0-beta.8] - 2026-09-11
+
+Pre-release on the HACS beta channel. Overlapping switch commands are
+tracked individually — a failure falls back to the charger's reported value
+(or Unknown) instead of restoring a possibly-stale previous value. Folded
+into [1.4.0].
+
+## [1.4.0-beta.7] - 2026-09-11
+
+Pre-release on the HACS beta channel. Clearing manual IP now works on
+cloud-only entries too; a cloud-refused command re-checks connectivity
+immediately; a failed switch command reverts to its previous state. Folded
+into [1.4.0].
+
+## [1.4.0-beta.6] - 2026-09-11
+
+Pre-release on the HACS beta channel. A cloud authentication failure is now
+detected on every refresh, closing a window where the pairings cache could
+mask an outage for up to an hour after restart. Folded into [1.4.0].
+
+## [1.4.0-beta.5] - 2026-09-11
+
+Pre-release on the HACS beta channel. Cloud-only controls (OCPP, RFID,
+installation type, slave device, language, reboot/firmware buttons,
+connectivity sensor) honestly report unavailable while the cloud can't
+authenticate; a cloud-refused command surfaces a readable error instead of a
+traceback. Folded into [1.4.0].
+
+## [1.4.0-beta.4] - 2026-09-11
+
+Pre-release on the HACS beta channel. Manual-IP options UX: checkbox
+reflects stored state, forms open on the current address, addresses in use
+are listed; opting in with no known charger now reports why nothing was
+saved. Folded into [1.4.0].
+
+## [1.4.0-beta.3] - 2026-09-11
+
+Pre-release on the HACS beta channel. Critical fix: `entry.data` is a
+`mappingproxy` on every real HA instance, not a `dict` — an `isinstance`
+guard was silently discarding manual IPs and cached pairings. The options
+flow also now merges into the live entry instead of a stale snapshot. Folded
+into [1.4.0].
+
+## [1.4.0-beta.2] - 2026-09-11
+
+Pre-release on the HACS beta channel. Manual-IP options-flow polish: proper
+field labels, availability on cloud-only entries, and no write or reload
+until the flow completes. Folded into [1.4.0].
+
+## [1.4.0-beta.1] - 2026-09-11
+
+First pre-release of the `1.4.0` line on the HACS beta channel — local-only
+setup, per-charger manual IP override, cloud-outage/auth-failure survival
+with a self-clearing repair notice, the `Active transport` diagnostic
+sensor, 6 per-phase sensors, and config schema v2 → v3. Folded into [1.4.0].
 
 ## [1.3.5] - 2026-06-26
 

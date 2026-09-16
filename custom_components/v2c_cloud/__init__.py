@@ -20,6 +20,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
@@ -208,6 +209,34 @@ def _may_degrade_to_lan(entry: ConfigEntry) -> bool:
     if entry.data.get(CONF_CLOUD_ONLY):
         return False
     return any(record.get("ip") for record in _lan_addressable_records(entry))
+
+
+def _async_migrate_transport_sensor_unique_id(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """
+    Rename the Active Transport sensor's unique_id onto the shared `v2c_` scheme.
+
+    1.4.0-beta.1 introduced it as ``f"{device_id}_active_transport"``, the only
+    entity in the integration without the `v2c_` prefix every other unique_id
+    uses — an accidental, unrequested departure from the descriptive naming
+    convention. Renaming it in the entity registry (not just in code) keeps
+    the existing entity_id, history and automations intact for anyone who
+    already set up 1.4.0, instead of orphaning the old entity and creating an
+    unrelated new one on next restart.
+    """
+    registry = er.async_get(hass)
+    for entity_entry in list(
+        er.async_entries_for_config_entry(registry, entry.entry_id)
+    ):
+        unique_id = entity_entry.unique_id
+        if entity_entry.domain != "sensor":
+            continue
+        if not unique_id.endswith("_active_transport") or unique_id.startswith("v2c_"):
+            continue
+        registry.async_update_entity(
+            entity_entry.entity_id, new_unique_id=f"v2c_{unique_id}"
+        )
 
 
 def _async_flag_cloud_auth_degraded(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -548,6 +577,7 @@ async def _async_fetch_initial_pairings(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
     """Set up V2C Cloud from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    _async_migrate_transport_sensor_unique_id(hass, entry)
 
     # A LAN-only entry was created without a V2C account: there is no API key
     # and no cloud call must ever be attempted for it. The client is still
@@ -805,17 +835,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
-    Apply updated entry options to the running coordinators.
+    React to an updated entry: reload if the topology changed, else apply live.
 
-    Today the only option that may change live is ``CONF_LOCAL_UPDATE_INTERVAL``.
-    We update every per-device local coordinator in place so the new cadence
-    takes effect on the next scheduled refresh — no reload needed.
-
-    Note: when the user toggles ``connection_type`` in the options flow,
-    a full reload is scheduled (see ``V2COptionsFlow.async_step_init``)
-    and supersedes the interval update applied here. The listener still
-    runs on the mode-change path, but its work is discarded by the
-    subsequent reload — harmless and not worth gating.
+    HA schedules this listener on every ``async_update_entry`` call and now
+    expects it to be the ONLY place that schedules a reload — a config flow
+    calling ``hass.config_entries.async_reload()`` itself, alongside an
+    entry that also has an update listener, is a deprecated double-reload
+    pattern (warns as of HA core 2026.9, breaks in 2026.12.0). So this
+    listener compares the freshly-updated entry against the runtime data
+    from the CURRENT (pre-update) setup: if switching `connection_type`
+    changed cloud-only-ness, the coordinator topology (cloud-only vs LAN
+    polling) must be rebuilt and a reload is scheduled here. Otherwise the
+    only other option that may change live is
+    ``CONF_LOCAL_UPDATE_INTERVAL``, applied in place with no reload needed.
     """
     runtime_data: V2CEntryRuntimeData | None = hass.data.get(DOMAIN, {}).get(
         entry.entry_id
@@ -824,12 +856,17 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
         return
 
     entry_data = entry.data
-    options = entry.options or {}
-    new_interval = _build_local_interval(entry_data, options)
+    new_cloud_only = is_cloud_only_device(entry_data)
+    if new_cloud_only != runtime_data.cloud_only:
+        hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
+        return
 
     # Cloud-only entries keep their fixed cadence — nothing to update.
-    if is_cloud_only_device(entry_data):
+    if new_cloud_only:
         return
+
+    options = entry.options or {}
+    new_interval = _build_local_interval(entry_data, options)
 
     changed_any = False
     for device_id, coord in runtime_data.local_coordinators.items():

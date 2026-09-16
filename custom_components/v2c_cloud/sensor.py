@@ -580,7 +580,7 @@ class V2CTransportSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEntity)
         self._runtime_data = runtime_data
         self._device_id = device_id
         self._attr_translation_key = "active_transport"
-        self._attr_unique_id = f"{device_id}_active_transport"
+        self._attr_unique_id = f"v2c_{device_id}_active_transport"
         self._attr_icon = "mdi:transit-connection-variant"
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_options = ["lan", "cloud", "offline"]

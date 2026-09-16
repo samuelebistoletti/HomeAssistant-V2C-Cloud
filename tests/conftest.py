@@ -374,6 +374,54 @@ def _install_ha_stubs() -> None:
     # Make `from homeassistant.helpers import issue_registry as ir` resolve.
     sys.modules["homeassistant.helpers"].issue_registry = ha_ir
 
+    # homeassistant.helpers.entity_registry
+    ha_er = _mod("homeassistant.helpers.entity_registry")
+    if not hasattr(ha_er, "async_get"):
+
+        class RegistryEntry:
+            def __init__(self, entity_id, unique_id, domain, config_entry_id):
+                self.entity_id = entity_id
+                self.unique_id = unique_id
+                self.domain = domain
+                self.config_entry_id = config_entry_id
+
+        class EntityRegistry:
+            def __init__(self):
+                self.entities: dict[str, RegistryEntry] = {}
+
+            def async_get_entity_id(self, domain, platform, unique_id):
+                for entry in self.entities.values():
+                    if entry.domain == domain and entry.unique_id == unique_id:
+                        return entry.entity_id
+                return None
+
+            def async_update_entity(self, entity_id, *, new_unique_id=None, **_kwargs):
+                entry = self.entities.get(entity_id)
+                if entry is not None and new_unique_id is not None:
+                    entry.unique_id = new_unique_id
+                return entry
+
+        # Single shared instance: tests scope by entity_id / config_entry_id,
+        # same pattern as the issue_registry fake's global dicts above.
+        _default_registry = EntityRegistry()
+
+        def _async_get(hass):
+            return _default_registry
+
+        def _async_entries_for_config_entry(registry, config_entry_id):
+            return [
+                entry
+                for entry in registry.entities.values()
+                if entry.config_entry_id == config_entry_id
+            ]
+
+        ha_er.RegistryEntry = RegistryEntry
+        ha_er.EntityRegistry = EntityRegistry
+        ha_er.async_get = _async_get
+        ha_er.async_entries_for_config_entry = _async_entries_for_config_entry
+
+    sys.modules["homeassistant.helpers"].entity_registry = ha_er
+
     # homeassistant.helpers.config_validation (cv)
     ha_cv = _mod("homeassistant.helpers.config_validation")
     ha_cv.string = str

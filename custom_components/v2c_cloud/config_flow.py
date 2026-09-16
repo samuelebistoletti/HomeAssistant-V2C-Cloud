@@ -411,14 +411,11 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         self._manual_ips: dict[str, str] = {}
         self._pending_changes: dict[str, Any] = {}
         self._pending_options: dict[str, Any] = {}
-        self._mode_changed: bool = False
 
     def _apply(
         self,
         changes: dict[str, Any],
         new_options: dict[str, Any],
-        *,
-        mode_changed: bool,
     ) -> FlowResult:
         """
         Commit the whole options flow at once, as its final act.
@@ -440,18 +437,18 @@ class V2COptionsFlow(config_entries.OptionsFlow):
         written by the async_create_entry return value, the canonical HA
         pattern for options-flow output (passing ``data={}`` there would
         overwrite the options just set).
+
+        A mode switch that restructures the coordinator topology (cloud-only
+        vs LAN polling) needs a reload, but that is no longer scheduled here:
+        ``async_update_entry`` already invokes the entry's update listener
+        (``_async_options_updated``), and HA now treats an entry calling
+        ``async_reload`` itself alongside an update listener as a deprecated
+        double-reload (warns on HA core 2026.9, breaks in 2026.12.0). The
+        listener detects the mode change itself and reloads from there.
         """
         new_data = dict(self._config_entry.data)
         new_data.update(changes)
         self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-
-        if mode_changed:
-            # Switching modes restructures the coordinator topology (cloud-only
-            # vs LAN polling), so the entry must be reloaded. Scheduled rather
-            # than awaited: reloading inline re-enters the still-open flow.
-            self.hass.async_create_task(
-                self.hass.config_entries.async_reload(self._config_entry.entry_id)
-            )
 
         return self.async_create_entry(title="", data=new_options)
 
@@ -487,11 +484,7 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
                 changes = dict(self._pending_changes)
                 changes[CONF_MANUAL_IPS] = self._manual_ips
-                return self._apply(
-                    changes,
-                    self._pending_options,
-                    mode_changed=self._mode_changed,
-                )
+                return self._apply(changes, self._pending_options)
 
         return self.async_show_form(
             step_id="manual_ip",
@@ -566,7 +559,6 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     self._manual_ips = dict(current_manual)
                     self._pending_changes = changes
                     self._pending_options = new_options
-                    self._mode_changed = mode_changed
                     return await self.async_step_manual_ip()
                 else:
                     # The box now mirrors what is stored, so clearing it is the
@@ -582,7 +574,7 @@ class V2COptionsFlow(config_entries.OptionsFlow):
                     switching_to_cloud = mode_changed and not is_lan
                     if current_manual and not set_manual and not switching_to_cloud:
                         changes[CONF_MANUAL_IPS] = {}
-                    return self._apply(changes, new_options, mode_changed=mode_changed)
+                    return self._apply(changes, new_options)
 
         schema = vol.Schema(
             {

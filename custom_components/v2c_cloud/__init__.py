@@ -747,7 +747,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         if auth_state.degraded:
             _LOGGER.info("V2C Cloud authentication recovered; leaving degraded mode")
             auth_state.degraded = False
-            _async_clear_cloud_auth_degraded(hass, entry)
+        # Unconditional: a reload (e.g. from Reconfigure) builds a fresh
+        # _CloudAuthState with degraded=False, so this runtime may never see
+        # the True->False transition even though a PREVIOUS runtime raised
+        # the issue. async_delete_issue is a no-op when nothing is
+        # registered, so clearing on every successful cycle is free and
+        # closes that orphaned-issue gap.
+        _async_clear_cloud_auth_degraded(hass, entry)
 
         result: dict[str, object] = {
             "pairings": latest_pairings,

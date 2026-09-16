@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.10] - 2026-09-16
+
+### Fixed
+
+- **The "V2C Cloud is not authenticating" repair notice could stay open
+  forever even after the cloud started accepting the key again**, whenever
+  the recovery happened through a reload (Reconfigure with a new API key, an
+  HA restart, …). The notice was only cleared when an in-memory flag flipped
+  from degraded back to healthy, but a reload always starts that flag
+  healthy — so the transition it was waiting for never occurred, even though
+  every subsequent cloud call was succeeding. The notice is now cleared on
+  every successful cloud cycle, regardless of what state a previous run of
+  the integration was in.
+- The "With a V2C account" step of the account-setup flow showed the wrong
+  title, description and unlabelled API key field — it was rendering the
+  connection-type menu's copy instead of its own.
+- A local charger that cannot be reached during setup, or from the
+  manual-IP option, now shows a proper message instead of the raw
+  `cannot_connect_local` translation key.
+
+### Changed
+
+- Reworded the repair notice raised on a cloud authentication failure so it
+  describes the failure mode generically instead of referencing a specific
+  past incident.
+
 ## [1.4.0-beta.9] - 2026-09-12
 
 ### Fixed

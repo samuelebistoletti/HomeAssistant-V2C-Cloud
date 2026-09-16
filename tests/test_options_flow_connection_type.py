@@ -98,8 +98,12 @@ class TestOptionsFlowConnectionTypeToggle:
         assert result["type"] == "create_entry"
         new_data = hass.config_entries.async_update_entry.call_args.kwargs["data"]
         assert new_data["cloud_only"] is True
-        # Mode change → reload scheduled
-        hass.async_create_task.assert_called_once()
+        # The flow itself no longer schedules a reload: async_update_entry
+        # fires the entry's update listener (_async_options_updated), which
+        # detects the cloud_only change and reloads from there — a config
+        # flow reloading directly alongside an update listener is HA's
+        # deprecated double-reload pattern.
+        hass.async_create_task.assert_not_called()
 
     async def test_switch_cloud_only_to_local(self) -> None:
         flow, hass, _entry = self._flow(entry_data={"cloud_only": True})
@@ -112,8 +116,9 @@ class TestOptionsFlowConnectionTypeToggle:
         assert result["type"] == "create_entry"
         new_data = hass.config_entries.async_update_entry.call_args.kwargs["data"]
         assert new_data["cloud_only"] is False
-        # Mode change → reload scheduled
-        hass.async_create_task.assert_called_once()
+        # See test_switch_local_to_cloud_only: reload is now the update
+        # listener's job, not the flow's.
+        hass.async_create_task.assert_not_called()
 
     async def test_no_mode_change_does_not_reload(self) -> None:
         flow, hass, _entry = self._flow(entry_data={"cloud_only": False})

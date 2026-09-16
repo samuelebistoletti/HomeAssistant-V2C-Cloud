@@ -339,7 +339,17 @@ class TestManualIpSteps:
         await flow2.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
         flow2.hass.config_entries.async_update_entry.assert_called_once()
 
-    async def test_reload_is_scheduled_once_at_the_end(self):
+    async def test_flow_never_schedules_its_own_reload(self):
+        """
+        A mode change must not make the OPTIONS FLOW itself reload the entry.
+
+        async_update_entry fires the entry's update listener
+        (_async_options_updated), which now owns detecting the cloud_only
+        change and scheduling the reload — a config flow calling
+        async_reload directly, on an entry that also has an update listener,
+        is HA's deprecated double-reload pattern. The flow completing (even
+        across the manual-IP sub-flow) must never touch async_create_task.
+        """
         entry = _entry(
             **{
                 CONF_CLOUD_ONLY: True,
@@ -357,7 +367,8 @@ class TestManualIpSteps:
         assert flow.hass.async_create_task.call_count == 0
 
         await flow.async_step_manual_ip({ATTR_IP_ADDRESS: LAN_IP})
-        assert flow.hass.async_create_task.call_count == 1
+        flow.hass.config_entries.async_update_entry.assert_called_once()
+        assert flow.hass.async_create_task.call_count == 0
 
     async def test_cloud_updates_during_the_flow_are_not_lost(self):
         """

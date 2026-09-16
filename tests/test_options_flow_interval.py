@@ -92,6 +92,7 @@ class TestOptionsListenerApplyInterval:
             client=MagicMock(),
             coordinator=MagicMock(),
             local_coordinators={"dev1": coord_a, "dev2": coord_b},
+            cloud_only=False,
         )
         hass.data["v2c_cloud"][entry.entry_id] = runtime
 
@@ -99,6 +100,7 @@ class TestOptionsListenerApplyInterval:
 
         assert coord_a.update_interval == timedelta(seconds=60)
         assert coord_b.update_interval == timedelta(seconds=60)
+        hass.async_create_task.assert_not_called()
 
     async def test_listener_skips_cloud_only(self, hass, entry) -> None:
         from custom_components.v2c_cloud import (
@@ -106,7 +108,8 @@ class TestOptionsListenerApplyInterval:
             _async_options_updated,
         )
 
-        # Cloud-only device
+        # Cloud-only device, and the runtime already reflects it — no mode
+        # change here, just confirming the interval update is skipped.
         entry.data = {"cloud_only": True}
         coord = MagicMock()
         coord.update_interval = timedelta(seconds=120)
@@ -114,6 +117,7 @@ class TestOptionsListenerApplyInterval:
             client=MagicMock(),
             coordinator=MagicMock(),
             local_coordinators={"dev1": coord},
+            cloud_only=True,
         )
         hass.data["v2c_cloud"][entry.entry_id] = runtime
 
@@ -121,3 +125,70 @@ class TestOptionsListenerApplyInterval:
 
         # The cloud-only coordinator must NOT be touched by the listener.
         assert coord.update_interval == timedelta(seconds=120)
+        hass.async_create_task.assert_not_called()
+
+
+class TestOptionsListenerReloadsOnModeChange:
+    """
+    The update listener is now the ONLY place a reload is scheduled.
+
+    HA treats a config flow calling async_reload directly, on an entry that
+    also has an update listener, as a deprecated double-reload pattern
+    (warns on HA core 2026.9, breaks in 2026.12.0). So V2COptionsFlow no
+    longer reloads itself on a connection_type change: this listener detects
+    the mismatch between the freshly-updated entry data and the runtime's
+    last-known cloud_only flag, and reloads from here instead.
+    """
+
+    @pytest.fixture
+    def hass(self) -> Any:
+        h = MagicMock()
+        h.data = {"v2c_cloud": {}}
+        h.config_entries.async_reload = MagicMock()
+
+        def _capture_task(coro: Any) -> Any:
+            if hasattr(coro, "close"):
+                coro.close()
+            return MagicMock()
+
+        h.async_create_task = MagicMock(side_effect=_capture_task)
+        return h
+
+    async def test_cloud_only_flip_schedules_reload(self, hass) -> None:
+        from custom_components.v2c_cloud import (
+            V2CEntryRuntimeData,
+            _async_options_updated,
+        )
+
+        entry = MagicMock()
+        entry.entry_id = "abc"
+        entry.data = {"cloud_only": True}
+        entry.options = {}
+        runtime = V2CEntryRuntimeData(
+            client=MagicMock(), coordinator=MagicMock(), cloud_only=False
+        )
+        hass.data["v2c_cloud"][entry.entry_id] = runtime
+
+        await _async_options_updated(hass, entry)
+
+        hass.async_create_task.assert_called_once()
+        hass.config_entries.async_reload.assert_called_once_with(entry.entry_id)
+
+    async def test_no_flip_does_not_reload(self, hass) -> None:
+        from custom_components.v2c_cloud import (
+            V2CEntryRuntimeData,
+            _async_options_updated,
+        )
+
+        entry = MagicMock()
+        entry.entry_id = "abc"
+        entry.data = {"cloud_only": False}
+        entry.options = {}
+        runtime = V2CEntryRuntimeData(
+            client=MagicMock(), coordinator=MagicMock(), cloud_only=False
+        )
+        hass.data["v2c_cloud"][entry.entry_id] = runtime
+
+        await _async_options_updated(hass, entry)
+
+        hass.async_create_task.assert_not_called()

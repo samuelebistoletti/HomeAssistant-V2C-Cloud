@@ -2,13 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.11] - 2026-09-16
+
+### Fixed
+
+- **The `Active transport` diagnostic sensor's unique_id is back on the same
+  `v2c_<device>_<key>` scheme every other entity uses.** 1.4.0-beta.1
+  introduced it without that prefix, an unrequested departure from the
+  project's descriptive naming convention. Anyone who already set up 1.4.0
+  keeps their entity_id, history and automations: the existing registry
+  entry is renamed in place on the next startup rather than being replaced
+  by an unrelated new entity.
+- **The options flow no longer reloads the entry itself when the
+  connection type changes**, which Home Assistant now treats as a
+  deprecated pattern for a config entry that also has an update listener
+  (warns on HA core 2026.9, breaks in 2026.12.0). The entry's own update
+  listener detects the change and reloads instead, so there is exactly one
+  reload path for every entry update, not two racing to happen at once.
+
 ## [1.4.0-beta.10] - 2026-09-16
 
 ### Fixed
 
 - **The "V2C Cloud is not authenticating" repair notice could stay open
   forever even after the cloud started accepting the key again**, whenever
-  the recovery happened through a reload (Reconfigure with a new API key, an
+  the recovery happened rthrough a reload (Reconfigure with a new API key, an
   HA restart, …). The notice was only cleared when an in-memory flag flipped
   from degraded back to healthy, but a reload always starts that flag
   healthy — so the transition it was waiting for never occurred, even though

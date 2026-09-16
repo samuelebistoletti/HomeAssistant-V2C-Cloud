@@ -15,6 +15,10 @@
 - [x] **Monitorare issue #54**: 3 aggiornamenti pubblicati oggi (root-cause dell'issue orfana + link a PR #70; poi la correzione con la conferma V2C delle 17:40).
 - [x] **Verifica sul vivo beta.10 su XQUXDU completata e OK**: HACS aggiornato + restart, IP manuale rimosso (`ip_source` non più `manual`), slider potenza contrattuale negativo accettato, repair `cloud_auth_degraded` pulito, nuova API key rigenerata e funzionante — 091626
 
+## Note SOP in attesa di approvazione (auditor, audit T1 091626)
+1. **Aggiungere un controllo grep-based pre-release per token identificativi di incidenti** (numero issue, date legate a un incidente vivo) prima di ogni release. Motivo: near-miss del 091626 — il messaggio di repair `cloud_auth_degraded` (introdotto in beta.9/10, dopo lo scrub originale di PR #67) citava ancora l'incidente di settembre 2026 in tutte e 4 le lingue; scoperto per caso investigando un bug non correlato, non da un controllo sistematico. Seconda occorrenza della stessa categoria di regola (origine: direttiva utente 091126). Vedi `.claude/logs/incident-log.md` 091626.
+2. **Promuovere le 4 nomination del 091626** in `knowledge-nominations.md` — l'audit T1 le ha valutate tutte "strong": pattern cleanup edge-triggered/level-triggered, metodologia di riverifica "sei sicuro per tutti i casi", regola del proprietario unico del reload, distinzione entity_id/unique_id. Tutte con evidenza (commit/PR/test) citata.
+
 ## This Week
 - [ ] Decidere se mantenere/chiudere il canale HACS beta ora che 1.4.0 è stable.
 - [ ] (se nessuna issue in arrivo) refactor dal Backlog: service dispatcher → ServiceSpec data-driven, oppure split di `_async_update_data` — rinviato di nuovo, la settimana è andata su conformità API + resilienza cloud-outage.

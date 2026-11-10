@@ -32,6 +32,7 @@ from .const import (
     CONF_LOCAL_UPDATE_INTERVAL,
     CONF_MANUAL_IPS,
     CONF_SET_MANUAL_IPS,
+    CONF_SHOW_PROFILE_PANEL,
     DEFAULT_LOCAL_INTERVAL,
     DOMAIN,
     MAX_LOCAL_INTERVAL,
@@ -270,6 +271,11 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_LAN_ONLY: False,
                     CONF_MANUAL_IPS: {},
                 },
+                options={
+                    CONF_SHOW_PROFILE_PANEL: user_input.get(
+                        CONF_SHOW_PROFILE_PANEL, True
+                    )
+                },
             )
 
         schema = vol.Schema(
@@ -281,6 +287,7 @@ class V2CConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
+                vol.Optional(CONF_SHOW_PROFILE_PANEL, default=True): bool,
             }
         )
 
@@ -537,6 +544,10 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
                 new_options = dict(current_options)
                 new_options[CONF_LOCAL_UPDATE_INTERVAL] = interval
+                if CONF_SHOW_PROFILE_PANEL in user_input:
+                    new_options[CONF_SHOW_PROFILE_PANEL] = user_input[
+                        CONF_SHOW_PROFILE_PANEL
+                    ]
 
                 # An address override is only ever read by the LAN transport,
                 # so the DESTINATION mode decides what the box means — not the
@@ -578,6 +589,10 @@ class V2COptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_SHOW_PROFILE_PANEL,
+                    default=current_options.get(CONF_SHOW_PROFILE_PANEL, True),
+                ): bool,
                 vol.Required("connection_type", default=current_mode): SelectSelector(
                     SelectSelectorConfig(
                         options=["local", "cloud_only"],

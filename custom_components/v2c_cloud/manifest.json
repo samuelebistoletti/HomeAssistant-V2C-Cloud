@@ -5,6 +5,11 @@
     "@samuelebistoletti"
   ],
   "config_flow": true,
+  "dependencies": [
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud",
   "integration_type": "hub",
   "iot_class": "cloud_polling",

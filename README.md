@@ -190,7 +190,7 @@ Entities backed by a cloud-only endpoint (marked *cloud* below, plus the diagnos
 | Service | Endpoint | Description |
 | --- | --- | --- |
 | `v2c_cloud.create_power_profile` | `/device/savepersonalicepower/v2` | Create a personalised power profile (JSON payload). |
-| `v2c_cloud.update_power_profile` | `/device/personalicepower/v2` (POST) | Update an existing profile. |
+| `v2c_cloud.update_power_profile` | `/device/savepersonalicepower/v2` | Save changes to an existing profile without implicitly activating it. |
 | `v2c_cloud.get_power_profile` | `/device/personalicepower/v2` (GET) | Retrieve a profile by `updateAt`. |
 | `v2c_cloud.delete_power_profile` | `/device/personalicepower/v2` (DELETE) | Delete a profile by name and timestamp. |
 | `v2c_cloud.list_power_profiles` | `/device/personalicepower/all` | List all personalised profiles. |

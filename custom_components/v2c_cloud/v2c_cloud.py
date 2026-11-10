@@ -683,14 +683,10 @@ class V2CClient:
         update_at: str,
         profile: dict[str, Any],
     ) -> Any:
-        """Update a personalised power profile (v2)."""
-        params = {"name": name, "updateAt": update_at}
-        return await self._device_command(
-            "/device/personalicepower/v2",
-            device_id,
-            extra_params=params,
-            json_body=profile,
-            device_param="id",
+        """Keep the update API signature while using the actual save operation."""
+        # POST personalicepower/v2 was observed to activate rather than edit.
+        return await self.async_save_personal_power_profile(
+            device_id, name, update_at, profile
         )
 
     async def async_get_personal_power_profile(

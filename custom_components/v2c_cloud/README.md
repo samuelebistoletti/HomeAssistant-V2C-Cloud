@@ -6,7 +6,7 @@
 [![Security](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/security.yaml/badge.svg)](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/security.yaml)
 [![CodeQL](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/codeql.yaml/badge.svg)](https://github.com/samuelebistoletti/HomeAssistant-V2C-Cloud/actions/workflows/codeql.yaml)
 
->  🎁 Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store (https://v2charge.com/store/it/) with the promo code `INTEGRATIONTRYDAN10`
+> 🎁 Thinking about a new wallbox? Grab a **10% discount** on Trydan or Trydan Pro at the official V2C store ([https://v2charge.com/store/it/](https://v2charge.com/store/it/)) with the promo code `INTEGRATIONTRYDAN10`, for more info visit: [https://samuele.bistoletti.me/v2c-discount-code/](https://samuele.bistoletti.me/v2c-discount-code/)
 
 This custom integration links Home Assistant with the **V2C Cloud** platform. It combines the public cloud API with the wallbox local HTTP interface so that real-time data and frequent controls use the LAN endpoint while configuration tasks still rely on the official cloud endpoints. It is purpose-built for the official V2C Cloud APIs and the local APIs exposed by **V2C Trydan** chargers.
 
@@ -14,7 +14,7 @@ This custom integration links Home Assistant with the **V2C Cloud** platform. It
 
 If you manage smart-charging slots through Intelligent Octopus, pair this project with my [Octopus Energy Italy integration](https://github.com/samuelebistoletti/HomeAssistant-OctopusEnergyIT). It exposes the Octopus APIs inside Home Assistant so that Intelligent Octopus can coordinate with V2C for advanced charging automations.
 
-More of my Home Assistant projects live at https://samuele.bistoletti.me/.
+More of my Home Assistant projects live at [https://samuele.bistoletti.me/](https://samuele.bistoletti.me/).
 
 ## Key Features
 
@@ -190,7 +190,7 @@ Entities backed by a cloud-only endpoint (marked *cloud* below, plus the diagnos
 | Service | Endpoint | Description |
 | --- | --- | --- |
 | `v2c_cloud.create_power_profile` | `/device/savepersonalicepower/v2` | Create a personalised power profile (JSON payload). |
-| `v2c_cloud.update_power_profile` | `/device/personalicepower/v2` (POST) | Update an existing profile. |
+| `v2c_cloud.update_power_profile` | `/device/savepersonalicepower/v2` | Save changes to an existing profile without implicitly activating it. |
 | `v2c_cloud.get_power_profile` | `/device/personalicepower/v2` (GET) | Retrieve a profile by `updateAt`. |
 | `v2c_cloud.delete_power_profile` | `/device/personalicepower/v2` (DELETE) | Delete a profile by name and timestamp. |
 | `v2c_cloud.list_power_profiles` | `/device/personalicepower/all` | List all personalised profiles. |

@@ -38,6 +38,7 @@ def _make_hass() -> MagicMock:
     # Return True so _async_register_services exits early (already registered)
     hass.services.has_service.return_value = True
     hass.config_entries.async_forward_entry_setups = AsyncMock(return_value=None)
+    hass.http.async_register_static_paths = AsyncMock()
     return hass
 
 
@@ -66,6 +67,7 @@ def _make_client(
             if pairings_return is not None
             else [SAMPLE_PAIRING]
         )
+    client.async_list_personal_power_profiles = AsyncMock(return_value=[])
     client.last_rate_limit = None
     client.preload_pairings = MagicMock()
     return client

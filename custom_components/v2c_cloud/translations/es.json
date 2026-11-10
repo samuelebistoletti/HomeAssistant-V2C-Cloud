@@ -39,7 +39,8 @@
         "title": "Tipo de conexión",
         "description": "Selecciona cómo se conecta tu cargador V2C a la red.\n\n**Local (Wi-Fi):** El cargador tiene una dirección IP local en tu red. Los datos del sensor se obtienen directamente del cargador con baja latencia. Las IP por dispositivo se descubren automáticamente desde el cloud, así que las cuentas con varios cargadores funcionan al instante.\n\n**Solo cloud (4G):** El cargador se conecta mediante datos móviles (4G) y no dispone de API local. Los datos del sensor se obtienen del API de V2C Cloud. Nota: el API cloud tiene un límite diario de peticiones (~850/día). La integración lo gestiona automáticamente, pero los intervalos de sondeo pueden aumentar al acercarse al límite.\n\n**Enrutado LAN/cloud automático:** En modo Local los comandos de control prefieren la LAN; si el cargador no es accesible momentáneamente por LAN, la integración recurre automáticamente al API de V2C Cloud. Las últimas IP conocidas se mantienen en caché para que cada cargador siga siendo accesible incluso durante una caída del cloud.",
         "data": {
-          "connection_type": "Tipo de conexión"
+          "connection_type": "Tipo de conexión",
+          "show_profile_panel": "Mostrar perfiles V2C en la barra lateral"
         }
       },
       "cloud": {
@@ -66,7 +67,8 @@
         "data": {
           "connection_type": "Tipo de conexión",
           "local_update_interval": "Intervalo de refresco local (segundos)",
-          "set_manual_ips": "Configurar manualmente las direcciones IP"
+          "set_manual_ips": "Configurar manualmente las direcciones IP",
+          "show_profile_panel": "Mostrar perfiles V2C en la barra lateral"
         }
       },
       "manual_ip": {
@@ -88,6 +90,12 @@
       "options": {
         "local": "Local (Wi-Fi)",
         "cloud_only": "Solo cloud (4G)"
+      }
+    },
+    "profile_day": {
+      "options": {
+        "weekdays": "Entre semana",
+        "weekend": "Fin de semana"
       }
     }
   },
@@ -201,6 +209,9 @@
       },
       "timer": {
         "name": "Temporizador"
+      },
+      "profile_battery_use": {
+        "name": "Uso de batería doméstica · {profile} · {day} {start}-{end}"
       }
     },
     "select": {
@@ -218,6 +229,9 @@
       },
       "charge_mode": {
         "name": "Modo de carga"
+      },
+      "active_profile": {
+        "name": "Perfil activo"
       }
     },
     "number": {
@@ -243,6 +257,9 @@
       },
       "trigger_update": {
         "name": "Iniciar actualización de firmware"
+      },
+      "refresh_profiles": {
+        "name": "Actualizar perfiles Cloud"
       }
     }
   },
@@ -320,8 +337,8 @@
       "description": "Guarda un nuevo perfil de potencia personalizado (v2)."
     },
     "update_power_profile": {
-      "name": "Actualizar perfil de potencia",
-      "description": "Actualiza un perfil de potencia personalizado existente (v2)."
+      "name": "Actualizar perfil de potencia (no disponible)",
+      "description": "Bloqueado: durante la verificación el endpoint documentado activó el perfil sin guardar sus cambios. No se envía ninguna petición."
     },
     "get_power_profile": {
       "name": "Obtener perfil de potencia",

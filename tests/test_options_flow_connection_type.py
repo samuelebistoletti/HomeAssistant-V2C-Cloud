@@ -75,6 +75,17 @@ class TestOptionsFlowConnectionTypeToggle:
         )
         return flow, hass, entry
 
+    async def test_panel_visibility_is_saved_and_preserves_other_options(self) -> None:
+        flow, _hass, _entry = self._flow(
+            entry_data={"cloud_only": True},
+            entry_options={"future_option": "keep"},
+        )
+        result = await flow.async_step_init(
+            {"connection_type": "cloud_only", "show_profile_panel": False}
+        )
+        assert result["data"]["show_profile_panel"] is False
+        assert result["data"]["future_option"] == "keep"
+
     async def test_default_mode_for_local_entry(self) -> None:
         flow, _hass, _entry = self._flow(entry_data={"cloud_only": False})
         result = await flow.async_step_init(user_input=None)

@@ -195,13 +195,15 @@ class V2CClient:
         expiry = ttl if ttl is not None else PAIRINGS_CACHE_TTL
         self._pairings_cache_expiry = time.monotonic() + expiry
 
-    async def _request(
+    async def _request(  # noqa: PLR0913
         self,
         method: str,
         path: str,
         *,
         params: dict[str, Any] | None = None,
         json_body: Any | None = None,
+        retry: bool = True,
+        allow_redirects: bool = True,
     ) -> Any:
         """Perform an HTTP request and normalise the response."""
         url = f"{self._base_url}{path}"
@@ -232,6 +234,7 @@ class V2CClient:
                         headers=headers,
                         params=params,
                         json=json_body,
+                        allow_redirects=allow_redirects,
                     ) as response:
                         status = response.status
                         content_type = response.headers.get("Content-Type", "")
@@ -250,7 +253,7 @@ class V2CClient:
                                 status=status,
                             )
 
-                        if status >= 400:  # noqa: PLR2004
+                        if status >= 400 or (not allow_redirects and status >= 300):  # noqa: PLR2004
                             text = await response.text()
                             raise V2CRequestError(
                                 f"V2C API error {status}: {text or 'unknown error'}",
@@ -301,7 +304,7 @@ class V2CClient:
                         text = await response.text()
                         return _coerce_scalar(text)
             except TimeoutError:
-                if attempt < MAX_RETRIES:
+                if retry and attempt < MAX_RETRIES:
                     _LOGGER.warning(
                         "Timeout contacting V2C Cloud (attempt %s/%s), retrying",
                         attempt,
@@ -311,7 +314,7 @@ class V2CClient:
                     continue
                 raise V2CRequestError("Request to V2C API timed out") from None
             except ClientError as err:
-                if attempt < MAX_RETRIES:
+                if retry and attempt < MAX_RETRIES:
                     _LOGGER.warning(
                         "HTTP error contacting V2C Cloud (attempt %s/%s): %s. Retrying.",
                         attempt,
@@ -667,13 +670,21 @@ class V2CClient:
         update_at: str,
         profile: dict[str, Any],
     ) -> Any:
-        """Create a personalised power profile (v2)."""
-        params = {"name": name, "updateAt": update_at}
-        return await self._device_command(
+        """
+        Save a personalised power profile (v2), without read-back validation.
+
+        An authorised live test verified updating an existing inactive mode-2
+        profile via this operation without activation. Callers must preserve
+        the complete schedules and independently check persistence.
+        """
+        params = {"deviceId": device_id, "name": name, "updateAt": update_at}
+        return await self._request(
+            "POST",
             "/device/savepersonalicepower/v2",
-            device_id,
-            extra_params=params,
+            params=params,
             json_body=profile,
+            retry=False,
+            allow_redirects=False,
         )
 
     async def async_update_personal_power_profile(
@@ -683,14 +694,23 @@ class V2CClient:
         update_at: str,
         profile: dict[str, Any],
     ) -> Any:
-        """Update a personalised power profile (v2)."""
-        params = {"name": name, "updateAt": update_at}
-        return await self._device_command(
+        """Keep the update API signature while using the actual save operation."""
+        # POST personalicepower/v2 was observed to activate rather than edit.
+        return await self.async_save_personal_power_profile(
+            device_id, name, update_at, profile
+        )
+
+    async def async_activate_personal_power_profile(
+        self, device_id: str, name: str, update_at: str, profile: dict[str, Any]
+    ) -> Any:
+        """Select a saved profile using the operation observed in live verification."""
+        return await self._request(
+            "POST",
             "/device/personalicepower/v2",
-            device_id,
-            extra_params=params,
+            params={"id": device_id, "name": name, "updateAt": update_at},
             json_body=profile,
-            device_param="id",
+            retry=False,
+            allow_redirects=False,
         )
 
     async def async_get_personal_power_profile(
@@ -718,6 +738,8 @@ class V2CClient:
             "DELETE",
             "/device/personalicepower/v2",
             params=params,
+            retry=False,
+            allow_redirects=False,
         )
 
     async def async_list_personal_power_profiles(self, device_id: str) -> Any:

@@ -5,13 +5,17 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from aiohttp import ClientError
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 
 from .const import (
     CHARGE_MODES,
@@ -21,7 +25,7 @@ from .const import (
     LANGUAGES,
     SLAVE_TYPES,
 )
-from .entity import V2CEntity, _OptimisticHoldMixin
+from .entity import V2CEntity, _OptimisticHoldMixin, build_device_info
 from .local_api import (
     LAN_ONLY_KEYS,
     V2CLocalApiError,
@@ -29,6 +33,12 @@ from .local_api import (
     async_route_local_or_cloud,
     get_local_data,
     get_local_value,
+)
+from .power_profiles import (
+    InvalidPowerProfilesError,
+    PowerProfileCoordinator,
+    async_manage_profile,
+    profile_revision,
 )
 from .v2c_cloud import V2CError
 
@@ -170,6 +180,12 @@ async def async_setup_entry(
         )
         entities.extend(device_selects)
 
+    profile_coordinators = getattr(runtime_data, "profile_coordinators", {})
+    if isinstance(profile_coordinators, dict):
+        entities.extend(
+            V2CActiveProfileSelect(profiles, build_device_info(coordinator, device_id))
+            for device_id, profiles in profile_coordinators.items()
+        )
     async_add_entities(entities)
 
 
@@ -329,3 +345,62 @@ class V2CEnumSelect(_OptimisticHoldMixin, V2CEntity, SelectEntity):
             and self._is_within_hold()
             and resolved != self._optimistic_value
         )
+
+
+class V2CActiveProfileSelect(CoordinatorEntity, SelectEntity):
+    """Activate an existing Cloud profile and publish only confirmed read-back."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "active_profile"
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator: PowerProfileCoordinator, device_info: Any) -> None:
+        """Use the shared profile coordinator for live names and activation state."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"v2c_{coordinator.device_id}_active_profile"
+        self._attr_device_info = device_info
+
+    @property
+    def options(self) -> list[str]:
+        """List actual, unambiguous Cloud profile names."""
+        names = [profile["name"] for profile in self.coordinator.data or []]
+        return [name for name in names if names.count(name) == 1]
+
+    @property
+    def current_option(self) -> str | None:
+        """Avoid guessing when the Cloud reports an ambiguous active state."""
+        active = [
+            p["name"] for p in self.coordinator.data or [] if p.get("active") is True
+        ]
+        return active[0] if len(active) == 1 and active[0] in self.options else None
+
+    @property
+    def available(self) -> bool:
+        """Require a reachable Cloud and a confirmed, consistent profile list."""
+        return bool(
+            self.coordinator.last_update_success
+            and self.coordinator.runtime.cloud_commands_available
+            and self.options
+            and sum(p.get("active") is True for p in self.coordinator.data or []) <= 1
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        """Apply the saved profile explicitly, without editing it or starting charge."""
+        if not self.available or option not in self.options:
+            raise HomeAssistantError(
+                "Refresh Cloud profiles before selecting a profile"
+            )
+        try:
+            profile = self.coordinator.profile(option)
+            await async_manage_profile(
+                self.coordinator, "activate", option, profile_revision(profile)
+            )
+        except (
+            InvalidPowerProfilesError,
+            V2CError,
+            ClientError,
+            TimeoutError,
+        ) as error:
+            raise HomeAssistantError(
+                "Profile activation was not confirmed. Refresh V2C Cloud before trying again."
+            ) from error

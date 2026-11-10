@@ -193,3 +193,45 @@ class TestSsrfGuardAddresses:
         await session.close()
         assert device_id == "dev1"
         assert error_key is None
+
+
+async def test_onboarding_offers_sidebar_checkbox_checked_by_default():
+    from custom_components.v2c_cloud.config_flow import V2CConfigFlow
+
+    flow = V2CConfigFlow()
+    result = await flow.async_step_connection_type()
+    assert result["step_id"] == "connection_type"
+    option = next(
+        key
+        for key in result["data_schema"].schema
+        if key.schema == "show_profile_panel"
+    )
+    assert option.default() is True
+    assert result["data_schema"].schema[option] is bool
+
+
+@pytest.mark.parametrize("connection", ["local", "cloud_only"])
+@pytest.mark.parametrize("visible", [True, False, None])
+async def test_onboarding_persists_panel_choice_in_options(connection, visible):
+    from custom_components.v2c_cloud.config_flow import V2CConfigFlow
+
+    flow = V2CConfigFlow()
+    flow._api_key = "test-key"
+    flow._pairings = [{"deviceId": "test-device"}]
+    values = {"connection_type": connection}
+    if visible is not None:
+        values["show_profile_panel"] = visible
+    result = await flow.async_step_connection_type(values)
+    assert result["options"]["show_profile_panel"] is (visible is not False)
+    assert "show_profile_panel" not in result["data"]
+    assert result["data"]["cloud_only"] is (connection == "cloud_only")
+    assert result["data"]["cached_pairings"] == [{"deviceId": "test-device", "ip": ""}]
+
+
+async def test_lan_only_onboarding_does_not_offer_cloud_profile_panel():
+    from custom_components.v2c_cloud.config_flow import V2CConfigFlow
+
+    result = await V2CConfigFlow().async_step_lan_only()
+    assert all(
+        key.schema != "show_profile_panel" for key in result["data_schema"].schema
+    )

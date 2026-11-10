@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from aiohttp import ClientError
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 
 from .const import DOMAIN
-from .entity import V2CEntity, _OptimisticHoldMixin, coerce_bool
+from .entity import V2CEntity, _OptimisticHoldMixin, build_device_info, coerce_bool
 from .local_api import (
     LAN_ONLY_KEYS,
     async_get_or_create_local_coordinator,
@@ -23,6 +31,13 @@ from .local_api import (
     get_local_data,
     get_local_value,
 )
+from .power_profiles import (
+    InvalidPowerProfilesError,
+    PowerProfileCoordinator,
+    profile_battery_slots,
+    profile_revision,
+)
+from .v2c_cloud import V2CError
 
 if TYPE_CHECKING:
     from . import V2CEntryRuntimeData
@@ -251,6 +266,7 @@ async def async_setup_entry(
         )
 
     async_add_entities(entities)
+    await _async_setup_profile_switches(hass, entry, runtime_data, async_add_entities)
 
 
 class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
@@ -465,3 +481,158 @@ class V2CBooleanSwitch(_OptimisticHoldMixin, V2CEntity, SwitchEntity):
             self._cancel_delayed_refresh()
             self._cancel_delayed_refresh = None
         await super().async_will_remove_from_hass()
+
+
+class V2CProfileBatterySwitch(CoordinatorEntity, SwitchEntity):
+    """Control one explicitly identified profile interval, never a global battery."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "profile_battery_use"
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:home-battery"
+
+    def __init__(
+        self,
+        coordinator: PowerProfileCoordinator,
+        slot: str,
+        device_info: Any,
+        day: str,
+    ) -> None:
+        """Keep stable identity when other intervals are inserted or reordered."""
+        super().__init__(coordinator)
+        self._slot = slot
+        self._profile_name, self._group, self._start, self._end = json.loads(slot)
+        self._attr_unique_id = f"v2c_{coordinator.device_id}_profile_battery_{hashlib.sha256(slot.encode()).hexdigest()[:24]}"
+        self._attr_device_info = device_info
+        self._attr_translation_placeholders = {
+            "profile": self._profile_name,
+            "day": day,
+            "start": self._start,
+            "end": self._end,
+        }
+
+    def _target(self) -> tuple[dict[str, Any], tuple[int, int]] | None:
+        """Resolve current bounds and refuse deleted, ambiguous or changed modes."""
+        try:
+            profile = self.coordinator.profile(self._profile_name)
+        except InvalidPowerProfilesError:
+            return None
+        interval = profile_battery_slots(profile).get(self._slot)
+        return (profile, interval) if interval is not None else None
+
+    @property
+    def available(self) -> bool:
+        """Only recognized targets on a reachable Cloud can be written."""
+        target = self._target()
+        return bool(
+            self.coordinator.last_update_success
+            and self.coordinator.runtime.cloud_commands_available
+            and target is not None
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Read the confirmed interval value without an optimistic local state."""
+        target = self._target()
+        if target is None:
+            return None
+        profile, (group, index) = target
+        field = "powerweekday" if group == 0 else "powerweekend"
+        return json.loads(profile[field])["tram"][index]["bat_mode"] == 0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Make the exact saved interval and its activation state explicit."""
+        target = self._target()
+        return {
+            "profile": self._profile_name,
+            "day_group": self._group,
+            "hour_start": self._start,
+            "hour_end": self._end,
+            "profile_active": target[0].get("active") if target else None,
+            "write_support": "pv_minimum_and_grid_pv",
+        }
+
+    async def _async_set(self, *, allowed: bool) -> None:
+        """Recheck the full remote baseline and confirm persistence before publish."""
+        target = self._target()
+        if not self.available or target is None:
+            raise HomeAssistantError(
+                "Only a confirmed compatible battery interval can be edited. Refresh Cloud profiles first."
+            )
+        profile, interval = target
+        try:
+            await self.coordinator.async_save(
+                self._profile_name, profile_revision(profile), interval, allowed=allowed
+            )
+        except (
+            InvalidPowerProfilesError,
+            V2CError,
+            ClientError,
+            TimeoutError,
+        ) as error:
+            raise HomeAssistantError(
+                "Profile save was not confirmed. Refresh and inspect V2C Cloud before another edit."
+            ) from error
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Allow native V2C battery use for this saved interval."""
+        _ = kwargs
+        await self._async_set(allowed=True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Forbid native V2C battery use for this saved interval."""
+        _ = kwargs
+        await self._async_set(allowed=False)
+
+
+async def _async_setup_profile_switches(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    runtime: V2CEntryRuntimeData,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Discover new interval entities after reads; obsolete identities go unavailable."""
+    coordinators = getattr(runtime, "profile_coordinators", {})
+    if not isinstance(coordinators, dict):
+        return
+    translations = (
+        await async_get_translations(hass, hass.config.language, "selector", {DOMAIN})
+        if coordinators
+        else {}
+    )
+    prefix = f"component.{DOMAIN}.selector.profile_day.options."
+    for device_id, coordinator in coordinators.items():
+        added: set[str] = set()
+        info = build_device_info(runtime.coordinator, device_id)
+
+        def discover(
+            coord: PowerProfileCoordinator = coordinator,
+            known: set[str] = added,
+            device_info: Any = info,
+        ) -> None:
+            if not coord.last_update_success or not isinstance(coord.data, list):
+                return
+            entities = []
+            names = [profile["name"] for profile in coord.data]
+            for profile in coord.data:
+                if names.count(profile["name"]) != 1:
+                    continue
+                for slot in profile_battery_slots(profile):
+                    if slot not in known:
+                        group = json.loads(slot)[1]
+                        day = "weekdays" if group == 0 else "weekend"
+                        entities.append(
+                            V2CProfileBatterySwitch(
+                                coord,
+                                slot,
+                                device_info,
+                                translations.get(prefix + day, day),
+                            )
+                        )
+                        known.add(slot)
+            if entities:
+                async_add_entities(entities)
+
+        entry.async_on_unload(coordinator.async_add_listener(discover))
+        discover()

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import math
 from collections.abc import Callable, Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -67,6 +69,7 @@ from .const import (
     CONF_CLOUD_ONLY,
     CONF_LAN_ONLY,
     CONF_MANUAL_IPS,
+    CONF_SHOW_PROFILE_PANEL,
     DEFAULT_TIMER_DAYS,
     DEFAULT_UPDATE_INTERVAL,
     DENKA_POWER_MAX,
@@ -130,6 +133,8 @@ from .local_api import (
     async_write_keyword,
     is_cloud_only_device,
 )
+from .power_profiles import InvalidPowerProfilesError, PowerProfileCoordinator
+from .profile_panel import async_remove_profile_panel, async_setup_profile_panel
 from .v2c_cloud import (
     V2CAuthError,
     V2CClient,
@@ -503,6 +508,11 @@ class V2CEntryRuntimeData:
     local_coordinators: dict[str, DataUpdateCoordinator] = field(default_factory=dict)
     cloud_only: bool = False
     cloud_auth: _CloudAuthState = field(default_factory=_CloudAuthState)
+    show_profile_panel: bool = True
+    profile_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    profile_coordinators: dict[str, PowerProfileCoordinator] = field(
+        default_factory=dict
+    )
 
     @property
     def cloud_commands_available(self) -> bool:
@@ -820,7 +830,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         coordinator=coordinator,
         cloud_only=is_cloud_only_device(entry.data),
         cloud_auth=auth_state,
+        show_profile_panel=(entry.options or {}).get(CONF_SHOW_PROFILE_PANEL, True),
     )
+
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    if not lan_only:
+        for device_id in (coordinator.data or {}).get("devices", {}):
+            profiles = PowerProfileCoordinator(hass, runtime, device_id)
+            runtime.profile_coordinators[device_id] = profiles
+            # A profile read failure must not disable charging telemetry.
+            with suppress(UpdateFailed):
+                await profiles.async_refresh()
+        await async_setup_profile_panel(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -846,8 +867,8 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     from the CURRENT (pre-update) setup: if switching `connection_type`
     changed cloud-only-ness, the coordinator topology (cloud-only vs LAN
     polling) must be rebuilt and a reload is scheduled here. Otherwise the
-    only other option that may change live is
-    ``CONF_LOCAL_UPDATE_INTERVAL``, applied in place with no reload needed.
+    local polling interval and profile-panel visibility can change in place
+    without reloading the entry.
     """
     runtime_data: V2CEntryRuntimeData | None = hass.data.get(DOMAIN, {}).get(
         entry.entry_id
@@ -860,6 +881,13 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     if new_cloud_only != runtime_data.cloud_only:
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
         return
+
+    runtime_data.show_profile_panel = (entry.options or {}).get(
+        CONF_SHOW_PROFILE_PANEL, True
+    )
+    if runtime_data.profile_coordinators:
+        await async_setup_profile_panel(hass)
+        async_remove_profile_panel(hass)
 
     # Cloud-only entries keep their fixed cadence — nothing to update.
     if new_cloud_only:
@@ -901,7 +929,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # "RuntimeWarning: coroutine 'DataUpdateCoordinator.async_shutdown'
             # was never awaited". The isawaitable guard keeps stub/mock
             # coordinators that expose a plain synchronous attribute working.
-            for coord in runtime_data.local_coordinators.values():
+            for coord in [
+                *runtime_data.local_coordinators.values(),
+                *runtime_data.profile_coordinators.values(),
+            ]:
                 shutdown = getattr(coord, "async_shutdown", None)
                 if shutdown is not None:
                     result = shutdown()
@@ -910,6 +941,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 elif hasattr(coord, "_unsub_refresh") and coord._unsub_refresh:  # noqa: SLF001
                     coord._unsub_refresh()  # noqa: SLF001
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        async_remove_profile_panel(hass)
         if not any(
             isinstance(v, V2CEntryRuntimeData) for v in hass.data[DOMAIN].values()
         ):
@@ -1452,17 +1484,21 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
     async def async_handle_update_power_profile(call: ServiceCall) -> None:
         device_id = call.data[ATTR_DEVICE_ID]
         name = call.data[ATTR_PROFILE_NAME]
-        update_at = call.data[ATTR_UPDATED_AT]
         profile = call.data[ATTR_PROFILE_PAYLOAD]
         if not isinstance(profile, dict):
             raise HomeAssistantError("Profile payload must be a JSON object")
         entry_data = await _async_get_entry_for_device(device_id)
-        await _execute_and_refresh(
-            entry_data,
-            entry_data.client.async_update_personal_power_profile(
-                device_id, name, update_at, profile
-            ),
-        )
+        coordinator = entry_data.profile_coordinators.get(device_id)
+        if coordinator is None:
+            raise HomeAssistantError("Cloud profile controls are unavailable")
+        # Keep updated_at in the service schema for existing callers. The save
+        # endpoint needs a fresh send-time timestamp, not this legacy ISO value.
+        try:
+            await _execute_and_refresh(
+                entry_data, coordinator.async_update_payload(name, profile)
+            )
+        except (InvalidPowerProfilesError, UpdateFailed) as error:
+            raise HomeAssistantError(str(error)) from error
 
     hass.services.async_register(
         DOMAIN,

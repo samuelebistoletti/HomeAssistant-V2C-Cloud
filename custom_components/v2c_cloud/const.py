@@ -25,6 +25,7 @@ CONF_CACHED_PAIRINGS = "cached_pairings"
 CONF_MANUAL_IPS = "manual_ips"
 # Options-flow only: opt-in that leads to the per-charger IP forms.
 CONF_SET_MANUAL_IPS = "set_manual_ips"
+CONF_SHOW_PROFILE_PANEL = "show_profile_panel"
 
 # Repair-issue identifiers (homeassistant.helpers.issue_registry).
 ISSUE_CLOUD_AUTH_DEGRADED = "cloud_auth_degraded"

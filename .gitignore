@@ -40,3 +40,8 @@ CLAUDE.local.md
 .claude/backups/
 .claude/hooks/__counter
 __NEEDS_ONBOARD
+
+# Claudify working notes (local only; this repo is public)
+Daily Notes/
+Task Board.md
+Scratchpad.md

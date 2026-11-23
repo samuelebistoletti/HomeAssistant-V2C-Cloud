@@ -1,0 +1,25 @@
+# GitHub Pages (Jekyll) settings for https://v2c-ha.bistoletti.me
+title: HACS
+description: "Free Home Assistant integration for V2C Trydan and Trydan Pro wallboxes: fast local control, solar charging profiles, RFID and scheduling via V2C Cloud."
+url: https://v2c-ha.bistoletti.me
+lang: en-US
+
+# Publish only the documentation, never repo tooling or working notes
+exclude:
+  - CLAUDE.md
+  - CLAUDE.local.md
+  - Daily Notes
+  - Scratchpad.md
+  - Task Board.md
+  - TECHNICAL_NOTES.md
+  - CONTRIBUTING.md
+  - SECURITY.md
+  - custom_components
+  - tests
+  - scripts
+  - config
+  - docker-compose.yml
+  - requirements.txt
+  - requirements_test.txt
+  - pytest.ini
+  - hacs.json

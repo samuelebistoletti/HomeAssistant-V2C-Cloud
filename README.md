@@ -36,6 +36,62 @@ More of my Home Assistant projects live at [https://samuele.bistoletti.me/](http
 - **Automation-ready events** – data retrieval services (`scan_wifi_networks`, statistics, power profiles, connected status) emit events that contain the raw payload so automations can capture and store results.
 - **Diagnostics aware** – the latest `RateLimit-*` headers are persisted in coordinator data and logs specify whether the LAN or cloud path was used, simplifying troubleshooting.
 
+## Cloud profiles and home battery use
+
+The admin-only **V2C Profiles** sidebar panel lists the actual Cloud profiles,
+including profiles created on the portal. It is bundled with the integration;
+its visibility is selected during Cloud onboarding and can be changed in options.
+Chargers are shown by name and device ID.
+
+Edit weekday/weekend schedules inline, add or remove intervals, or choose
+**Create new profile** to start from a saved profile. **Save changes** saves the
+schedule; toggling an existing compatible battery option saves it immediately.
+Saving never implicitly activates a profile. **Activate** applies the saved
+profile separately; **Delete** is available only for inactive profiles. Editing
+an active profile can affect charging already in progress.
+
+| Mode | Power setting | Battery setting |
+| --- | --- | --- |
+| PV + minimum | Contracted power (kW) | Allow/forbid use |
+| Exclusive PV | Deviation (W) | Home/vehicle priority |
+| Grid + PV | Contracted power (kW) | Allow/forbid use |
+| No charging | — | — |
+| No injection / isolated | Battery discharge (W) | Numeric discharge setting |
+
+Isolated edits require an identified Trydan/Trydan Pro or an existing isolated
+schedule. The deviation slider uses 100 W steps from -5000 to +5000 W; precise
+Cloud values remain editable numerically. Unknown schedule fields and phase
+settings are preserved. Populated phase values appear in collapsed details.
+The panel supports English, French, Italian and Spanish; French native labels
+cover the new profile controls, with normal English fallback elsewhere.
+The sidebar title and native entity names use the Home Assistant installation
+language, while the panel editor uses the user language. After changing the
+installation language, restart Home Assistant to reload entity names; custom
+entity names and IDs are retained.
+
+Native entities include **Active profile**, **Refresh Cloud profiles**, and
+**Home battery use** switches for compatible profile/day/intervals. New interval
+switches are disabled by default; enable the ones needed for dashboards or
+automations. Existing registry preferences are retained. These switches modify
+V2C profile settings, never the inverter or the household battery globally.
+
+All controls share confirmed Cloud snapshots, refreshed every 15 minutes or on
+demand. Writes recheck the baseline, preserve unmodified content, and confirm
+persistence by read-back. Conflicts or uncertain results require a refresh;
+mutations are never automatically retried. Concurrent portal changes between
+the final read and write cannot be prevented atomically.
+
+**Compatibility:** inactive Grid + PV battery save/restore and profile activation
+were live-verified. Creation, deletion, other modes and advanced/active-profile
+edits were tested with simulated Cloud state only. Validation follows the
+observed public portal formats, not verified electrical limits for every firmware.
+Unknown record metadata keeps a profile read-only. The existing
+`update_power_profile` service retains its name and fields and now uses the same
+confirmed save path as the panel, correcting the former endpoint's unintended
+activation. Its `profile` uses the native `{"powers": [...]}` format and API units;
+`updated_at` remains accepted for compatibility, while saving uses a fresh
+request timestamp. No internal portal API fallback is used.
+
 ## Requirements
 
 - Either a V2C Cloud account with at least one wallbox paired and an API key generated from [https://v2c.cloud/home/user](https://v2c.cloud/home/user), **or**, for a LAN-only setup *(new in 1.4.0)*, just the charger's IP address on your local network — no account needed.
@@ -190,7 +246,7 @@ Entities backed by a cloud-only endpoint (marked *cloud* below, plus the diagnos
 | Service | Endpoint | Description |
 | --- | --- | --- |
 | `v2c_cloud.create_power_profile` | `/device/savepersonalicepower/v2` | Create a personalised power profile (JSON payload). |
-| `v2c_cloud.update_power_profile` | `/device/personalicepower/v2` (POST) | Update an existing profile. |
+| `v2c_cloud.update_power_profile` | `/device/savepersonalicepower/v2` | Update an existing profile, preserve omitted extension fields and confirm persistence without implicit activation. |
 | `v2c_cloud.get_power_profile` | `/device/personalicepower/v2` (GET) | Retrieve a profile by `updateAt`. |
 | `v2c_cloud.delete_power_profile` | `/device/personalicepower/v2` (DELETE) | Delete a profile by name and timestamp. |
 | `v2c_cloud.list_power_profiles` | `/device/personalicepower/all` | List all personalised profiles. |

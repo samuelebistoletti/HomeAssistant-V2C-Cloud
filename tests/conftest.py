@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 import types
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -85,6 +85,13 @@ def _install_ha_stubs() -> None:
 
     _mod("homeassistant")
 
+    ha_translation = _mod("homeassistant.helpers.translation")
+
+    async def async_get_translations(*args, **kwargs):
+        return {}
+
+    ha_translation.async_get_translations = async_get_translations
+
     # homeassistant.core
     ha_core = _mod("homeassistant.core")
     if not hasattr(ha_core, "HomeAssistant"):
@@ -156,8 +163,13 @@ def _install_ha_stubs() -> None:
             def _get_reauth_entry(self) -> Any:
                 return MagicMock()
 
-            def async_create_entry(self, *, title: str, data: Any) -> dict:
-                return {"title": title, "data": data}
+            def async_create_entry(
+                self, *, title: str, data: Any, options: Any = None
+            ) -> dict:
+                result = {"title": title, "data": data}
+                if options is not None:
+                    result["options"] = options
+                return result
 
             def async_show_form(
                 self,
@@ -216,6 +228,30 @@ def _install_ha_stubs() -> None:
     ha_ce.callback = lambda f: f
     ha_ce.config_entries = MagicMock()
 
+    _mod("homeassistant.components")
+
+    # Profile panel APIs. Keep registration local and commands directly awaitable.
+    frontend = _mod("homeassistant.components.frontend")
+    frontend.async_remove_panel = MagicMock()
+    panel = _mod("homeassistant.components.panel_custom")
+    panel.async_register_panel = AsyncMock()
+    http = _mod("homeassistant.components.http")
+    http.StaticPathConfig = lambda *args, **kwargs: (args, kwargs)
+    websocket = _mod("homeassistant.components.websocket_api")
+    websocket.websocket_command = lambda schema: lambda function: function
+    websocket.async_response = lambda function: function
+
+    def require_admin(function):
+        async def wrapped(hass, connection, msg):
+            if not connection.user or not connection.user.is_admin:
+                raise PermissionError("Administrator required")
+            await function(hass, connection, msg)
+
+        return wrapped
+
+    websocket.require_admin = require_admin
+    websocket.async_register_command = MagicMock()
+
     # homeassistant.data_entry_flow
     ha_def = _mod("homeassistant.data_entry_flow")
     ha_def.FlowResult = dict
@@ -240,6 +276,7 @@ def _install_ha_stubs() -> None:
                 self.last_update_success: bool = True
                 self.update_interval = update_interval
                 self._update_method = update_method
+                self._listeners = []
 
             async def async_config_entry_first_refresh(self) -> None:
                 from homeassistant.exceptions import ConfigEntryNotReady
@@ -250,10 +287,29 @@ def _install_ha_stubs() -> None:
                     raise ConfigEntryNotReady(str(err)) from err
 
             async def async_refresh(self) -> None:
-                self.data = await self._update_method()
+                try:
+                    self.async_set_updated_data(await self._update_method())
+                except ha_coord.UpdateFailed as error:
+                    self.async_set_update_error(error)
+                    raise
 
             async def async_request_refresh(self) -> None:
-                self.data = await self._update_method()
+                await self.async_refresh()
+
+            def async_set_updated_data(self, data):
+                self.data = data
+                self.last_update_success = True
+                for callback in self._listeners:
+                    callback()
+
+            def async_set_update_error(self, error):
+                self.last_update_success = False
+                for callback in self._listeners:
+                    callback()
+
+            def async_add_listener(self, callback):
+                self._listeners.append(callback)
+                return lambda: self._listeners.remove(callback)
 
         ha_coord.DataUpdateCoordinator = DataUpdateCoordinator
 

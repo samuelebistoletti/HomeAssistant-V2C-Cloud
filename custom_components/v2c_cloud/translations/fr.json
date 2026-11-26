@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "connection_type": {
+        "data": {
+          "show_profile_panel": "Afficher les profils V2C dans la barre latérale"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "show_profile_panel": "Afficher les profils V2C dans la barre latérale"
+        }
+      }
+    }
+  },
+  "selector": {
+    "profile_day": {
+      "options": {
+        "weekdays": "Semaine",
+        "weekend": "Week-end"
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "profile_battery_use": {
+        "name": "Autoriser la batterie domestique · {profile} · {day} {start}-{end}"
+      }
+    },
+    "select": {
+      "active_profile": {
+        "name": "Profil actif"
+      }
+    },
+    "button": {
+      "refresh_profiles": {
+        "name": "Actualiser les profils Cloud"
+      }
+    }
+  }
+}

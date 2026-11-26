@@ -128,3 +128,33 @@ class TestTranslationsParity:
 
     def test_strings_matches_en(self, translation_keys) -> None:
         assert translation_keys["strings"] == translation_keys["en"]
+
+
+@pytest.mark.parametrize("language", ["en", "fr", "it", "es"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "config.step.connection_type.data.show_profile_panel",
+        "options.step.init.data.show_profile_panel",
+        "selector.profile_day.options.weekdays",
+        "selector.profile_day.options.weekend",
+        "entity.switch.profile_battery_use.name",
+        "entity.select.active_profile.name",
+        "entity.button.refresh_profiles.name",
+    ],
+)
+def test_native_profile_translations_are_complete_and_preserve_placeholders(
+    language, path
+):
+    reference = json.loads((_INTEGRATION_DIR / "strings.json").read_text())
+    translated = json.loads(
+        (_INTEGRATION_DIR / "translations" / f"{language}.json").read_text()
+    )
+    for key in path.split("."):
+        reference = reference[key]
+        translated = translated[key]
+    assert isinstance(translated, str)
+    assert translated.strip()
+    assert set(re.findall(r"\{([^{}]+)\}", translated)) == set(
+        re.findall(r"\{([^{}]+)\}", reference)
+    )

@@ -39,7 +39,8 @@
         "title": "Connection type",
         "description": "Select how your V2C charger connects to the network.\n\n**Local (Wi-Fi):** The charger has a local IP address on your network. Sensor data is fetched directly from the charger with low latency. Per-device IPs are discovered automatically from the cloud, so multi-charger accounts work out of the box.\n\n**Cloud only (4G):** The charger connects via mobile data (4G) and has no local API. Sensor data is fetched from the V2C Cloud API. Note: the cloud API has a daily request limit (~850 requests/day). The integration manages this automatically, but polling intervals may increase when the limit is approached.\n\n**Automatic LAN-cloud routing:** In Local mode, control commands prefer the LAN; if the charger is temporarily unreachable on the LAN, the integration falls back to the V2C Cloud API automatically. The last-known IPs are cached so every charger stays addressable during a cloud outage too.",
         "data": {
-          "connection_type": "Connection type"
+          "connection_type": "Connection type",
+          "show_profile_panel": "Show V2C profiles in the sidebar"
         }
       },
       "cloud": {
@@ -66,7 +67,8 @@
         "data": {
           "connection_type": "Connection type",
           "local_update_interval": "Local refresh interval (seconds)",
-          "set_manual_ips": "Set charger IP addresses manually"
+          "set_manual_ips": "Set charger IP addresses manually",
+          "show_profile_panel": "Show V2C profiles in the sidebar"
         }
       },
       "manual_ip": {
@@ -88,6 +90,12 @@
       "options": {
         "local": "Local (Wi-Fi)",
         "cloud_only": "Cloud only (4G)"
+      }
+    },
+    "profile_day": {
+      "options": {
+        "weekdays": "Weekdays",
+        "weekend": "Weekend"
       }
     }
   },
@@ -201,6 +209,9 @@
       },
       "timer": {
         "name": "Timer"
+      },
+      "profile_battery_use": {
+        "name": "Home battery use · {profile} · {day} {start}-{end}"
       }
     },
     "select": {
@@ -218,6 +229,9 @@
       },
       "charge_mode": {
         "name": "Charge mode"
+      },
+      "active_profile": {
+        "name": "Active profile"
       }
     },
     "number": {
@@ -243,6 +257,9 @@
       },
       "trigger_update": {
         "name": "Trigger firmware update"
+      },
+      "refresh_profiles": {
+        "name": "Refresh Cloud profiles"
       }
     }
   },
@@ -320,8 +337,8 @@
       "description": "Store a personalised power profile (v2)."
     },
     "update_power_profile": {
-      "name": "Update power profile",
-      "description": "Update an existing personalised power profile (v2)."
+      "name": "Update power profile (unavailable)",
+      "description": "Blocked: the documented endpoint activated the profile without saving its changes during verification. No request is sent."
     },
     "get_power_profile": {
       "name": "Get power profile",

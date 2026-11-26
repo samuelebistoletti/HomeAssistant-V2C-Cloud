@@ -11,15 +11,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 
 from .const import DOMAIN
-from .entity import V2CEntity
+from .entity import V2CEntity, build_device_info
 from .local_api import V2CLocalApiError
 from .v2c_cloud import V2CError
 
 if TYPE_CHECKING:
     from . import V2CEntryRuntimeData
+    from .power_profiles import PowerProfileCoordinator
     from .v2c_cloud import V2CClient
 
 
@@ -68,6 +73,12 @@ async def async_setup_entry(
             )
         )
 
+    coordinators = getattr(runtime_data, "profile_coordinators", {})
+    if isinstance(coordinators, dict):
+        entities.extend(
+            V2CRefreshProfilesButton(coord, build_device_info(coordinator, device_id))
+            for device_id, coord in coordinators.items()
+        )
     async_add_entities(entities)
 
 
@@ -118,3 +129,31 @@ class V2CButton(V2CEntity, ButtonEntity):
             )
         except (V2CError, V2CLocalApiError) as err:
             raise HomeAssistantError(str(err)) from err
+
+
+class V2CRefreshProfilesButton(CoordinatorEntity, ButtonEntity):
+    """Refresh profile entities without invoking any mutating Cloud operation."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "refresh_profiles"
+    _attr_icon = "mdi:refresh"
+
+    def __init__(self, coordinator: PowerProfileCoordinator, device_info: Any) -> None:
+        """Attach a refresh action to the existing charger device."""
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_unique_id = f"v2c_{coordinator.device_id}_refresh_profiles"
+
+    @property
+    def available(self) -> bool:
+        """Permit recovery from a failed profile read when Cloud auth is usable."""
+        return self.coordinator.runtime.cloud_commands_available
+
+    async def async_press(self) -> None:
+        """Read the actual Cloud profile list, keeping failed snapshots unavailable."""
+        try:
+            await self.coordinator.async_refresh()
+        except UpdateFailed as error:
+            raise HomeAssistantError("Could not refresh Cloud profiles") from error
+        if not self.coordinator.last_update_success:
+            raise HomeAssistantError("Could not refresh Cloud profiles")

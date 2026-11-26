@@ -322,13 +322,13 @@ create_power_profile:
         text:
     profile:
       name: Contenuto profilo
-      description: Oggetto JSON con i parametri del profilo (es. mode, value).
+      description: Oggetto JSON con powers e i programmi type 0 (settimana) e 1 (weekend), nelle unità native API.
       required: true
       selector:
         object:
 update_power_profile:
   name: Aggiorna profilo di potenza
-  description: Modifica un profilo personalizzato esistente.
+  description: Salva un profilo esistente e verifica le modifiche senza attivarlo.
   fields:
     device_id:
       name: Device ID
@@ -342,7 +342,7 @@ update_power_profile:
         text:
     updated_at:
       name: Timestamp
-      description: Data/ora ISO da associare all'aggiornamento.
+      description: Campo mantenuto per compatibilità; il salvataggio usa un nuovo timestamp della richiesta.
       required: true
       selector:
         text:
